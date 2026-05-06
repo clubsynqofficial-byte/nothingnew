@@ -1,0 +1,47 @@
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800;900&display=swap');
+
+:root {
+  --bg-dark: #1b1012;
+  --bg-card: #291c1e;
+  --bg-muted: #342728;
+  --border: rgba(87, 65, 68, 0.3);
+  --border-light: rgba(255, 255, 255, 0.1);
+  --accent: #8a1538;
+  --accent-hover: #a01a42;
+  --accent-glow: rgba(138, 21, 56, 0.4);
+  --text-primary: #f3dddf;
+  --text-secondary: #debfc2;
+  --text-muted: #6b7280;
+  --gold: #e9c176;
+  --live-red: #ffb4ab;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Be Vietnam Pro', sans-serif;
+  background-color: var(--bg-dark);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+input, textarea, select, button {
+  font-family: 'Be Vietnam Pro', sans-serif;
+}
+
+button {
+  cursor: pointer;
+}
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--bg-muted); }
+::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 9999px; }
