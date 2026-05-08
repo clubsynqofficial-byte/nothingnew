@@ -1,10 +1,11 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import AuthLayout from './AuthLayout'
 
 export default function SignIn() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -21,7 +22,7 @@ export default function SignIn() {
       setError(error.message)
       setLoading(false)
     } else {
-      navigate('/')
+      navigate(searchParams.get('redirect') ?? '/')
     }
   }
 

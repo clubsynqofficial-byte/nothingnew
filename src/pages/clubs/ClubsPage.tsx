@@ -79,7 +79,7 @@ export default function ClubsPage() {
     name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()
 
   return (
-    <div style={{ padding: '32px 28px', maxWidth: 1100 }}>
+    <div className="page-content" style={{ maxWidth: 1100 }}>
       {/* Header */}
       <div style={{ marginBottom: 32 }}>
         <h1 style={{ fontSize: 38, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.5px', marginBottom: 8 }}>

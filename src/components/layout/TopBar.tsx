@@ -4,9 +4,10 @@ import { useAuth } from '../../contexts/AuthContext'
 interface Props {
   searchPlaceholder?: string
   onSearch?: (query: string) => void
+  onMenuToggle?: () => void
 }
 
-export default function TopBar({ searchPlaceholder = 'Search...', onSearch }: Props) {
+export default function TopBar({ searchPlaceholder = 'Search...', onSearch, onMenuToggle }: Props) {
   const { profile } = useAuth()
   const [query, setQuery] = useState('')
 
@@ -16,23 +17,43 @@ export default function TopBar({ searchPlaceholder = 'Search...', onSearch }: Pr
   }
 
   return (
-    <header style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      height: 64,
-      zIndex: 50,
+    <header className="top-bar" style={{
       background: 'rgba(18,18,18,0.7)',
       backdropFilter: 'blur(16px)',
       borderBottom: '1px solid rgba(255,255,255,0.08)',
       display: 'flex',
       alignItems: 'center',
-      padding: '0 24px',
-      gap: 24,
+      padding: '0 16px',
+      gap: 12,
     }}>
-      {/* Logo — sits over the sidebar */}
-      <div style={{ width: 216, flexShrink: 0 }}>
+      {/* Hamburger — hidden on desktop via CSS */}
+      <button
+        className="hamburger"
+        onClick={onMenuToggle}
+        style={{
+          display: 'none', // overridden by CSS on mobile
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 36,
+          height: 36,
+          background: 'transparent',
+          border: 'none',
+          color: 'var(--text-primary)',
+          borderRadius: 8,
+          flexShrink: 0,
+          padding: 0,
+        }}
+        aria-label="Open navigation"
+      >
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <line x1="3" y1="6" x2="21" y2="6" />
+          <line x1="3" y1="12" x2="21" y2="12" />
+          <line x1="3" y1="18" x2="21" y2="18" />
+        </svg>
+      </button>
+
+      {/* Logo — hidden on mobile via CSS */}
+      <div className="top-bar-logo-space" style={{ width: 216, flexShrink: 0 }}>
         <span style={{
           fontSize: 18,
           fontWeight: 900,
@@ -45,7 +66,7 @@ export default function TopBar({ searchPlaceholder = 'Search...', onSearch }: Pr
       </div>
 
       {/* Search */}
-      <div style={{ flex: 1, maxWidth: 480, position: 'relative' }}>
+      <div className="top-bar-search" style={{ flex: 1, maxWidth: 480, position: 'relative' }}>
         <svg
           style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', opacity: 0.4 }}
           width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"

@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, type FormEvent } from 'react'
+import { useState, useEffect, useRef, useCallback, type FormEvent } from 'react'
+import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import type { Club, Event } from '../../types'
@@ -23,13 +24,14 @@ interface MembershipRow {
   user_id: string
   role: 'member' | 'officer' | 'president'
   custom_role: string | null
-  profile: { full_name: string | null; school: string | null } | null
+  profile: { full_name: string | null; school: string | null; email: string | null } | null
 }
 
 interface ProfileSearchRow {
   id: string
   full_name: string | null
   school: string | null
+  email: string | null
 }
 
 interface Props {
@@ -40,7 +42,6 @@ export default function CommandCenter({ club }: Props) {
   const { user } = useAuth()
   const [stats, setStats] = useState<Stats>({ memberCount: 0, eventCount: 0, totalAttendees: 0, threadCount: 0, newMembersThisMonth: 0 })
   const [events, setEvents] = useState<Event[]>([])
-  const [vaultDocs, setVaultDocs] = useState<{ id: string; title: string; created_at: string }[]>([])
   const [announcements, setAnnouncements] = useState<AnnouncementRow[]>([])
   const [showEventForm, setShowEventForm] = useState(false)
   const [loadingStats, setLoadingStats] = useState(true)
@@ -62,6 +63,11 @@ export default function CommandCenter({ club }: Props) {
   const [creatingEvent, setCreatingEvent] = useState(false)
   const [eventError, setEventError] = useState('')
 
+  // Certificate state
+  const [certEvent, setCertEvent] = useState<Event | null>(null)
+  // QR state
+  const [qrEvent, setQrEvent] = useState<Event | null>(null)
+
   // Announcement state
   const [annContent, setAnnContent] = useState('')
   const [postingAnn, setPostingAnn] = useState(false)
@@ -73,10 +79,9 @@ export default function CommandCenter({ club }: Props) {
     const thirtyDaysAgo = new Date()
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 
-    const [membersRes, eventsRes, vaultRes, threadsRes, newMembersRes, annRes, teamRes] = await Promise.all([
+    const [membersRes, eventsRes, threadsRes, newMembersRes, annRes, teamRes] = await Promise.all([
       supabase.from('club_memberships').select('id', { count: 'exact' }).eq('club_id', club.id),
       supabase.from('events').select('*').eq('club_id', club.id).order('created_at', { ascending: false }),
-      supabase.from('legacy_vault_docs').select('id,title,created_at').eq('club_id', club.id).order('created_at', { ascending: false }).limit(8),
       supabase.from('club_threads').select('id', { count: 'exact' }).eq('club_id', club.id),
       supabase.from('club_memberships').select('id', { count: 'exact' }).eq('club_id', club.id).gte('joined_at', thirtyDaysAgo.toISOString()),
       supabase.from('club_announcements')
@@ -85,7 +90,7 @@ export default function CommandCenter({ club }: Props) {
         .order('created_at', { ascending: false })
         .limit(20),
       supabase.from('club_memberships')
-        .select('id, user_id, role, custom_role, profile:profiles(full_name, school)')
+        .select('id, user_id, role, custom_role, profile:profiles(full_name, school, email)')
         .eq('club_id', club.id)
         .order('joined_at', { ascending: true }),
     ])
@@ -102,7 +107,6 @@ export default function CommandCenter({ club }: Props) {
       newMembersThisMonth: newMembersRes.count ?? 0,
     })
     setEvents(evList)
-    setVaultDocs(vaultRes.data ?? [])
     setAnnouncements((annRes.data as unknown as AnnouncementRow[]) ?? [])
     setTeamMembers((teamRes.data as unknown as MembershipRow[]) ?? [])
     setLoadingStats(false)
@@ -157,10 +161,11 @@ export default function CommandCenter({ club }: Props) {
     if (!memberSearch.trim()) { setSearchProfiles([]); setSearchLoading(false); return }
     setSearchLoading(true)
     const t = setTimeout(async () => {
+      const term = memberSearch.trim()
       const { data } = await supabase
         .from('profiles')
-        .select('id, full_name, school')
-        .ilike('full_name', `%${memberSearch.trim()}%`)
+        .select('id, full_name, school, email')
+        .or(`full_name.ilike.%${term}%,email.ilike.%${term}%`)
         .limit(8)
       setSearchProfiles((data as ProfileSearchRow[]) ?? [])
       setSearchLoading(false)
@@ -223,7 +228,7 @@ export default function CommandCenter({ club }: Props) {
   )
 
   return (
-    <div style={{ padding: '32px 28px', maxWidth: 1100 }}>
+    <div className="page-content" style={{ maxWidth: 1100 }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 32, flexWrap: 'wrap', gap: 16 }}>
         <div>
@@ -373,7 +378,7 @@ export default function CommandCenter({ club }: Props) {
           <input
             value={memberSearch}
             onChange={e => setMemberSearch(e.target.value)}
-            placeholder="Search by name to find and add members…"
+            placeholder="Search by name or email to find and add members…"
             style={{ ...fi, paddingLeft: 36, fontSize: 13 }}
           />
           {memberSearch && (
@@ -473,7 +478,7 @@ export default function CommandCenter({ club }: Props) {
                 return (
                   <ExistingMemberRow
                     key={m.id}
-                    profile={{ id: m.user_id, full_name: m.profile?.full_name ?? null, school: m.profile?.school ?? null }}
+                    profile={{ id: m.user_id, full_name: m.profile?.full_name ?? null, school: m.profile?.school ?? null, email: m.profile?.email ?? null }}
                     membership={m}
                     isLoading={actionLoading === m.id}
                     onRoleChange={handleRoleChange}
@@ -610,19 +615,19 @@ export default function CommandCenter({ club }: Props) {
         )}
       </div>
 
-      {/* Events + Legacy Vault */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-        {/* Events list */}
-        <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 24 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 18 }}>Events</h2>
-          {events.length === 0 ? (
-            <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No events yet. Create your first one!</p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {events.map(ev => (
+      {/* Events */}
+      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 24 }}>
+        <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 18 }}>Events</h2>
+        {events.length === 0 ? (
+          <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No events yet. Create your first one!</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {events.map(ev => {
+              const isCompleted = !ev.is_live && !!ev.start_time && new Date(ev.start_time) < new Date()
+              return (
                 <div key={ev.id} style={{
                   background: 'rgba(255,255,255,0.03)',
-                  border: '1px solid rgba(255,255,255,0.06)',
+                  border: `1px solid ${isCompleted ? 'rgba(138,21,56,0.2)' : 'rgba(255,255,255,0.06)'}`,
                   borderRadius: 10,
                   padding: '12px 16px',
                   display: 'flex',
@@ -631,68 +636,82 @@ export default function CommandCenter({ club }: Props) {
                   gap: 12,
                 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {ev.title}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 2 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {ev.title}
+                      </div>
+                      {isCompleted && (
+                        <span style={{
+                          fontSize: 9, fontWeight: 700, letterSpacing: '0.08em',
+                          padding: '2px 7px', borderRadius: 9999, flexShrink: 0,
+                          background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)',
+                          color: '#4ade80',
+                        }}>COMPLETED</span>
+                      )}
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                       {ev.location ?? 'No location'} · {ev.karak_points_reward} pts · {ev.attendee_count} attending
                     </div>
                   </div>
-                  <button
-                    onClick={() => toggleLive(ev)}
-                    style={{
-                      flexShrink: 0,
-                      padding: '4px 12px',
-                      borderRadius: 9999,
-                      border: ev.is_live ? '1px solid rgba(255,180,171,0.4)' : '1px solid rgba(87,65,68,0.3)',
-                      background: ev.is_live ? 'rgba(255,180,171,0.1)' : 'transparent',
-                      color: ev.is_live ? 'var(--live-red)' : 'var(--text-muted)',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {ev.is_live ? '● LIVE' : 'Go Live'}
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Legacy Vault */}
-        <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 24 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Legacy Vault</h2>
-            <VaultUpload clubId={club.id} onUploaded={fetchAll} />
-          </div>
-          {vaultDocs.length === 0 ? (
-            <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No documents yet. Upload your first.</p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {vaultDocs.map(doc => (
-                <div key={doc.id} style={{
-                  background: 'rgba(255,255,255,0.03)',
-                  border: '1px solid rgba(87,65,68,0.2)',
-                  borderRadius: 8,
-                  padding: '10px 14px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                }}>
-                  <span style={{ fontSize: 16 }}>📄</span>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{doc.title}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                      {new Date(doc.created_at).toLocaleDateString()}
-                    </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                    <button
+                      onClick={() => setQrEvent(ev)}
+                      style={{
+                        padding: '4px 11px', borderRadius: 9999,
+                        border: '1px solid rgba(14,165,233,0.35)',
+                        background: 'rgba(14,165,233,0.08)',
+                        color: '#38bdf8', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                      }}
+                    >
+                      QR
+                    </button>
+                    {isCompleted && (
+                      <button
+                        onClick={() => setCertEvent(ev)}
+                        style={{
+                          padding: '4px 11px', borderRadius: 9999,
+                          border: '1px solid rgba(233,193,118,0.35)',
+                          background: 'rgba(233,193,118,0.08)',
+                          color: 'var(--gold)', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                        }}
+                      >
+                        🎓 Send Certs
+                      </button>
+                    )}
+                    <button
+                      onClick={() => toggleLive(ev)}
+                      style={{
+                        padding: '4px 12px', borderRadius: 9999,
+                        border: ev.is_live ? '1px solid rgba(255,180,171,0.4)' : '1px solid rgba(87,65,68,0.3)',
+                        background: ev.is_live ? 'rgba(255,180,171,0.1)' : 'transparent',
+                        color: ev.is_live ? 'var(--live-red)' : 'var(--text-muted)',
+                        fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                      }}
+                    >
+                      {ev.is_live ? '● LIVE' : 'Go Live'}
+                    </button>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              )
+            })}
+          </div>
+        )}
       </div>
+
+      {/* QR Modal */}
+      {qrEvent && (
+        <QRModal event={qrEvent} onClose={() => setQrEvent(null)} />
+      )}
+
+      {/* Certificate Modal */}
+      {certEvent && (
+        <CertificateModal
+          event={certEvent}
+          club={club}
+          members={teamMembers}
+          onClose={() => setCertEvent(null)}
+        />
+      )}
     </div>
   )
 }
@@ -861,7 +880,8 @@ function NewMemberRow({
       <TeamAvatar name={profile.full_name} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{profile.full_name ?? 'Unknown'}</div>
-        {profile.school && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{profile.school}</div>}
+        {profile.school && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.school}</div>}
+        {profile.email && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.email}</div>}
       </div>
       <RoleTags
         key={`new-${profile.id}`}
@@ -904,7 +924,8 @@ function ExistingMemberRow({
       <TeamAvatar name={profile.full_name} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{profile.full_name ?? 'Unknown'}</div>
-        {profile.school && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{profile.school}</div>}
+        {profile.school && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.school}</div>}
+        {profile.email && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.email}</div>}
       </div>
       <RoleTags
         key={`${membership.id}-${membership.role}-${membership.custom_role}`}
@@ -923,44 +944,418 @@ function ExistingMemberRow({
   )
 }
 
-function VaultUpload({ clubId, onUploaded }: { clubId: string; onUploaded: () => void }) {
-  const { user } = useAuth()
-  const [title, setTitle] = useState('')
-  const [open, setOpen] = useState(false)
-  const [saving, setSaving] = useState(false)
+// ─── CertificateModal ────────────────────────────────────────────────────────
 
-  async function save() {
-    if (!title.trim() || !user) return
-    setSaving(true)
-    await supabase.from('legacy_vault_docs').insert({ club_id: clubId, title: title.trim(), uploaded_by: user.id })
-    setTitle('')
-    setOpen(false)
-    setSaving(false)
-    onUploaded()
-  }
+function CertificateModal({
+  event,
+  club,
+  members,
+  onClose,
+}: {
+  event: Event
+  club: Club
+  members: MembershipRow[]
+  onClose: () => void
+}) {
+  const today = new Date().toISOString().slice(0, 10)
+  const eventDate = event.start_time ? new Date(event.start_time).toISOString().slice(0, 10) : today
 
-  if (!open) {
-    return (
-      <button onClick={() => setOpen(true)} style={{ background: 'transparent', border: '1px solid rgba(233,193,118,0.3)', borderRadius: 6, padding: '5px 12px', color: 'var(--gold)', fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', cursor: 'pointer' }}>
-        + UPLOAD
-      </button>
-    )
-  }
+  const [eventName, setEventName] = useState(event.title)
+  const [certDate, setCertDate] = useState(eventDate)
+  const [reason, setReason] = useState('')
+  const [issuedBy, setIssuedBy] = useState(club.name)
+  const [issueDate, setIssueDate] = useState(today)
+  const [selected, setSelected] = useState<Set<string>>(new Set(members.map(m => m.user_id)))
+  const [sending, setSending] = useState(false)
+  const [result, setResult] = useState<'success' | 'error' | null>(null)
+  const [errorMsg, setErrorMsg] = useState('')
+
+  const allSelected = selected.size === members.length
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(members.map(m => m.user_id)))
+  const toggleOne = (uid: string) => setSelected(prev => {
+    const next = new Set(prev)
+    next.has(uid) ? next.delete(uid) : next.add(uid)
+    return next
+  })
+
+  const handleSend = useCallback(async () => {
+    if (selected.size === 0) { setErrorMsg('Select at least one recipient.'); return }
+    if (!reason.trim()) { setErrorMsg('Please describe the achievement / reason.'); return }
+
+    setSending(true)
+    setErrorMsg('')
+
+    const selectedIds = Array.from(selected)
+    const { data: emailData } = await supabase
+      .from('profiles')
+      .select('id, email')
+      .in('id', selectedIds)
+
+    const emailMap = Object.fromEntries((emailData ?? []).map(p => [p.id, p.email]))
+
+    const rows = members
+      .filter(m => selected.has(m.user_id))
+      .map(m => ({
+        club_id: club.id,
+        club_name: club.name,
+        event_name: eventName,
+        event_date: certDate || null,
+        reason: reason.trim(),
+        issued_by: issuedBy,
+        issue_date: issueDate,
+        recipient_name: m.profile?.full_name ?? 'Member',
+        recipient_email: emailMap[m.user_id] ?? null,
+        recipient_user_id: m.user_id,
+        status: 'pending',
+      }))
+
+    const { error } = await supabase.from('certificate_requests').insert(rows)
+
+    if (error) {
+      setResult('error')
+      setErrorMsg(error.message)
+    } else {
+      setResult('success')
+    }
+    setSending(false)
+  }, [selected, reason, members, eventName, certDate, issuedBy, issueDate, club])
 
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-      <input
-        autoFocus
-        value={title}
-        onChange={e => setTitle(e.target.value)}
-        placeholder="Document name"
-        onKeyDown={e => { if (e.key === 'Enter') save() }}
-        style={{ background: 'var(--bg-muted)', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 10px', color: 'var(--text-primary)', fontSize: 12, outline: 'none', width: 140 }}
-      />
-      <button onClick={save} disabled={saving} style={{ background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '5px 10px', color: '#fff', fontSize: 12, cursor: 'pointer' }}>
-        {saving ? '…' : 'Save'}
-      </button>
-      <button onClick={() => setOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer' }}>✕</button>
+    <div
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 60,
+        background: 'rgba(0,0,0,0.78)', backdropFilter: 'blur(10px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+      }}
+    >
+      <div style={{
+        width: '100%', maxWidth: 580,
+        background: 'var(--bg-card)', border: '1px solid rgba(255,255,255,0.07)',
+        borderRadius: 22, maxHeight: '90vh', overflowY: 'auto',
+        boxShadow: '0 32px 80px rgba(0,0,0,0.6)',
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: '24px 28px 20px',
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+          position: 'sticky', top: 0, background: 'var(--bg-card)', zIndex: 1,
+          borderRadius: '22px 22px 0 0',
+        }}>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--gold)', textTransform: 'uppercase', marginBottom: 5 }}>
+              🎓 Certificate Dispatch
+            </div>
+            <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>
+              {event.title}
+            </h2>
+          </div>
+          <button onClick={onClose} style={{
+            width: 30, height: 30, borderRadius: '50%',
+            background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)',
+            color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>✕</button>
+        </div>
+
+        <div style={{ padding: '22px 28px', display: 'flex', flexDirection: 'column', gap: 22 }}>
+
+          {result === 'success' ? (
+            <div style={{ textAlign: 'center', padding: '32px 0' }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
+              <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
+                Sent to Google Sheets!
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                {selected.size} certificate{selected.size !== 1 ? 's' : ''} dispatched to Google Sheets.
+              </div>
+              <button onClick={onClose} style={{
+                marginTop: 24, padding: '10px 28px',
+                background: 'var(--accent)', border: 'none', borderRadius: 9999,
+                color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+              }}>Done</button>
+            </div>
+          ) : (
+            <>
+              {/* Certificate Details */}
+              <section>
+                <SectionLabel>Certificate Details</SectionLabel>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <CertField label="Event Name">
+                    <input value={eventName} onChange={e => setEventName(e.target.value)} style={cfi} />
+                  </CertField>
+                  <CertField label="Event Date">
+                    <input type="date" value={certDate} onChange={e => setCertDate(e.target.value)} style={cfi} />
+                  </CertField>
+                  <CertField label="Issued By">
+                    <input value={issuedBy} onChange={e => setIssuedBy(e.target.value)} style={cfi} />
+                  </CertField>
+                  <CertField label="Issue Date">
+                    <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} style={cfi} />
+                  </CertField>
+                </div>
+                <div style={{ marginTop: 12 }}>
+                  <CertField label="Achievement / Reason">
+                    <textarea
+                      value={reason}
+                      onChange={e => setReason(e.target.value)}
+                      placeholder="e.g. Successfully completed the 3-day Entrepreneurship Workshop and demonstrated outstanding leadership skills."
+                      rows={3}
+                      style={{ ...cfi, resize: 'vertical', lineHeight: 1.6 }}
+                    />
+                  </CertField>
+                </div>
+              </section>
+
+              {/* Member Selection */}
+              <section>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <SectionLabel>Select Recipients</SectionLabel>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    {selected.size} / {members.length} selected
+                  </span>
+                </div>
+
+                {members.length === 0 ? (
+                  <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>
+                    No members found. Add members in Manage Team first.
+                  </div>
+                ) : (
+                  <div style={{
+                    border: '1px solid rgba(255,255,255,0.07)',
+                    borderRadius: 12, overflow: 'hidden',
+                  }}>
+                    {/* Select all row */}
+                    <div
+                      onClick={toggleAll}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 12,
+                        padding: '11px 14px', cursor: 'pointer',
+                        background: 'rgba(138,21,56,0.07)',
+                        borderBottom: '1px solid rgba(255,255,255,0.06)',
+                      }}
+                    >
+                      <Checkbox checked={allSelected} />
+                      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                        Select All ({members.length} members)
+                      </span>
+                    </div>
+
+                    {/* Member rows */}
+                    <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+                      {members.map(m => (
+                        <div
+                          key={m.user_id}
+                          onClick={() => toggleOne(m.user_id)}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 12,
+                            padding: '10px 14px', cursor: 'pointer',
+                            background: selected.has(m.user_id) ? 'rgba(138,21,56,0.05)' : 'transparent',
+                            borderBottom: '1px solid rgba(255,255,255,0.04)',
+                            transition: 'background 0.12s',
+                          }}
+                        >
+                          <Checkbox checked={selected.has(m.user_id)} />
+                          <TeamAvatar name={m.profile?.full_name} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                              {m.profile?.full_name ?? 'Unknown Member'}
+                            </div>
+                            {m.custom_role && (
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{m.custom_role}</div>
+                            )}
+                          </div>
+                          <span style={{
+                            fontSize: 9, fontWeight: 700, letterSpacing: '0.07em',
+                            padding: '2px 7px', borderRadius: 9999, flexShrink: 0,
+                            background: m.role === 'officer' ? 'rgba(14,165,233,0.12)' : 'rgba(255,255,255,0.05)',
+                            border: m.role === 'officer' ? '1px solid rgba(14,165,233,0.25)' : '1px solid rgba(255,255,255,0.08)',
+                            color: m.role === 'officer' ? '#38bdf8' : 'var(--text-muted)',
+                            textTransform: 'uppercase',
+                          }}>
+                            {m.role}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </section>
+
+              {/* Error */}
+              {errorMsg && (
+                <div style={{
+                  padding: '10px 14px', borderRadius: 10,
+                  background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(255,107,107,0.25)',
+                  fontSize: 13, color: '#ff6b6b',
+                }}>
+                  {errorMsg}
+                </div>
+              )}
+
+              {/* Actions */}
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={onClose} style={{
+                  flex: 1, padding: '11px',
+                  background: 'transparent', border: '1px solid rgba(87,65,68,0.35)',
+                  borderRadius: 11, color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer',
+                }}>Cancel</button>
+                <button
+                  onClick={handleSend}
+                  disabled={sending || selected.size === 0}
+                  style={{
+                    flex: 2, padding: '11px',
+                    background: sending || selected.size === 0 ? 'rgba(138,21,56,0.3)' : 'var(--accent)',
+                    border: 'none', borderRadius: 11,
+                    color: '#fff', fontSize: 14, fontWeight: 700,
+                    cursor: sending || selected.size === 0 ? 'default' : 'pointer',
+                    opacity: sending || selected.size === 0 ? 0.6 : 1,
+                    boxShadow: sending ? 'none' : '0 4px 16px rgba(138,21,56,0.3)',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {sending ? 'Sending…' : `Send Certificates → (${selected.size})`}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      fontSize: 10, fontWeight: 700, letterSpacing: '0.1em',
+      color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 10,
+      display: 'flex', alignItems: 'center', gap: 6,
+    }}>
+      <span style={{ width: 14, height: 1.5, background: 'rgba(138,21,56,0.5)', display: 'inline-block', borderRadius: 9999 }} />
+      {children}
+    </div>
+  )
+}
+
+function CertField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
+        {label}
+      </label>
+      {children}
+    </div>
+  )
+}
+
+function Checkbox({ checked }: { checked: boolean }) {
+  return (
+    <div style={{
+      width: 18, height: 18, borderRadius: 5, flexShrink: 0,
+      border: checked ? '2px solid var(--accent)' : '2px solid rgba(87,65,68,0.5)',
+      background: checked ? 'var(--accent)' : 'transparent',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      transition: 'all 0.12s', fontSize: 11, color: '#fff', fontWeight: 700,
+    }}>
+      {checked && '✓'}
+    </div>
+  )
+}
+
+const cfi: React.CSSProperties = {
+  width: '100%',
+  background: 'rgba(27,16,18,0.6)',
+  border: '1px solid rgba(87,65,68,0.4)',
+  borderRadius: 9,
+  padding: '9px 12px',
+  color: 'var(--text-primary)',
+  fontSize: 13,
+  outline: 'none',
+  fontFamily: 'inherit',
+}
+
+// ─── QRModal ────────────────────────────────────────────────────────────────
+
+function QRModal({ event, onClose }: { event: Event; onClose: () => void }) {
+  const url = `${window.location.origin}/attend/${event.id}`
+
+  function downloadQR() {
+    const canvas = document.getElementById('event-qr-canvas') as HTMLCanvasElement | null
+    if (!canvas) return
+    const a = document.createElement('a')
+    a.download = `${event.title.replace(/\s+/g, '-')}-qr.png`
+    a.href = canvas.toDataURL('image/png')
+    a.click()
+  }
+
+  return (
+    <div
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 60,
+        background: 'rgba(0,0,0,0.78)', backdropFilter: 'blur(10px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+      }}
+    >
+      <div style={{
+        width: '100%', maxWidth: 360,
+        background: 'var(--bg-card)', border: '1px solid rgba(255,255,255,0.07)',
+        borderRadius: 22, padding: '32px 28px', textAlign: 'center',
+        boxShadow: '0 32px 80px rgba(0,0,0,0.6)',
+      }}>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: '#38bdf8', textTransform: 'uppercase', marginBottom: 6 }}>
+          Event QR Code
+        </div>
+        <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6, lineHeight: 1.3 }}>
+          {event.title}
+        </h2>
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 24 }}>
+          Members scan to check in
+          {event.karak_points_reward > 0 && ` and earn ${event.karak_points_reward} pts`}
+        </p>
+
+        {/* QR code on white background */}
+        <div style={{
+          background: '#fff', borderRadius: 16,
+          display: 'inline-flex', padding: 16, marginBottom: 24,
+        }}>
+          <QRCodeCanvas
+            id="event-qr-canvas"
+            value={url}
+            size={200}
+            level="H"
+            marginSize={1}
+          />
+        </div>
+
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            onClick={downloadQR}
+            style={{
+              flex: 1, padding: '11px',
+              background: 'var(--accent)', border: 'none',
+              borderRadius: 11, color: '#fff',
+              fontSize: 13, fontWeight: 700, cursor: 'pointer',
+            }}
+          >
+            Download PNG
+          </button>
+          <button
+            onClick={onClose}
+            style={{
+              flex: 1, padding: '11px',
+              background: 'transparent', border: '1px solid rgba(87,65,68,0.35)',
+              borderRadius: 11, color: 'var(--text-muted)',
+              fontSize: 13, cursor: 'pointer',
+            }}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+

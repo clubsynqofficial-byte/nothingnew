@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import AppLayout from './components/layout/AppLayout'
 import SignIn from './pages/auth/SignIn'
@@ -10,12 +10,21 @@ import CollaborationPage from './pages/collaboration/CollaborationPage'
 import TalentPage from './pages/talent/TalentPage'
 import ClubsPage from './pages/clubs/ClubsPage'
 import ClubProfilePage from './pages/clubs/ClubProfilePage'
+import AttendPage from './pages/attend/AttendPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
   if (loading) return <LoadingScreen />
   if (!session) return <Navigate to="/signin" replace />
   return <AppLayout>{children}</AppLayout>
+}
+
+function ProtectedRouteRaw({ children }: { children: React.ReactNode }) {
+  const { session, loading } = useAuth()
+  const location = useLocation()
+  if (loading) return <LoadingScreen />
+  if (!session) return <Navigate to={`/signin?redirect=${encodeURIComponent(location.pathname)}`} replace />
+  return <>{children}</>
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
@@ -65,6 +74,7 @@ function AppRoutes() {
       <Route path="/talent" element={<ProtectedRoute><TalentPage /></ProtectedRoute>} />
       <Route path="/clubs" element={<ProtectedRoute><ClubsPage /></ProtectedRoute>} />
       <Route path="/clubs/:clubId" element={<ProtectedRoute><ClubProfilePage /></ProtectedRoute>} />
+      <Route path="/attend/:eventId" element={<ProtectedRouteRaw><AttendPage /></ProtectedRouteRaw>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

@@ -155,6 +155,7 @@ export default function ClubProfilePage() {
   const [tab,          setTab]          = useState<Tab>('events')
   const [eventFilter,  setEventFilter]  = useState<EventFilter>('upcoming')
   const [attendingId,  setAttendingId]  = useState<string | null>(null)
+  const [communitySearch, setCommunitySearch] = useState('')
 
   // ── fetch ──
   const fetchAll = useCallback(async () => {
@@ -243,7 +244,7 @@ export default function ClubProfilePage() {
   const uniLabel = club.university?.short_name ?? club.university?.name ?? null
 
   return (
-    <div>
+    <div className="page-content" style={{ maxWidth: 1100 }}>
       <style>{`
         @keyframes livePulse{0%,100%{opacity:1}50%{opacity:0.4}}
         @keyframes spinCP{to{transform:rotate(360deg)}}
@@ -251,6 +252,8 @@ export default function ClubProfilePage() {
         .mem-card:hover{border-color:rgba(138,21,56,0.3)!important}
         .cal-day:hover{background:rgba(255,255,255,0.06)!important;cursor:pointer}
         .thread-row:hover{border-color:rgba(138,21,56,0.3)!important}
+        .cal-layout{display:grid;grid-template-columns:1fr 300px;gap:24px;align-items:start}
+        @media(max-width:640px){.cal-layout{grid-template-columns:1fr}}
       `}</style>
 
       {/* ── Back ── */}
@@ -419,36 +422,66 @@ export default function ClubProfilePage() {
           )}
 
           {/* ══════════════ COMMUNITY ══════════════ */}
-          {tab === 'community' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+          {tab === 'community' && (() => {
+            const term = communitySearch.trim().toLowerCase()
+            const match = (m: MemberRow) => !term || (m.profile?.full_name ?? '').toLowerCase().includes(term)
+            const filteredPresident  = president && match(president) ? president : null
+            const filteredOfficers   = officers.filter(match)
+            const filteredAssigned   = assignedMembers.filter(match)
+            const filteredRegular    = regularMembers.filter(match)
+            const noResults = term && !filteredPresident && filteredOfficers.length === 0 && filteredAssigned.length === 0 && filteredRegular.length === 0
 
-              {/* President + officers + custom-role members */}
-              {(president || officers.length > 0 || assignedMembers.length > 0) && (
-                <section>
-                  <SectionLabel>Leadership Team</SectionLabel>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {president && <MemberCard member={president} highlight />}
-                    {officers.map(m => <MemberCard key={m.id} member={m} />)}
-                    {assignedMembers.map(m => <MemberCard key={m.id} member={m} />)}
-                  </div>
-                </section>
-              )}
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-              {/* Plain members (no custom role) */}
-              {regularMembers.length > 0 && (
-                <section>
-                  <SectionLabel>Members · {regularMembers.length}</SectionLabel>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
-                    {regularMembers.map(m => <MemberCard key={m.id} member={m} />)}
-                  </div>
-                </section>
-              )}
+                {/* Search bar */}
+                <div style={{ position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 14, color: 'var(--text-muted)', pointerEvents: 'none' }}>🔍</span>
+                  <input
+                    value={communitySearch}
+                    onChange={e => setCommunitySearch(e.target.value)}
+                    placeholder="Search members by name…"
+                    style={{ ...inputSt, paddingLeft: 36, fontSize: 13 }}
+                  />
+                  {communitySearch && (
+                    <button
+                      onClick={() => setCommunitySearch('')}
+                      style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '2px 4px' }}
+                    >✕</button>
+                  )}
+                </div>
 
-              {members.length === 0 && (
-                <EmptyState icon="👥" title="No members yet" sub="Club leadership hasn't added any members yet." />
-              )}
-            </div>
-          )}
+                {/* President + officers + custom-role members */}
+                {(filteredPresident || filteredOfficers.length > 0 || filteredAssigned.length > 0) && (
+                  <section>
+                    <SectionLabel>Leadership Team</SectionLabel>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {filteredPresident && <MemberCard member={filteredPresident} highlight />}
+                      {filteredOfficers.map(m => <MemberCard key={m.id} member={m} />)}
+                      {filteredAssigned.map(m => <MemberCard key={m.id} member={m} />)}
+                    </div>
+                  </section>
+                )}
+
+                {/* Plain members (no custom role) */}
+                {filteredRegular.length > 0 && (
+                  <section>
+                    <SectionLabel>Members · {filteredRegular.length}</SectionLabel>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
+                      {filteredRegular.map(m => <MemberCard key={m.id} member={m} />)}
+                    </div>
+                  </section>
+                )}
+
+                {members.length === 0 && (
+                  <EmptyState icon="👥" title="No members yet" sub="Club leadership hasn't added any members yet." />
+                )}
+                {noResults && (
+                  <EmptyState icon="🔍" title="No members found" sub={`No members match "${communitySearch}"`} />
+                )}
+              </div>
+            )
+          })()}
 
           {/* ══════════════ ANNOUNCEMENTS ══════════════ */}
           {tab === 'announcements' && (
@@ -618,7 +651,7 @@ function CalendarSection({ events }: { events: EventRow[] }) {
   const selectedEvents = selected ? eventsOnDay(events, selected) : []
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 24, alignItems: 'start' }}>
+    <div className="cal-layout">
       {/* Grid */}
       <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, overflow: 'hidden' }}>
         {/* Nav */}

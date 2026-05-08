@@ -133,7 +133,7 @@ export default function CreateClub({ onCreated }: Props) {
   // ── render ────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ padding: '40px 36px', maxWidth: 860, position: 'relative', overflowX: 'hidden' }}>
+    <div className="page-content" style={{ maxWidth: 860, position: 'relative', overflowX: 'hidden' }}>
       {/* Background glow */}
       <div style={{ position: 'fixed', top: -150, right: -120, width: 640, height: 640, borderRadius: '50%', background: 'radial-gradient(circle, rgba(138,21,56,0.07) 0%, transparent 70%)', pointerEvents: 'none' }} />
 

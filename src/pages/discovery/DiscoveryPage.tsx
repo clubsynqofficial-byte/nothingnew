@@ -110,7 +110,7 @@ export default function DiscoveryPage() {
         }
       `}</style>
 
-      <div style={{ padding: '44px 36px 72px', maxWidth: 1320, margin: '0 auto' }}>
+      <div className="page-content" style={{ maxWidth: 1320 }}>
 
         {/* ── Hero ── */}
         <div style={{ marginBottom: 44, position: 'relative' }}>

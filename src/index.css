@@ -14,9 +14,11 @@
   --text-muted: #6b7280;
   --gold: #e9c176;
   --live-red: #ffb4ab;
+  --nav-width: 240px;
+  --topbar-height: 64px;
 }
 
-* {
+*, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
@@ -30,18 +32,109 @@ body {
   min-height: 100vh;
 }
 
-#root {
-  min-height: 100vh;
-}
+#root { min-height: 100vh; }
 
 input, textarea, select, button {
   font-family: 'Be Vietnam Pro', sans-serif;
 }
 
-button {
-  cursor: pointer;
-}
+button { cursor: pointer; }
 
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: var(--bg-muted); }
 ::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 9999px; }
+
+/* ── Layout ── */
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  background: var(--bg-dark);
+}
+
+.top-bar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: var(--topbar-height);
+  z-index: 50;
+}
+
+.side-nav {
+  position: fixed;
+  top: 0; left: 0;
+  width: var(--nav-width);
+  height: 100vh;
+  z-index: 40;
+  transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+}
+
+.main-content {
+  margin-left: var(--nav-width);
+  margin-top: var(--topbar-height);
+  flex: 1;
+  min-height: calc(100vh - var(--topbar-height));
+  overflow-y: auto;
+}
+
+/* Mobile nav overlay backdrop */
+.nav-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+}
+
+/* ── Mobile breakpoint ── */
+@media (max-width: 768px) {
+  .side-nav {
+    transform: translateX(-100%);
+    z-index: 45;
+    top: 0;
+  }
+
+  .side-nav.open {
+    transform: translateX(0);
+  }
+
+  .nav-backdrop.open {
+    display: block;
+  }
+
+  .main-content {
+    margin-left: 0;
+  }
+
+  .top-bar-logo-space {
+    display: none !important;
+  }
+
+  .hamburger {
+    display: flex !important;
+  }
+
+  .top-bar-search {
+    max-width: unset !important;
+  }
+
+  /* Page content padding on mobile */
+  .page-content {
+    padding: 20px 16px !important;
+  }
+}
+
+@media (min-width: 769px) {
+  .hamburger {
+    display: none !important;
+  }
+
+  .nav-backdrop {
+    display: none !important;
+  }
+}
+
+/* ── Page content wrapper ── */
+.page-content {
+  padding: 32px 28px 64px;
+  margin: 0 auto;
+}

@@ -284,7 +284,7 @@ export default function TalentPage() {
   const pendingIncoming = incoming.filter((r) => r.status === 'pending').length
 
   return (
-    <div style={{ padding: '32px 28px', maxWidth: 1100 }}>
+    <div className="page-content" style={{ maxWidth: 1100 }}>
       <style>{`
         @keyframes spinTalent { to { transform: rotate(360deg); } }
         .listing-card:hover { border-color: rgba(138,21,56,0.4) !important; }
