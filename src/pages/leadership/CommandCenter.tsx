@@ -74,16 +74,17 @@ export default function CommandCenter({ club }: Props) {
 
   useEffect(() => { fetchAll() }, [club.id])
 
-  // Live attendee count — patches only the changed event so no full re-fetch needed
+  // Live attendee count — increments the matching event when anyone checks in via QR
   useEffect(() => {
     const channel = supabase
-      .channel(`cmd-events-${club.id}`)
+      .channel(`cmd-attendees-${club.id}`)
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'events', filter: `club_id=eq.${club.id}` },
+        { event: 'INSERT', schema: 'public', table: 'event_attendees' },
         payload => {
+          const eventId = payload.new.event_id as string
           setEvents(prev =>
-            prev.map(e => e.id === payload.new.id ? { ...e, attendee_count: payload.new.attendee_count } : e)
+            prev.map(e => e.id === eventId ? { ...e, attendee_count: e.attendee_count + 1 } : e)
           )
         },
       )
@@ -114,7 +115,20 @@ export default function CommandCenter({ club }: Props) {
 
     const memberCount = membersRes.count ?? 0
     const evList = eventsRes.data ?? []
-    const totalAttendees = evList.reduce((sum, e) => sum + (e.attendee_count ?? 0), 0)
+    const eventIds = evList.map(e => e.id)
+
+    // Count real check-ins from event_attendees (not the stale attendee_count column)
+    const { data: attendeeRows } = eventIds.length > 0
+      ? await supabase.from('event_attendees').select('event_id').in('event_id', eventIds)
+      : { data: [] as { event_id: string }[] }
+
+    const countByEvent = (attendeeRows ?? []).reduce<Record<string, number>>((acc, r) => {
+      acc[r.event_id] = (acc[r.event_id] ?? 0) + 1
+      return acc
+    }, {})
+
+    const evListWithCounts = evList.map(e => ({ ...e, attendee_count: countByEvent[e.id] ?? 0 }))
+    const totalAttendees = evListWithCounts.reduce((sum, e) => sum + e.attendee_count, 0)
 
     setStats({
       memberCount,
@@ -123,7 +137,7 @@ export default function CommandCenter({ club }: Props) {
       threadCount: threadsRes.count ?? 0,
       newMembersThisMonth: newMembersRes.count ?? 0,
     })
-    setEvents(evList)
+    setEvents(evListWithCounts)
     setAnnouncements((annRes.data as unknown as AnnouncementRow[]) ?? [])
     setTeamMembers((teamRes.data as unknown as MembershipRow[]) ?? [])
     setLoadingStats(false)

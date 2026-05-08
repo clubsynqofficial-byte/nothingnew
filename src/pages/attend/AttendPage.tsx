@@ -46,7 +46,6 @@ export default function AttendPage() {
     if (existing) { setStatus('already'); return }
 
     await supabase.from('event_attendees').insert({ event_id: eventId, user_id: user.id })
-    await supabase.from('events').update({ attendee_count: ev.attendee_count + 1 }).eq('id', eventId)
 
     if (ev.karak_points_reward > 0) {
       await supabase.from('karak_transactions').insert({
