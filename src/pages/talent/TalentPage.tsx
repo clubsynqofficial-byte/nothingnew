@@ -41,12 +41,15 @@ interface TradeMessage {
   profile?: { full_name: string | null } | null
 }
 
+type Pt = { x: number; y: number }
+type WBTool = 'pen' | 'marker' | 'highlighter' | 'eraser' | 'line' | 'rect' | 'circle' | 'arrow' | 'laser' | 'text'
+
 interface Stroke {
   id: string
-  points: { x: number; y: number }[]
+  points: Pt[]
   color: string
   width: number
-  tool: 'pen' | 'eraser'
+  tool: WBTool
 }
 
 interface ReviewRow {
@@ -1012,7 +1015,7 @@ const STATUS_STYLES: Record<string, { bg: string; border: string; color: string;
   completed: { bg: 'rgba(99,102,241,0.07)',  border: 'rgba(99,102,241,0.2)',  color: '#a5b4fc',      label: 'Completed',         dot: '#a5b4fc' },
 }
 
-function ReqCard({ req, mode, currentUserId, actionId, hasReviewed, onAccept, onReject, onOpenChat, onLeaveReview, onViewUser }: {
+function ReqCard({ req, mode, currentUserId: _currentUserId, actionId, hasReviewed, onAccept, onReject, onOpenChat, onLeaveReview, onViewUser }: {
   req: RequestRow
   mode: 'incoming' | 'outgoing'
   currentUserId: string
@@ -1105,8 +1108,6 @@ function ReqCard({ req, mode, currentUserId, actionId, hasReviewed, onAccept, on
 
 // ── WhiteboardModal ────────────────────────────────────────────────────────
 
-type WBTool = 'pen' | 'marker' | 'highlighter' | 'eraser' | 'line' | 'rect' | 'circle' | 'arrow' | 'laser' | 'text'
-
 const WB_PALETTE = ['#f3dddf','#ffffff','#ef4444','#f97316','#e9c176','#22c55e','#3b82f6','#a855f7','#ec4899','#000000']
 const WB_SIZES   = [2, 4, 8, 16, 28]
 const WB_TOOLS: { id: WBTool; icon: string; label: string; key: string }[] = [
@@ -1171,7 +1172,7 @@ function wbPaintStroke(ctx: CanvasRenderingContext2D, s: Stroke, glowOn: boolean
   ctx.restore()
 }
 
-function WhiteboardModal({ trade, currentUserId, myName, otherName, onClose }: {
+function WhiteboardModal({ trade, currentUserId: _currentUserId, myName: _myName, otherName, onClose }: {
   trade: RequestRow; currentUserId: string; myName: string; otherName: string; onClose: () => void
 }) {
   const mainRef    = useRef<HTMLCanvasElement>(null)
@@ -1286,12 +1287,11 @@ function WhiteboardModal({ trade, currentUserId, myName, otherName, onClose }: {
 
   useEffect(() => {
     // Load saved strokes (non-blocking — canvas is already usable before this resolves)
-    supabase.from('skill_trade_whiteboards').select('strokes').eq('request_id', trade.id).maybeSingle()
-      .then(({ data }) => {
-        if (data?.strokes) { allStrokes.current = data.strokes as Stroke[]; replayAll(allStrokes.current) }
-      })
-      .catch(() => {}) // ignore errors — whiteboard works without saved state
-      .finally(() => setLoading(false))
+    Promise.resolve(
+      supabase.from('skill_trade_whiteboards').select('strokes').eq('request_id', trade.id).maybeSingle()
+    ).then(({ data }) => {
+      if (data?.strokes) { allStrokes.current = data.strokes as Stroke[]; replayAll(allStrokes.current) }
+    }).catch(() => {}).finally(() => setLoading(false))
 
     const ch = supabase.channel(`whiteboard-${trade.id}`)
       .on('broadcast', { event: 'stroke' }, ({ payload }) => {
