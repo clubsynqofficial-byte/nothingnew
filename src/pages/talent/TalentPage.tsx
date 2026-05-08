@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 
@@ -29,19 +30,44 @@ interface RequestRow {
   requester?: { full_name: string | null; avatar_url: string | null } | null
 }
 
+interface TradeMessage {
+  id: string
+  request_id: string
+  sender_id: string
+  content: string
+  media_url: string | null
+  media_type: 'image' | 'video' | 'file' | null
+  created_at: string
+  profile?: { full_name: string | null } | null
+}
+
+interface Stroke {
+  id: string
+  points: { x: number; y: number }[]
+  color: string
+  width: number
+  tool: 'pen' | 'eraser'
+}
+
+interface ReviewRow {
+  id: string
+  request_id: string
+  reviewer_id: string
+  reviewee_id: string
+  rating: number
+  comment: string | null
+  created_at: string
+  profile?: { full_name: string | null } | null
+}
+
 type Tab = 'browse' | 'my-listings' | 'requests'
 
 const CATEGORIES = ['All', 'Tech', 'Design', 'Business', 'Marketing', 'Finance', 'Writing', 'Arts', 'Other']
 
 const CATEGORY_COLORS: Record<string, string> = {
-  Tech: '#0ea5e9',
-  Design: '#a855f7',
-  Business: '#f97316',
-  Marketing: '#ec4899',
-  Finance: '#22c55e',
-  Writing: '#e9c176',
-  Arts: '#f43f5e',
-  Other: '#6b7280',
+  Tech: '#0ea5e9', Design: '#a855f7', Business: '#f97316',
+  Marketing: '#ec4899', Finance: '#22c55e', Writing: '#e9c176',
+  Arts: '#f43f5e', Other: '#6b7280',
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -57,30 +83,23 @@ const inputStyle: React.CSSProperties = {
   outline: 'none',
 }
 
-function Avatar({ name, size = 36 }: { name: string | null | undefined; size?: number }) {
-  const letters = (name ?? '?')
-    .split(' ')
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase()
+function getLastRead(requestId: string): string {
+  return localStorage.getItem(`lastRead_${requestId}`) ?? '1970-01-01'
+}
+function markRead(requestId: string) {
+  localStorage.setItem(`lastRead_${requestId}`, new Date().toISOString())
+}
+
+function Avatar({ name, size = 36, onClick }: { name?: string | null; size?: number; onClick?: () => void }) {
+  const letters = (name ?? '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
   return (
-    <div
-      style={{
-        width: size,
-        height: size,
-        borderRadius: '50%',
-        background: 'var(--accent)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: size * 0.37,
-        fontWeight: 800,
-        color: '#fff',
-        flexShrink: 0,
-        border: '2px solid rgba(255,255,255,0.1)',
-      }}
-    >
+    <div onClick={onClick} style={{
+      width: size, height: size, borderRadius: '50%', background: 'var(--accent)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: size * 0.37, fontWeight: 800, color: '#fff', flexShrink: 0,
+      border: '2px solid rgba(255,255,255,0.1)',
+      cursor: onClick ? 'pointer' : 'default',
+    }}>
       {letters}
     </div>
   )
@@ -89,20 +108,26 @@ function Avatar({ name, size = 36 }: { name: string | null | undefined; size?: n
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label
-        style={{
-          display: 'block',
-          fontSize: 11,
-          fontWeight: 700,
-          letterSpacing: '0.08em',
-          color: 'var(--text-muted)',
-          marginBottom: 6,
-          textTransform: 'uppercase',
-        }}
-      >
-        {label}
-      </label>
+      <label style={{
+        display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
+        color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase',
+      }}>{label}</label>
       {children}
+    </div>
+  )
+}
+
+function StarPicker({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const [hover, setHover] = useState(0)
+  return (
+    <div style={{ display: 'flex', gap: 6 }}>
+      {[1, 2, 3, 4, 5].map(n => (
+        <span key={n} onClick={() => onChange(n)}
+          onMouseEnter={() => setHover(n)} onMouseLeave={() => setHover(0)}
+          style={{ fontSize: 30, cursor: 'pointer', lineHeight: 1,
+            color: n <= (hover || value) ? '#e9c176' : 'rgba(255,255,255,0.12)',
+            transition: 'color 0.1s' }}>★</span>
+      ))}
     </div>
   )
 }
@@ -125,31 +150,31 @@ export default function TalentPage() {
   const [requestMessage, setRequestMessage] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [editTarget, setEditTarget] = useState<ListingRow | null>(null)
-  const [form, setForm] = useState({
-    title: '',
-    description: '',
-    skill_offered: '',
-    skill_wanted: '',
-    category: 'Tech',
-  })
+  const [form, setForm] = useState({ title: '', description: '', skill_offered: '', skill_wanted: '', category: 'Tech' })
   const [saving, setSaving] = useState(false)
+
+  // Collaboration state
+  const [chatTrade, setChatTrade] = useState<RequestRow | null>(null)
+  const [ratingTrade, setRatingTrade] = useState<RequestRow | null>(null)
+  const [ratingValue, setRatingValue] = useState(5)
+  const [ratingComment, setRatingComment] = useState('')
+  const [submittingRating, setSubmittingRating] = useState(false)
+  const [myReviews, setMyReviews] = useState<ReviewRow[]>([])
+  const [viewingUserId, setViewingUserId] = useState<string | null>(null)
+  const [unreadCount, setUnreadCount] = useState(0)
 
   // ── Fetchers ──
 
   const fetchListings = useCallback(async () => {
     if (!user) return
     setLoading(true)
-
     let query = supabase
       .from('skill_listings')
-      .select('*, profile:profiles(full_name, avatar_url), university:profiles(university_id)')
-      .eq('is_active', true)
-      .neq('user_id', user.id)
+      .select('*, profile:profiles(full_name, avatar_url)')
+      .eq('is_active', true).neq('user_id', user.id)
       .order('created_at', { ascending: false })
-
     if (search) query = query.ilike('title', `%${search}%`)
     if (activeCategory !== 'All') query = query.eq('category', activeCategory)
-
     const { data } = await query
     setListings(data ?? [])
     setLoading(false)
@@ -157,69 +182,60 @@ export default function TalentPage() {
 
   const fetchMyListings = useCallback(async () => {
     if (!user) return
-    const { data } = await supabase
-      .from('skill_listings')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
+    const { data } = await supabase.from('skill_listings').select('*').eq('user_id', user.id).order('created_at', { ascending: false })
     setMyListings(data ?? [])
   }, [user])
 
   const fetchRequests = useCallback(async () => {
     if (!user) return
-
-    // Incoming: requests on my listings
-    const { data: myListingIds } = await supabase
-      .from('skill_listings')
-      .select('id')
-      .eq('user_id', user.id)
-
-    const ids = myListingIds?.map((l) => l.id) ?? []
+    const { data: myListingIds } = await supabase.from('skill_listings').select('id').eq('user_id', user.id)
+    const ids = myListingIds?.map(l => l.id) ?? []
     if (ids.length > 0) {
       const { data: inc } = await supabase
         .from('skill_requests')
-        .select('*, listing:skill_listings(title, skill_offered, skill_wanted), requester:profiles(full_name, avatar_url)')
-        .in('listing_id', ids)
-        .order('created_at', { ascending: false })
-      setIncoming(inc ?? [])
+        .select('*, listing:skill_listings(*, profile:profiles(full_name, avatar_url)), requester:profiles(full_name, avatar_url)')
+        .in('listing_id', ids).order('created_at', { ascending: false })
+      setIncoming((inc as unknown as RequestRow[]) ?? [])
     } else {
       setIncoming([])
     }
-
-    // Outgoing: requests I sent
     const { data: out } = await supabase
       .from('skill_requests')
-      .select('*, listing:skill_listings(title, skill_offered, skill_wanted, profile:profiles(full_name))')
-      .eq('requester_id', user.id)
-      .order('created_at', { ascending: false })
-    setOutgoing(out ?? [])
+      .select('*, listing:skill_listings(*, profile:profiles(full_name, avatar_url))')
+      .eq('requester_id', user.id).order('created_at', { ascending: false })
+    setOutgoing((out as unknown as RequestRow[]) ?? [])
   }, [user])
 
-  useEffect(() => {
-    fetchListings()
-    fetchMyListings()
-    fetchRequests()
-  }, [fetchListings, fetchMyListings, fetchRequests])
+  const fetchMyReviews = useCallback(async () => {
+    if (!user) return
+    const { data } = await supabase.from('skill_trade_reviews').select('*').eq('reviewer_id', user.id)
+    setMyReviews((data as ReviewRow[]) ?? [])
+  }, [user])
+
+  const computeUnread = useCallback(async (inc: RequestRow[], out: RequestRow[]) => {
+    if (!user) return
+    const accepted = [...inc, ...out].filter(r => r.status === 'accepted')
+    if (!accepted.length) { setUnreadCount(0); return }
+    let total = 0
+    for (const t of accepted) {
+      const { count } = await supabase
+        .from('skill_trade_messages').select('id', { count: 'exact', head: true })
+        .eq('request_id', t.id).neq('sender_id', user.id).gt('created_at', getLastRead(t.id))
+      total += count ?? 0
+    }
+    setUnreadCount(total)
+  }, [user])
+
+  useEffect(() => { fetchListings(); fetchMyListings(); fetchRequests(); fetchMyReviews() }, [fetchListings, fetchMyListings, fetchRequests, fetchMyReviews])
+  useEffect(() => { computeUnread(incoming, outgoing) }, [incoming, outgoing, computeUnread])
 
   // ── Actions ──
-
-  const openRequestPrompt = (listing: ListingRow) => {
-    setRequestPrompt(listing)
-    setRequestMessage('')
-  }
 
   const handleRequest = async () => {
     if (!user || !requestPrompt || !requestMessage.trim()) return
     setRequestingId(requestPrompt.id)
-    await supabase.from('skill_requests').insert({
-      listing_id: requestPrompt.id,
-      requester_id: user.id,
-      message: requestMessage.trim(),
-      status: 'pending',
-    })
-    setRequestingId(null)
-    setRequestPrompt(null)
-    setRequestMessage('')
+    await supabase.from('skill_requests').insert({ listing_id: requestPrompt.id, requester_id: user.id, message: requestMessage.trim(), status: 'pending' })
+    setRequestingId(null); setRequestPrompt(null); setRequestMessage('')
     fetchRequests()
   }
 
@@ -227,126 +243,114 @@ export default function TalentPage() {
     if (actionId) return
     setActionId(requestId)
     await supabase.from('skill_requests').update({ status }).eq('id', requestId)
-    setActionId(null)
-    fetchRequests()
+    setActionId(null); fetchRequests()
   }
 
-  const openCreate = () => {
-    setEditTarget(null)
-    setForm({ title: '', description: '', skill_offered: '', skill_wanted: '', category: 'Tech' })
-    setShowModal(true)
+  const handleMarkComplete = async (requestId: string) => {
+    await supabase.from('skill_requests').update({ status: 'completed' }).eq('id', requestId)
+    setChatTrade(null)
+    await fetchRequests()
+    const req = [...incoming, ...outgoing].find(r => r.id === requestId)
+    if (req) { setRatingValue(5); setRatingComment(''); setRatingTrade({ ...req, status: 'completed' }) }
   }
 
-  const openEdit = (listing: ListingRow) => {
-    setEditTarget(listing)
-    setForm({
-      title: listing.title,
-      description: listing.description ?? '',
-      skill_offered: listing.skill_offered,
-      skill_wanted: listing.skill_wanted,
-      category: listing.category ?? 'Tech',
-    })
-    setShowModal(true)
+  const submitRating = async () => {
+    if (!user || !ratingTrade) return
+    setSubmittingRating(true)
+    const revieweeId = ratingTrade.requester_id === user.id
+      ? (ratingTrade.listing as ListingRow)?.user_id
+      : ratingTrade.requester_id
+    if (revieweeId) {
+      await supabase.from('skill_trade_reviews').insert({
+        request_id: ratingTrade.id, reviewer_id: user.id, reviewee_id: revieweeId,
+        rating: ratingValue, comment: ratingComment.trim() || null,
+      })
+    }
+    setSubmittingRating(false); setRatingTrade(null); fetchMyReviews()
   }
 
   const handleSave = async () => {
     if (!user || !form.title.trim() || !form.skill_offered.trim() || !form.skill_wanted.trim()) return
     setSaving(true)
-    const payload = {
-      user_id: user.id,
-      title: form.title.trim(),
-      description: form.description.trim() || null,
-      skill_offered: form.skill_offered.trim(),
-      skill_wanted: form.skill_wanted.trim(),
-      category: form.category,
-      is_active: true,
-    }
-    if (editTarget) {
-      await supabase.from('skill_listings').update(payload).eq('id', editTarget.id)
-    } else {
-      await supabase.from('skill_listings').insert(payload)
-    }
-    setSaving(false)
-    setShowModal(false)
-    fetchMyListings()
-    fetchListings()
+    const payload = { user_id: user.id, title: form.title.trim(), description: form.description.trim() || null, skill_offered: form.skill_offered.trim(), skill_wanted: form.skill_wanted.trim(), category: form.category, is_active: true }
+    if (editTarget) await supabase.from('skill_listings').update(payload).eq('id', editTarget.id)
+    else await supabase.from('skill_listings').insert(payload)
+    setSaving(false); setShowModal(false); fetchMyListings(); fetchListings()
   }
 
   const handleToggle = async (id: string, isActive: boolean) => {
     await supabase.from('skill_listings').update({ is_active: !isActive }).eq('id', id)
-    fetchMyListings()
-    fetchListings()
+    fetchMyListings(); fetchListings()
   }
 
-  // Requests already sent by me (to avoid duplicate request buttons)
-  const alreadyRequestedIds = new Set(outgoing.map((r) => r.listing_id))
+  const openCreate = () => { setEditTarget(null); setForm({ title: '', description: '', skill_offered: '', skill_wanted: '', category: 'Tech' }); setShowModal(true) }
+  const openEdit = (l: ListingRow) => { setEditTarget(l); setForm({ title: l.title, description: l.description ?? '', skill_offered: l.skill_offered, skill_wanted: l.skill_wanted, category: l.category ?? 'Tech' }); setShowModal(true) }
 
-  const pendingIncoming = incoming.filter((r) => r.status === 'pending').length
+  const alreadyRequestedIds = new Set(outgoing.map(r => r.listing_id))
+  const pendingIncoming = incoming.filter(r => r.status === 'pending').length
+  const reviewedIds = new Set(myReviews.map(r => r.request_id))
+
+  const requestsBadge = pendingIncoming > 0 ? { label: String(pendingIncoming), color: 'var(--accent)' }
+    : unreadCount > 0 ? { label: '●', color: '#ef4444' } : null
 
   return (
     <div className="page-content" style={{ maxWidth: 1100 }}>
       <style>{`
         @keyframes spinTalent { to { transform: rotate(360deg); } }
-        .listing-card:hover { border-color: rgba(138,21,56,0.4) !important; }
-        .req-btn:hover:not(:disabled) { background: var(--accent-hover) !important; }
+        .listing-card:hover { border-color: rgba(138,21,56,0.55) !important; box-shadow: 0 8px 32px rgba(0,0,0,0.3) !important; transform: translateY(-1px); }
+        .listing-card { transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s, opacity 0.2s !important; }
+        .req-btn:hover:not(:disabled) { background: var(--accent) !important; color: #fff !important; border-color: var(--accent) !important; }
+        .action-btn:hover:not(:disabled) { opacity: 0.85; }
       `}</style>
 
       {/* ── Header ── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32, flexWrap: 'wrap', gap: 16 }}>
         <div>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', color: 'var(--accent)', marginBottom: 6, textTransform: 'uppercase' }}>
-            Talent
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', boxShadow: '0 0 8px var(--accent-glow)' }} />
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', color: 'var(--accent)', textTransform: 'uppercase' }}>Skill Souq</span>
           </div>
-          <h1 style={{ fontSize: 38, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.5px', marginBottom: 8 }}>
-            The Skill Souq
-          </h1>
-          <p style={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-            Trade skills, find collaborators, and grow your craft across Qatar's campuses.
-          </p>
+          <h1 style={{ fontSize: 32, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.5px', lineHeight: 1.1 }}>Trade Skills. Grow Together.</h1>
+          <p style={{ fontSize: 14, color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.5 }}>Offer what you know. Get what you need. No money required.</p>
         </div>
-        <button
-          onClick={openCreate}
-          style={{
-            padding: '10px 20px',
-            background: 'var(--accent)',
-            border: 'none',
-            borderRadius: 10,
-            color: '#fff',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: 'pointer',
-            flexShrink: 0,
-            marginTop: 8,
-          }}
-        >
-          + List a Skill
+        <button onClick={openCreate} style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: '11px 22px', background: 'var(--accent)', border: 'none', borderRadius: 10,
+          color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', flexShrink: 0,
+          boxShadow: '0 4px 20px rgba(138,21,56,0.45)',
+        }}>
+          <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> List a Skill
         </button>
       </div>
 
       {/* ── Tabs ── */}
-      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid rgba(87,65,68,0.3)', marginBottom: 32 }}>
+      <div style={{ display: 'flex', gap: 2, background: 'rgba(0,0,0,0.3)', borderRadius: 12, padding: 4, marginBottom: 32, width: 'fit-content', border: '1px solid rgba(87,65,68,0.2)' }}>
         {([
-          { key: 'browse', label: 'Browse' },
-          { key: 'my-listings', label: 'My Listings' },
-          { key: 'requests', label: `Requests${pendingIncoming > 0 ? ` (${pendingIncoming})` : ''}` },
-        ] as { key: Tab; label: string }[]).map(({ key, label }) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            style={{
-              padding: '10px 22px',
-              background: 'transparent',
-              border: 'none',
-              borderBottom: tab === key ? '2px solid var(--accent)' : '2px solid transparent',
-              color: tab === key ? 'var(--text-primary)' : 'var(--text-muted)',
-              fontSize: 15,
-              fontWeight: tab === key ? 600 : 400,
-              cursor: 'pointer',
-              marginBottom: -1,
-              transition: 'color 0.15s',
-            }}
-          >
+          { key: 'browse' as Tab, label: 'Browse', icon: '⊞' },
+          { key: 'my-listings' as Tab, label: 'My Listings', icon: '◫', count: myListings.length },
+          { key: 'requests' as Tab, label: 'Requests', icon: '⟳' },
+        ] as { key: Tab; label: string; icon: string; count?: number }[]).map(({ key, label, icon, count }) => (
+          <button key={key} onClick={() => setTab(key)} style={{
+            padding: '8px 20px', background: tab === key ? 'var(--bg-card)' : 'transparent',
+            border: tab === key ? '1px solid rgba(87,65,68,0.35)' : '1px solid transparent',
+            borderRadius: 9, color: tab === key ? 'var(--text-primary)' : 'var(--text-muted)',
+            fontSize: 13, fontWeight: tab === key ? 700 : 500, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 7,
+            boxShadow: tab === key ? '0 1px 8px rgba(0,0,0,0.3)' : 'none',
+            transition: 'all 0.15s', whiteSpace: 'nowrap',
+          }}>
+            <span style={{ fontSize: 14, opacity: tab === key ? 1 : 0.5 }}>{icon}</span>
             {label}
+            {key === 'requests' && requestsBadge && (
+              <span style={{ fontSize: 10, background: requestsBadge.color, color: '#fff', borderRadius: 9999, padding: '1px 8px', fontWeight: 800, lineHeight: 1.6 }}>
+                {requestsBadge.label}
+              </span>
+            )}
+            {key === 'my-listings' && count !== undefined && count > 0 && (
+              <span style={{ fontSize: 10, background: 'rgba(255,255,255,0.08)', color: 'var(--text-muted)', borderRadius: 9999, padding: '1px 7px', fontWeight: 700, lineHeight: 1.6 }}>
+                {count}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -355,103 +359,50 @@ export default function TalentPage() {
       {tab === 'browse' && (
         <>
           {/* Search + filters */}
-          <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
-            <div style={{ position: 'relative', flex: '1 1 280px', maxWidth: 480 }}>
-              <svg
-                style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', opacity: 0.4 }}
-                width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"
-              >
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: '14px 16px', marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ position: 'relative' }}>
+              <svg style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', opacity: 0.35, pointerEvents: 'none' }} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
-              <input
-                type="text"
-                placeholder="Search skills, titles…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                style={{
-                  ...inputStyle,
-                  paddingLeft: 40,
-                  borderRadius: 9999,
-                  background: 'rgba(41,28,30,0.6)',
-                }}
-              />
+              <input type="text" placeholder="Search by skill, title, or keyword…" value={search} onChange={e => setSearch(e.target.value)}
+                style={{ ...inputStyle, paddingLeft: 40, background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(87,65,68,0.2)', borderRadius: 9 }} />
             </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: 8, marginBottom: 28, flexWrap: 'wrap' }}>
-            {CATEGORIES.map((cat) => {
-              const active = cat === activeCategory
-              return (
-                <button
-                  key={cat}
-                  onClick={() => setActiveCategory(cat)}
-                  style={{
-                    padding: '6px 16px',
-                    borderRadius: 9999,
-                    border: active ? '1px solid var(--accent)' : '1px solid rgba(87,65,68,0.3)',
-                    background: active ? 'rgba(138,21,56,0.2)' : 'rgba(41,28,30,0.5)',
-                    color: active ? 'var(--text-primary)' : 'var(--text-muted)',
-                    fontSize: 12,
-                    fontWeight: 700,
-                    letterSpacing: '0.05em',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  {cat.toUpperCase()}
-                </button>
-              )
-            })}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {CATEGORIES.map(cat => (
+                <button key={cat} onClick={() => setActiveCategory(cat)} style={{
+                  padding: '5px 14px', borderRadius: 9999, fontSize: 11, fontWeight: 700, letterSpacing: '0.05em',
+                  cursor: 'pointer', transition: 'all 0.12s', border: 'none',
+                  background: cat === activeCategory ? 'var(--accent)' : 'rgba(255,255,255,0.06)',
+                  color: cat === activeCategory ? '#fff' : 'var(--text-muted)',
+                  boxShadow: cat === activeCategory ? '0 2px 12px rgba(138,21,56,0.4)' : 'none',
+                }}>{cat}</button>
+              ))}
+            </div>
           </div>
 
           {loading ? (
-            <div style={{ textAlign: 'center', padding: '64px 0', color: 'var(--text-muted)' }}>
-              <div style={{
-                width: 32, height: 32, border: '3px solid rgba(87,65,68,0.3)',
-                borderTopColor: 'var(--accent)', borderRadius: '50%',
-                animation: 'spinTalent 0.8s linear infinite', margin: '0 auto 16px',
-              }} />
-              Loading the Souq…
+            <div style={{ textAlign: 'center', padding: '80px 0', color: 'var(--text-muted)' }}>
+              <div style={{ width: 36, height: 36, border: '3px solid rgba(87,65,68,0.2)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spinTalent 0.8s linear infinite', margin: '0 auto 16px' }} />
+              <div style={{ fontSize: 13 }}>Fetching listings…</div>
             </div>
           ) : listings.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '64px 0', color: 'var(--text-muted)' }}>
-              <div style={{ fontSize: 40, marginBottom: 14 }}>🏪</div>
-              <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>No listings found</div>
-              <div style={{ fontSize: 13 }}>
-                {search ? `No skills match "${search}".` : 'Be the first to list a skill!'}
-              </div>
+            <div style={{ textAlign: 'center', padding: '80px 0' }}>
+              <div style={{ width: 64, height: 64, borderRadius: 18, background: 'var(--bg-card)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, margin: '0 auto 20px' }}>🏪</div>
+              <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>No listings found</div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 24 }}>{search ? `Nothing matches "${search}" — try a different keyword.` : 'Be the first to post a skill trade!'}</div>
+              {!search && <button onClick={openCreate} style={{ padding: '10px 24px', background: 'var(--accent)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>+ List a Skill</button>}
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
-              {listings.map((l) => {
-                const alreadyRequested = alreadyRequestedIds.has(l.id)
+              {listings.map(l => {
+                const already = alreadyRequestedIds.has(l.id)
                 return (
-                  <ListingCard
-                    key={l.id}
-                    listing={l}
-                    action={
-                      <button
-                        className="req-btn"
-                        onClick={() => !alreadyRequested && openRequestPrompt(l)}
-                        disabled={!!requestingId || alreadyRequested}
-                        style={{
-                          width: '100%',
-                          padding: '9px',
-                          background: alreadyRequested ? 'transparent' : 'rgba(52,39,40,0.8)',
-                          border: alreadyRequested ? '1px solid var(--accent)' : '1px solid rgba(87,65,68,0.25)',
-                          borderRadius: 8,
-                          color: alreadyRequested ? 'var(--accent)' : 'var(--text-primary)',
-                          fontSize: 13,
-                          fontWeight: 500,
-                          cursor: alreadyRequested || requestingId ? 'default' : 'pointer',
-                          opacity: requestingId === l.id ? 0.6 : 1,
-                          transition: 'all 0.15s',
-                        }}
-                      >
-                        {requestingId === l.id ? '…' : alreadyRequested ? 'Requested ✓' : 'Request Trade'}
-                      </button>
-                    }
-                  />
+                  <ListingCard key={l.id} listing={l} onViewUser={() => setViewingUserId(l.user_id)} action={
+                    <button className="req-btn" onClick={() => !already && setRequestPrompt(l)} disabled={!!requestingId || already}
+                      style={{ width: '100%', padding: '10px', background: already ? 'rgba(138,21,56,0.08)' : 'rgba(138,21,56,0.12)', border: '1px solid rgba(138,21,56,0.3)', borderRadius: 9, color: already ? 'var(--accent)' : 'var(--text-secondary)', fontSize: 13, fontWeight: 600, cursor: already || requestingId ? 'default' : 'pointer', opacity: requestingId === l.id ? 0.6 : 1, transition: 'all 0.15s' }}>
+                      {requestingId === l.id ? 'Sending…' : already ? '✓ Requested' : 'Request Trade'}
+                    </button>
+                  } />
                 )
               })}
             </div>
@@ -461,613 +412,1250 @@ export default function TalentPage() {
 
       {/* ── MY LISTINGS ── */}
       {tab === 'my-listings' && (
-        <>
-          {myListings.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '64px 0', color: 'var(--text-muted)' }}>
-              <div style={{ fontSize: 40, marginBottom: 14 }}>✨</div>
-              <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>No listings yet</div>
-              <div style={{ fontSize: 13, marginBottom: 20 }}>Share what you can offer and what you're looking for.</div>
-              <button
-                onClick={openCreate}
-                style={{
-                  padding: '10px 24px',
-                  background: 'var(--accent)',
-                  border: 'none',
-                  borderRadius: 9999,
-                  color: '#fff',
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                + List a Skill
-              </button>
+        myListings.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '80px 0' }}>
+            <div style={{ width: 64, height: 64, borderRadius: 18, background: 'var(--bg-card)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, margin: '0 auto 20px' }}>✨</div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>No listings yet</div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 24 }}>Share what you can offer, and what skill you're looking for in return.</div>
+            <button onClick={openCreate} style={{ padding: '10px 24px', background: 'var(--accent)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>+ Create Your First Listing</button>
+          </div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}><span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{myListings.filter(l => l.is_active).length}</span> active · <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{myListings.filter(l => !l.is_active).length}</span> paused</div>
             </div>
-          ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
-              {myListings.map((l) => (
-                <ListingCard
-                  key={l.id}
-                  listing={l}
-                  dimmed={!l.is_active}
-                  action={
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button
-                        onClick={() => openEdit(l)}
-                        style={{
-                          flex: 1,
-                          padding: '8px',
-                          background: 'transparent',
-                          border: '1px solid rgba(87,65,68,0.3)',
-                          borderRadius: 8,
-                          color: 'var(--text-muted)',
-                          fontSize: 13,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleToggle(l.id, l.is_active)}
-                        style={{
-                          flex: 1,
-                          padding: '8px',
-                          background: l.is_active ? 'transparent' : 'rgba(138,21,56,0.15)',
-                          border: l.is_active ? '1px solid rgba(87,65,68,0.3)' : '1px solid var(--accent)',
-                          borderRadius: 8,
-                          color: l.is_active ? 'var(--text-muted)' : 'var(--accent)',
-                          fontSize: 13,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        {l.is_active ? 'Deactivate' : 'Activate'}
-                      </button>
-                    </div>
-                  }
-                />
+              {myListings.map(l => (
+                <ListingCard key={l.id} listing={l} dimmed={!l.is_active} action={
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => openEdit(l)} style={{ flex: 1, padding: '9px', background: 'transparent', border: '1px solid rgba(87,65,68,0.35)', borderRadius: 9, color: 'var(--text-muted)', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Edit</button>
+                    <button onClick={() => handleToggle(l.id, l.is_active)} style={{ flex: 1, padding: '9px', background: l.is_active ? 'transparent' : 'rgba(138,21,56,0.12)', border: l.is_active ? '1px solid rgba(87,65,68,0.35)' : '1px solid var(--accent)', borderRadius: 9, color: l.is_active ? 'var(--text-muted)' : 'var(--accent)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                      {l.is_active ? 'Pause' : 'Activate'}
+                    </button>
+                  </div>
+                } />
               ))}
             </div>
-          )}
-        </>
+          </>
+        )
       )}
 
       {/* ── REQUESTS ── */}
       {tab === 'requests' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 36 }}>
-          {/* Incoming */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 40 }}>
           <section>
-            <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 16 }}>
-              Incoming Requests
-              {incoming.length > 0 && (
-                <span style={{ marginLeft: 8, fontSize: 12, background: 'var(--accent)', color: '#fff', borderRadius: 9999, padding: '2px 8px', fontWeight: 600 }}>
-                  {incoming.length}
-                </span>
-              )}
-            </h2>
-            {incoming.length === 0 ? (
-              <p style={{ fontSize: 14, color: 'var(--text-muted)', padding: '16px 0' }}>No incoming requests yet.</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {incoming.map((req) => (
-                  <RequestRow
-                    key={req.id}
-                    req={req}
-                    mode="incoming"
-                    actionId={actionId}
-                    onAccept={() => handleRequestAction(req.id, 'accepted')}
-                    onReject={() => handleRequestAction(req.id, 'rejected')}
-                  />
-                ))}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Incoming Requests</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>People who want to trade with you</div>
               </div>
-            )}
+              {incoming.length > 0 && <span style={{ fontSize: 11, background: 'var(--accent)', color: '#fff', borderRadius: 9999, padding: '3px 10px', fontWeight: 800 }}>{incoming.length}</span>}
+            </div>
+            {incoming.length === 0
+              ? <div style={{ padding: '28px 24px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, textAlign: 'center' }}>
+                  <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No incoming requests yet — share your listings to attract trade partners.</div>
+                </div>
+              : <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {incoming.map(req => (
+                    <ReqCard key={req.id} req={req} mode="incoming" currentUserId={user?.id ?? ''} actionId={actionId} hasReviewed={reviewedIds.has(req.id)}
+                      onAccept={() => handleRequestAction(req.id, 'accepted')}
+                      onReject={() => handleRequestAction(req.id, 'rejected')}
+                      onOpenChat={() => setChatTrade(req)}
+                      onLeaveReview={() => { setRatingValue(5); setRatingComment(''); setRatingTrade(req) }}
+                      onViewUser={setViewingUserId}
+                    />
+                  ))}
+                </div>
+            }
           </section>
-
-          {/* Outgoing */}
           <section>
-            <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 16 }}>
-              Sent Requests
-            </h2>
-            {outgoing.length === 0 ? (
-              <p style={{ fontSize: 14, color: 'var(--text-muted)', padding: '16px 0' }}>You haven't sent any requests yet.</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {outgoing.map((req) => (
-                  <RequestRow key={req.id} req={req} mode="outgoing" actionId={actionId} />
-                ))}
-              </div>
-            )}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Sent Requests</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Trades you've initiated</div>
+            </div>
+            {outgoing.length === 0
+              ? <div style={{ padding: '28px 24px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, textAlign: 'center' }}>
+                  <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>You haven't sent any requests yet. Browse listings and find a skill to trade for.</div>
+                </div>
+              : <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {outgoing.map(req => (
+                    <ReqCard key={req.id} req={req} mode="outgoing" currentUserId={user?.id ?? ''} actionId={actionId} hasReviewed={reviewedIds.has(req.id)}
+                      onOpenChat={() => setChatTrade(req)}
+                      onLeaveReview={() => { setRatingValue(5); setRatingComment(''); setRatingTrade(req) }}
+                      onViewUser={setViewingUserId}
+                    />
+                  ))}
+                </div>
+            }
           </section>
         </div>
       )}
 
-      {/* ── REQUEST PROMPT MODAL ── */}
+      {/* REQUEST PROMPT MODAL */}
       {requestPrompt && (
-        <div
-          onClick={(e) => { if (e.target === e.currentTarget) setRequestPrompt(null) }}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 50,
-            background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(8px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: 24,
-          }}
-        >
-          <div style={{
-            width: '100%', maxWidth: 480,
-            background: 'var(--bg-card)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: 20,
-            padding: '28px 32px',
-          }}>
-            {/* Header */}
+        <div onClick={e => { if (e.target === e.currentTarget) setRequestPrompt(null) }} style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ width: '100%', maxWidth: 480, background: 'var(--bg-card)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, padding: '28px 32px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--accent)', textTransform: 'uppercase' }}>
-                Trade Request
-              </div>
-              <button
-                onClick={() => setRequestPrompt(null)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 18, cursor: 'pointer', lineHeight: 1 }}
-              >
-                ✕
-              </button>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--accent)', textTransform: 'uppercase' }}>Trade Request</div>
+              <button onClick={() => setRequestPrompt(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 18, cursor: 'pointer', lineHeight: 1 }}>✕</button>
             </div>
-
-            <h2 style={{ fontSize: 19, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6, lineHeight: 1.3 }}>
-              {requestPrompt.title}
-            </h2>
+            <h2 style={{ fontSize: 19, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6, lineHeight: 1.3 }}>{requestPrompt.title}</h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 22 }}>
-              <span style={{ fontSize: 12, color: '#4ade80', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 9999, padding: '3px 10px' }}>
-                {requestPrompt.skill_offered}
-              </span>
+              <span style={{ fontSize: 12, color: '#4ade80', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 9999, padding: '3px 10px' }}>{requestPrompt.skill_offered}</span>
               <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>⇄</span>
-              <span style={{ fontSize: 12, color: 'var(--text-secondary)', background: 'rgba(138,21,56,0.12)', border: '1px solid rgba(138,21,56,0.3)', borderRadius: 9999, padding: '3px 10px' }}>
-                {requestPrompt.skill_wanted}
-              </span>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)', background: 'rgba(138,21,56,0.12)', border: '1px solid rgba(138,21,56,0.3)', borderRadius: 9999, padding: '3px 10px' }}>{requestPrompt.skill_wanted}</span>
             </div>
-
             <div style={{ marginBottom: 22 }}>
-              <label style={{
-                display: 'block', fontSize: 14, fontWeight: 600,
-                color: 'var(--text-primary)', marginBottom: 10, lineHeight: 1.5,
-              }}>
-                What makes you the right fit for this trade?
-              </label>
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
-                Give the listing owner a reason to say yes — share your experience, what you bring to the table, or why this exchange excites you.
-              </p>
-              <textarea
-                autoFocus
-                value={requestMessage}
-                onChange={(e) => setRequestMessage(e.target.value)}
-                placeholder="e.g. I've shipped three React projects and have been looking for someone to level up my design eye — your portfolio immediately stood out…"
-                rows={4}
-                style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.65 }}
-              />
-              <div style={{ textAlign: 'right', fontSize: 11, color: requestMessage.length > 400 ? '#f87171' : 'var(--text-muted)', marginTop: 5 }}>
-                {requestMessage.length} / 400
-              </div>
+              <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10, lineHeight: 1.5 }}>What makes you the right fit for this trade?</label>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.5 }}>Give the listing owner a reason to say yes — share your experience, what you bring to the table, or why this exchange excites you.</p>
+              <textarea autoFocus value={requestMessage} onChange={e => setRequestMessage(e.target.value)} placeholder="e.g. I've shipped three React projects and have been looking for someone to level up my design eye…" rows={4} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.65 }} />
+              <div style={{ textAlign: 'right', fontSize: 11, color: requestMessage.length > 400 ? '#f87171' : 'var(--text-muted)', marginTop: 5 }}>{requestMessage.length} / 400</div>
             </div>
-
             <div style={{ display: 'flex', gap: 12 }}>
-              <button
-                onClick={() => setRequestPrompt(null)}
-                style={{
-                  flex: 1, padding: '11px',
-                  background: 'transparent',
-                  border: '1px solid rgba(87,65,68,0.3)',
-                  borderRadius: 10, color: 'var(--text-muted)',
-                  fontSize: 14, cursor: 'pointer',
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleRequest}
-                disabled={!requestMessage.trim() || requestMessage.length > 400 || !!requestingId}
-                style={{
-                  flex: 2, padding: '11px',
-                  background: !requestMessage.trim() || requestMessage.length > 400 || !!requestingId
-                    ? 'rgba(138,21,56,0.3)'
-                    : 'var(--accent)',
-                  border: 'none', borderRadius: 10,
-                  color: '#fff', fontSize: 14, fontWeight: 600,
-                  cursor: !requestMessage.trim() || !!requestingId ? 'default' : 'pointer',
-                  opacity: requestingId === requestPrompt.id ? 0.6 : 1,
-                  transition: 'background 0.15s',
-                }}
-              >
-                {requestingId === requestPrompt.id ? 'Sending…' : 'Send Request'}
+              <button onClick={() => setRequestPrompt(null)} style={{ flex: 1, padding: '11px', background: 'transparent', border: '1px solid rgba(87,65,68,0.3)', borderRadius: 10, color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={handleRequest} disabled={!requestMessage.trim() || requestMessage.length > 400 || !!requestingId}
+                style={{ flex: 2, padding: '11px', background: !requestMessage.trim() || requestMessage.length > 400 || !!requestingId ? 'rgba(138,21,56,0.3)' : 'var(--accent)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 14, fontWeight: 600, cursor: !requestMessage.trim() || !!requestingId ? 'default' : 'pointer', transition: 'background 0.15s' }}>
+                {requestingId ? 'Sending…' : 'Send Request'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── CREATE / EDIT MODAL ── */}
+      {/* CREATE / EDIT MODAL */}
       {showModal && (
-        <div
-          onClick={(e) => { if (e.target === e.currentTarget) setShowModal(false) }}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 50,
-            background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(8px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: 24,
-          }}
-        >
-          <div style={{
-            width: '100%', maxWidth: 520,
-            background: 'var(--bg-card)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: 20,
-            padding: '28px 32px',
-            maxHeight: '90vh', overflowY: 'auto',
-          }}>
+        <div onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }} style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ width: '100%', maxWidth: 520, background: 'var(--bg-card)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, padding: '28px 32px', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-              <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)' }}>
-                {editTarget ? 'Edit Listing' : 'List a Skill'}
-              </h2>
-              <button
-                onClick={() => setShowModal(false)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}
-              >
-                ✕
-              </button>
+              <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)' }}>{editTarget ? 'Edit Listing' : 'List a Skill'}</h2>
+              <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}>✕</button>
             </div>
-
             <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-              <Field label="Listing Title *">
-                <input
-                  value={form.title}
-                  onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-                  placeholder="e.g. Trade React dev for logo design"
-                  style={inputStyle}
-                />
-              </Field>
-
+              <Field label="Listing Title *"><input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. Trade React dev for logo design" style={inputStyle} /></Field>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <Field label="Skill I Offer *">
-                  <input
-                    value={form.skill_offered}
-                    onChange={(e) => setForm((f) => ({ ...f, skill_offered: e.target.value }))}
-                    placeholder="e.g. React Dev"
-                    style={inputStyle}
-                  />
-                </Field>
-                <Field label="Skill I Need *">
-                  <input
-                    value={form.skill_wanted}
-                    onChange={(e) => setForm((f) => ({ ...f, skill_wanted: e.target.value }))}
-                    placeholder="e.g. Logo Design"
-                    style={inputStyle}
-                  />
-                </Field>
+                <Field label="Skill I Offer *"><input value={form.skill_offered} onChange={e => setForm(f => ({ ...f, skill_offered: e.target.value }))} placeholder="e.g. React Dev" style={inputStyle} /></Field>
+                <Field label="Skill I Need *"><input value={form.skill_wanted} onChange={e => setForm(f => ({ ...f, skill_wanted: e.target.value }))} placeholder="e.g. Logo Design" style={inputStyle} /></Field>
               </div>
-
               <Field label="Category">
-                <select
-                  value={form.category}
-                  onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-                  style={{ ...inputStyle, cursor: 'pointer' }}
-                >
-                  {CATEGORIES.filter((c) => c !== 'All').map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
+                <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} style={{ ...inputStyle, cursor: 'pointer' }}>
+                  {CATEGORIES.filter(c => c !== 'All').map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </Field>
-
-              <Field label="Description">
-                <textarea
-                  value={form.description}
-                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                  placeholder="More detail about the trade, your experience level, timeline…"
-                  rows={3}
-                  style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }}
-                />
-              </Field>
+              <Field label="Description"><textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="More detail about the trade, experience level, timeline…" rows={3} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }} /></Field>
             </div>
-
             <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-              <button
-                onClick={() => setShowModal(false)}
-                style={{
-                  flex: 1, padding: '11px',
-                  background: 'transparent',
-                  border: '1px solid rgba(87,65,68,0.3)',
-                  borderRadius: 10, color: 'var(--text-muted)',
-                  fontSize: 14, cursor: 'pointer',
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saving || !form.title.trim() || !form.skill_offered.trim() || !form.skill_wanted.trim()}
-                style={{
-                  flex: 2, padding: '11px',
-                  background: saving || !form.title.trim() || !form.skill_offered.trim() || !form.skill_wanted.trim()
-                    ? 'rgba(138,21,56,0.3)'
-                    : 'var(--accent)',
-                  border: 'none', borderRadius: 10,
-                  color: '#fff', fontSize: 14, fontWeight: 600,
-                  cursor: saving ? 'default' : 'pointer',
-                  opacity: saving ? 0.7 : 1,
-                  transition: 'background 0.15s',
-                }}
-              >
+              <button onClick={() => setShowModal(false)} style={{ flex: 1, padding: '11px', background: 'transparent', border: '1px solid rgba(87,65,68,0.3)', borderRadius: 10, color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={handleSave} disabled={saving || !form.title.trim() || !form.skill_offered.trim() || !form.skill_wanted.trim()}
+                style={{ flex: 2, padding: '11px', background: saving || !form.title.trim() || !form.skill_offered.trim() || !form.skill_wanted.trim() ? 'rgba(138,21,56,0.3)' : 'var(--accent)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 14, fontWeight: 600, cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1, transition: 'background 0.15s' }}>
                 {saving ? 'Saving…' : editTarget ? 'Save Changes' : 'Post Listing'}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* TRADE CHAT MODAL */}
+      {chatTrade && createPortal(
+        <TradeChatModal trade={chatTrade} currentUserId={user?.id ?? ''}
+          onClose={() => { setChatTrade(null); computeUnread(incoming, outgoing) }}
+          onMarkComplete={handleMarkComplete}
+        />,
+        document.body
+      )}
+
+      {/* RATING MODAL */}
+      {ratingTrade && createPortal(
+        <div onClick={e => { if (e.target === e.currentTarget) setRatingTrade(null) }} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ width: '100%', maxWidth: 420, background: 'var(--bg-card)', border: '1px solid rgba(233,193,118,0.2)', borderRadius: 22, padding: '32px 32px 28px' }}>
+            <div style={{ textAlign: 'center', marginBottom: 24 }}>
+              <div style={{ fontSize: 36, marginBottom: 10 }}>⭐</div>
+              <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>Rate your collaborator</h2>
+              <p style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.55 }}>
+                How was your trade on <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>"{(ratingTrade.listing as ListingRow | null)?.title ?? 'this listing'}"</span>?
+              </p>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+              <StarPicker value={ratingValue} onChange={setRatingValue} />
+            </div>
+            <textarea value={ratingComment} onChange={e => setRatingComment(e.target.value)} placeholder="Add a short review (optional)…" rows={3} maxLength={200} style={{ ...inputStyle, resize: 'none', lineHeight: 1.6, marginBottom: 6 }} />
+            <div style={{ textAlign: 'right', fontSize: 11, color: 'var(--text-muted)', marginBottom: 20 }}>{ratingComment.length} / 200</div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setRatingTrade(null)} style={{ flex: 1, padding: '11px', background: 'transparent', border: '1px solid rgba(87,65,68,0.3)', borderRadius: 10, color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer' }}>Skip</button>
+              <button onClick={submitRating} disabled={submittingRating} style={{ flex: 2, padding: '11px', background: 'var(--accent)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 14, fontWeight: 600, cursor: submittingRating ? 'default' : 'pointer', opacity: submittingRating ? 0.7 : 1 }}>
+                {submittingRating ? 'Submitting…' : 'Submit Review'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* USER PROFILE MODAL */}
+      {viewingUserId && createPortal(
+        <UserProfileModal userId={viewingUserId} onClose={() => setViewingUserId(null)} />,
+        document.body
+      )}
+    </div>
+  )
+}
+
+// ── TradeChatModal ─────────────────────────────────────────────────────────
+
+function TradeChatModal({ trade, currentUserId, onClose, onMarkComplete }: {
+  trade: RequestRow
+  currentUserId: string
+  onClose: () => void
+  onMarkComplete: (id: string) => void
+}) {
+  const [messages, setMessages] = useState<TradeMessage[]>([])
+  const [input, setInput] = useState('')
+  const [sending, setSending] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [confirmComplete, setConfirmComplete] = useState(false)
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+  const [whiteboardOpen, setWhiteboardOpen] = useState(false)
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const listing = trade.listing as ListingRow | null
+  const listingTitle = listing?.title ?? 'Trade'
+  const otherName = trade.requester_id === currentUserId
+    ? (listing?.profile?.full_name ?? 'Partner')
+    : (trade.requester?.full_name ?? 'Partner')
+
+  // Stable Jitsi room per trade
+  const callUrl = `https://meet.jit.si/SPAP-${trade.id.replace(/-/g, '').slice(0, 20)}`
+
+  const loadMessages = useCallback(async () => {
+    const { data } = await supabase
+      .from('skill_trade_messages')
+      .select('*, profile:profiles(full_name)')
+      .eq('request_id', trade.id)
+      .order('created_at', { ascending: true })
+    setMessages((data as TradeMessage[]) ?? [])
+    markRead(trade.id)
+  }, [trade.id])
+
+  useEffect(() => {
+    loadMessages()
+    const ch = supabase.channel(`chat-${trade.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'skill_trade_messages', filter: `request_id=eq.${trade.id}` }, () => loadMessages())
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [trade.id, loadMessages])
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
+
+  const sendMessage = async (extraPayload?: { media_url: string; media_type: string; content?: string }) => {
+    const text = extraPayload ? (extraPayload.content ?? '') : input.trim()
+    if (!extraPayload && !text) return
+    if (sending) return
+    setSending(true)
+    if (!extraPayload) setInput('')
+    await supabase.from('skill_trade_messages').insert({
+      request_id: trade.id,
+      sender_id: currentUserId,
+      content: text || '',
+      ...(extraPayload ? { media_url: extraPayload.media_url, media_type: extraPayload.media_type } : {}),
+    })
+    setSending(false)
+  }
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!fileInputRef.current) return
+    fileInputRef.current.value = ''
+    if (!file) return
+
+    const mime = file.type
+    let mediaType: 'image' | 'video' | 'file' = 'file'
+    if (mime.startsWith('image/')) mediaType = 'image'
+    else if (mime.startsWith('video/')) mediaType = 'video'
+
+    if (file.size > 500 * 1024 * 1024) {
+      alert('File too large. Max 500 MB.')
+      return
+    }
+
+    setUploading(true)
+    setUploadProgress(10)
+    const ext = file.name.split('.').pop() ?? 'bin'
+    const path = `${currentUserId}/${trade.id}/${Date.now()}.${ext}`
+
+    const { data: uploaded, error } = await supabase.storage
+      .from('trade-media')
+      .upload(path, file, { contentType: mime, upsert: false })
+
+    setUploadProgress(80)
+    if (error || !uploaded) { setUploading(false); setUploadProgress(0); alert('Upload failed.'); return }
+
+    const { data: { publicUrl } } = supabase.storage.from('trade-media').getPublicUrl(uploaded.path)
+    setUploadProgress(100)
+    await sendMessage({ media_url: publicUrl, media_type: mediaType, content: file.name })
+    setUploading(false)
+    setUploadProgress(0)
+  }
+
+  return (
+    <>
+      <div onClick={e => { if (e.target === e.currentTarget) onClose() }} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div style={{ width: '100%', maxWidth: 560, height: '82vh', background: 'var(--bg-card)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 22, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+
+          {/* Header */}
+          <div style={{ padding: '14px 18px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(41,28,30,0.5)', flexShrink: 0 }}>
+            <Avatar name={otherName} size={36} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 1 }}>{otherName}</div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{listingTitle}</div>
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+              {/* Video call */}
+              <a href={callUrl} target="_blank" rel="noopener noreferrer"
+                style={{ padding: '5px 11px', background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: 8, color: '#a5b4fc', fontSize: 12, fontWeight: 700, cursor: 'pointer', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
+                📹 Call
+              </a>
+              {/* Whiteboard */}
+              <button onClick={() => setWhiteboardOpen(true)}
+                style={{ padding: '5px 11px', background: 'rgba(233,193,118,0.1)', border: '1px solid rgba(233,193,118,0.25)', borderRadius: 8, color: 'var(--gold)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                🖊️ Board
+              </button>
+              {!confirmComplete ? (
+                <button onClick={() => setConfirmComplete(true)} style={{ padding: '5px 11px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8, color: '#4ade80', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>✓ Done</button>
+              ) : (
+                <>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>Mark done?</span>
+                  <button onClick={() => onMarkComplete(trade.id)} style={{ padding: '4px 9px', background: '#22c55e', border: 'none', borderRadius: 7, color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Yes</button>
+                  <button onClick={() => setConfirmComplete(false)} style={{ padding: '4px 9px', background: 'transparent', border: '1px solid rgba(87,65,68,0.3)', borderRadius: 7, color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer' }}>No</button>
+                </>
+              )}
+              <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✕</button>
+            </div>
+          </div>
+
+          {/* Upload progress */}
+          {uploading && (
+            <div style={{ padding: '6px 18px', background: 'rgba(99,102,241,0.08)', borderBottom: '1px solid rgba(99,102,241,0.15)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+              <div style={{ flex: 1, height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 9999, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${uploadProgress}%`, background: '#a5b4fc', borderRadius: 9999, transition: 'width 0.2s' }} />
+              </div>
+              <span style={{ fontSize: 10, color: '#a5b4fc', whiteSpace: 'nowrap' }}>Uploading…</span>
+            </div>
+          )}
+
+          {/* Messages */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {messages.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)', fontSize: 13 }}>
+                <div style={{ fontSize: 32, marginBottom: 10 }}>💬</div>
+                Say hi to {otherName}! This is the start of your trade.
+              </div>
+            ) : messages.map(msg => {
+              const isMe = msg.sender_id === currentUserId
+              return (
+                <div key={msg.id} style={{ display: 'flex', flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start' }}>
+                  {!isMe && <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3, paddingLeft: 4 }}>{msg.profile?.full_name ?? 'Partner'}</div>}
+
+                  {msg.media_type === 'image' && msg.media_url ? (
+                    <div style={{ maxWidth: '72%', borderRadius: isMe ? '18px 18px 4px 18px' : '18px 18px 18px 4px', overflow: 'hidden', cursor: 'zoom-in', border: '1px solid rgba(255,255,255,0.1)' }}
+                      onClick={() => setLightboxUrl(msg.media_url!)}>
+                      <img src={msg.media_url} alt="media" style={{ display: 'block', maxWidth: '100%', maxHeight: 260, objectFit: 'cover' }} />
+                    </div>
+                  ) : msg.media_type === 'video' && msg.media_url ? (
+                    <div style={{ maxWidth: '72%', borderRadius: isMe ? '18px 18px 4px 18px' : '18px 18px 18px 4px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+                      <video src={msg.media_url} controls style={{ display: 'block', maxWidth: '100%', maxHeight: 260 }} />
+                    </div>
+                  ) : msg.media_type === 'file' && msg.media_url ? (
+                    <a href={msg.media_url} target="_blank" rel="noopener noreferrer"
+                      style={{ maxWidth: '72%', padding: '10px 14px', borderRadius: isMe ? '18px 18px 4px 18px' : '18px 18px 18px 4px', background: isMe ? 'var(--accent)' : 'rgba(255,255,255,0.07)', border: isMe ? 'none' : '1px solid rgba(255,255,255,0.08)', fontSize: 13, color: isMe ? '#fff' : 'var(--text-primary)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 18 }}>📎</span>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{msg.content || 'File'}</span>
+                    </a>
+                  ) : (
+                    <div style={{ maxWidth: '72%', padding: '10px 14px', borderRadius: isMe ? '18px 18px 4px 18px' : '18px 18px 18px 4px', background: isMe ? 'var(--accent)' : 'rgba(255,255,255,0.07)', border: isMe ? 'none' : '1px solid rgba(255,255,255,0.08)', fontSize: 14, color: isMe ? '#fff' : 'var(--text-primary)', lineHeight: 1.55, wordBreak: 'break-word' }}>
+                      {msg.content}
+                    </div>
+                  )}
+
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 3, paddingLeft: 4, paddingRight: 4 }}>
+                    {new Date(msg.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                  </div>
+                </div>
+              )
+            })}
+            <div ref={bottomRef} />
+          </div>
+
+          {/* Input */}
+          <div style={{ padding: '10px 16px 14px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0 }}>
+            <input ref={fileInputRef} type="file" accept="image/*,video/*,application/pdf" style={{ display: 'none' }} onChange={handleFileChange} />
+            <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
+              title="Attach image, video, or file"
+              style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)', fontSize: 16, cursor: uploading ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: uploading ? 0.4 : 1 }}>
+              📎
+            </button>
+            <textarea value={input} onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
+              placeholder="Message… (Enter to send)" rows={1} maxLength={1000}
+              style={{ flex: 1, background: 'rgba(41,28,30,0.8)', border: '1px solid rgba(87,65,68,0.35)', borderRadius: 12, padding: '9px 14px', color: 'var(--text-primary)', fontSize: 14, outline: 'none', resize: 'none', lineHeight: 1.5 }}
+            />
+            <button onClick={() => sendMessage()} disabled={!input.trim() || sending}
+              style={{ width: 36, height: 36, borderRadius: '50%', background: input.trim() ? 'var(--accent)' : 'rgba(87,65,68,0.2)', border: 'none', color: '#fff', fontSize: 18, cursor: input.trim() ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'background 0.15s' }}>
+              ↑
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Image lightbox inside portal */}
+      {lightboxUrl && (
+        <div onClick={() => setLightboxUrl(null)} style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.95)', backdropFilter: 'blur(18px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, cursor: 'zoom-out' }}>
+          <img src={lightboxUrl} alt="" onClick={e => e.stopPropagation()} style={{ maxWidth: '92vw', maxHeight: '88vh', objectFit: 'contain', borderRadius: 12, boxShadow: '0 32px 80px rgba(0,0,0,0.7)', cursor: 'default' }} />
+          <button onClick={() => setLightboxUrl(null)} style={{ position: 'absolute', top: 18, right: 18, width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+        </div>
+      )}
+
+      {/* Whiteboard */}
+      {whiteboardOpen && (
+        <WhiteboardModal
+          trade={trade}
+          currentUserId={currentUserId}
+          myName={trade.requester_id === currentUserId
+            ? (trade.requester?.full_name ?? 'Me')
+            : ((trade.listing as ListingRow | null)?.profile?.full_name ?? 'Me')}
+          otherName={otherName}
+          onClose={() => setWhiteboardOpen(false)}
+        />
+      )}
+    </>
+  )
+}
+
+// ── UserProfileModal ───────────────────────────────────────────────────────
+
+function UserProfileModal({ userId, onClose }: { userId: string; onClose: () => void }) {
+  const [loading, setLoading] = useState(true)
+  const [profile, setProfile] = useState<{ full_name: string | null; bio: string | null; skills: string[]; university?: { name: string; short_name: string | null } | null } | null>(null)
+  const [listings, setListings] = useState<ListingRow[]>([])
+  const [reviews, setReviews] = useState<ReviewRow[]>([])
+  const [avgRating, setAvgRating] = useState<number | null>(null)
+
+  useEffect(() => {
+    async function load() {
+      const [pr, lr, rr] = await Promise.all([
+        supabase.from('profiles').select('full_name, bio, skills, university:universities(name, short_name)').eq('id', userId).single(),
+        supabase.from('skill_listings').select('id, title, skill_offered, skill_wanted, category, user_id').eq('user_id', userId).eq('is_active', true).limit(4),
+        supabase.from('skill_trade_reviews').select('id, rating, comment, created_at, reviewer_id').eq('reviewee_id', userId).order('created_at', { ascending: false }).limit(5),
+      ])
+      setProfile(pr.data as typeof profile)
+      setListings((lr.data as unknown as ListingRow[]) ?? [])
+      // Fetch reviewer names separately
+      const revs = (rr.data ?? []) as { id: string; rating: number; comment: string | null; created_at: string; reviewer_id: string }[]
+      if (revs.length > 0) {
+        const ids = revs.map(r => r.reviewer_id)
+        const { data: names } = await supabase.from('profiles').select('id, full_name').in('id', ids)
+        const nameMap = Object.fromEntries((names ?? []).map(p => [p.id, p.full_name]))
+        setReviews(revs.map(r => ({ ...r, reviewee_id: userId, profile: { full_name: nameMap[r.reviewer_id] ?? null } } as ReviewRow)))
+        setAvgRating(revs.reduce((s, r) => s + r.rating, 0) / revs.length)
+      }
+      setLoading(false)
+    }
+    load()
+  }, [userId])
+
+  return (
+    <div onClick={e => { if (e.target === e.currentTarget) onClose() }} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ width: '100%', maxWidth: 480, background: 'var(--bg-card)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 22, maxHeight: '86vh', overflowY: 'auto' }}>
+        {/* Header */}
+        <div style={{ padding: '24px 26px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', position: 'sticky', top: 0, background: 'var(--bg-card)', borderRadius: '22px 22px 0 0', zIndex: 1 }}>
+          {!loading && profile && (
+            <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+              <Avatar name={profile.full_name} size={52} />
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>{profile.full_name ?? 'Unknown'}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  {avgRating !== null && <span style={{ fontSize: 13, color: '#e9c176', fontWeight: 600 }}>★ {avgRating.toFixed(1)} <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({reviews.length})</span></span>}
+                  {profile.university && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{(profile.university as { name: string; short_name: string | null }).short_name ?? (profile.university as { name: string; short_name: string | null }).name}</span>}
+                </div>
+              </div>
+            </div>
+          )}
+          {loading && <div style={{ height: 40 }} />}
+          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✕</button>
+        </div>
+
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-muted)', fontSize: 13 }}>Loading profile…</div>
+        ) : (
+          <div style={{ padding: '20px 26px 28px', display: 'flex', flexDirection: 'column', gap: 22 }}>
+            {profile?.bio && (
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 8 }}>About</div>
+                <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.65, margin: 0 }}>{profile.bio}</p>
+              </div>
+            )}
+            {profile?.skills && profile.skills.length > 0 && (
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 8 }}>Skills</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                  {profile.skills.map(s => (
+                    <span key={s} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 9999, background: 'rgba(138,21,56,0.12)', border: '1px solid rgba(138,21,56,0.25)', color: 'var(--text-secondary)', fontWeight: 500 }}>{s}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {listings.length > 0 && (
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 8 }}>Active Listings · {listings.length}</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {listings.map(l => {
+                    const cc = CATEGORY_COLORS[l.category ?? ''] ?? 'var(--text-muted)'
+                    return (
+                      <div key={l.id} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 3 }}>{l.title}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            <span style={{ color: '#4ade80' }}>{l.skill_offered}</span>
+                            <span style={{ margin: '0 5px', opacity: 0.5 }}>⇄</span>
+                            <span>{l.skill_wanted}</span>
+                          </div>
+                        </div>
+                        {l.category && <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.06em', color: cc, background: `${cc}18`, border: `1px solid ${cc}40`, borderRadius: 6, padding: '2px 7px', flexShrink: 0 }}>{l.category.toUpperCase()}</span>}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+            {reviews.length > 0 && (
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 8 }}>Reviews</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {reviews.map(rev => (
+                    <div key={rev.id} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, padding: '12px 14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: rev.comment ? 8 : 0 }}>
+                        <Avatar name={rev.profile?.full_name} size={24} />
+                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', flex: 1 }}>{rev.profile?.full_name ?? 'Trade Partner'}</span>
+                        <span style={{ fontSize: 13, color: '#e9c176' }}>{'★'.repeat(rev.rating)}{'☆'.repeat(5 - rev.rating)}</span>
+                      </div>
+                      {rev.comment && <p style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.55, margin: 0 }}>{rev.comment}</p>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {!profile?.bio && (!profile?.skills || profile.skills.length === 0) && listings.length === 0 && reviews.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-muted)', fontSize: 13 }}>This user hasn't filled out their profile yet.</div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
 // ── Listing Card ───────────────────────────────────────────────────────────
 
-function ListingCard({
-  listing,
-  action,
-  dimmed,
-}: {
-  listing: ListingRow
-  action?: React.ReactNode
-  dimmed?: boolean
-}) {
-  const catColor = CATEGORY_COLORS[listing.category ?? ''] ?? 'var(--text-muted)'
-
+function ListingCard({ listing, action, dimmed, onViewUser }: { listing: ListingRow; action?: React.ReactNode; dimmed?: boolean; onViewUser?: () => void }) {
+  const catColor = CATEGORY_COLORS[listing.category ?? ''] ?? '#6b7280'
   return (
-    <div
-      className="listing-card"
-      style={{
-        background: 'rgba(255,255,255,0.04)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: 18,
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
-        opacity: dimmed ? 0.5 : 1,
-        transition: 'border-color 0.2s, opacity 0.2s',
-      }}
-    >
-      {/* Card header */}
-      <div style={{
-        padding: '18px 20px 14px',
-        borderBottom: '1px solid rgba(255,255,255,0.05)',
-        background: 'rgba(41,28,30,0.4)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-          <Avatar name={listing.profile?.full_name} size={34} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {listing.profile?.full_name ?? 'Someone'}
-            </div>
+    <div className="listing-card" style={{
+      background: 'var(--bg-card)', border: '1px solid var(--border)',
+      borderTop: `3px solid ${catColor}`,
+      borderRadius: 16, overflow: 'hidden', display: 'flex', flexDirection: 'column',
+      opacity: dimmed ? 0.52 : 1,
+    }}>
+      <div style={{ padding: '16px 18px', flex: 1, display: 'flex', flexDirection: 'column', gap: 13 }}>
+        {/* Category + author */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          {listing.category
+            ? <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', color: catColor, textTransform: 'uppercase' }}>{listing.category}</span>
+            : <span />}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: onViewUser ? 'pointer' : 'default', flexShrink: 0 }} onClick={onViewUser}>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500, maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{listing.profile?.full_name ?? 'Anonymous'}</span>
+            <Avatar name={listing.profile?.full_name} size={26} />
           </div>
-          {listing.category && (
-            <span style={{
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: '0.06em',
-              color: catColor,
-              background: `${catColor}18`,
-              border: `1px solid ${catColor}40`,
-              borderRadius: 6,
-              padding: '3px 8px',
-              flexShrink: 0,
-            }}>
-              {listing.category.toUpperCase()}
-            </span>
-          )}
         </div>
 
-        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.35, marginBottom: 2 }}>
-          {listing.title}
+        {/* Title */}
+        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>{listing.title}</div>
+
+        {/* Skill exchange */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 28px 1fr', alignItems: 'center', background: 'rgba(0,0,0,0.22)', borderRadius: 10, padding: '11px 14px', gap: 4 }}>
+          <div>
+            <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.1em', color: 'rgba(74,222,128,0.65)', textTransform: 'uppercase', marginBottom: 4 }}>Offers</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#4ade80', wordBreak: 'break-word' }}>{listing.skill_offered}</div>
+          </div>
+          <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.15)', fontSize: 18, lineHeight: 1 }}>⇄</div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 4 }}>Wants</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', wordBreak: 'break-word' }}>{listing.skill_wanted}</div>
+          </div>
         </div>
+
+        {listing.description && (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{listing.description}</div>
+        )}
       </div>
 
-      {/* Skill exchange */}
-      <div style={{ padding: '14px 20px', display: 'flex', gap: 0, alignItems: 'stretch' }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: 5, textTransform: 'uppercase' }}>
-            Offers
-          </div>
-          <div style={{
-            display: 'inline-block',
-            padding: '5px 12px',
-            background: 'rgba(34,197,94,0.1)',
-            border: '1px solid rgba(34,197,94,0.25)',
-            borderRadius: 9999,
-            fontSize: 13,
-            fontWeight: 600,
-            color: '#4ade80',
-          }}>
-            {listing.skill_offered}
-          </div>
-        </div>
-
-        <div style={{
-          display: 'flex', alignItems: 'center', padding: '0 12px',
-          color: 'var(--text-muted)', fontSize: 16,
-        }}>
-          ⇄
-        </div>
-
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: 5, textTransform: 'uppercase' }}>
-            Seeks
-          </div>
-          <div style={{
-            display: 'inline-block',
-            padding: '5px 12px',
-            background: 'rgba(138,21,56,0.12)',
-            border: '1px solid rgba(138,21,56,0.3)',
-            borderRadius: 9999,
-            fontSize: 13,
-            fontWeight: 600,
-            color: 'var(--text-secondary)',
-          }}>
-            {listing.skill_wanted}
-          </div>
-        </div>
-      </div>
-
-      {/* Description */}
-      {listing.description && (
-        <div style={{
-          padding: '0 20px 14px',
-          fontSize: 13,
-          color: 'var(--text-muted)',
-          lineHeight: 1.55,
-          display: '-webkit-box',
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: 'vertical',
-          overflow: 'hidden',
-        }}>
-          {listing.description}
-        </div>
-      )}
-
-      {/* Action */}
-      {action && (
-        <div style={{ padding: '0 20px 18px', marginTop: 'auto' }}>
-          {action}
-        </div>
-      )}
+      {action && <div style={{ padding: '0 18px 16px' }}>{action}</div>}
     </div>
   )
 }
 
 // ── Request Row ────────────────────────────────────────────────────────────
 
-const STATUS_STYLES: Record<string, { bg: string; color: string; label: string }> = {
-  pending:   { bg: 'rgba(233,193,118,0.12)', color: 'var(--gold)',    label: 'Pending'   },
-  accepted:  { bg: 'rgba(34,197,94,0.12)',   color: '#4ade80',        label: 'Accepted'  },
-  rejected:  { bg: 'rgba(239,68,68,0.12)',   color: '#f87171',        label: 'Rejected'  },
-  completed: { bg: 'rgba(99,102,241,0.12)',  color: '#a5b4fc',        label: 'Completed' },
+const STATUS_STYLES: Record<string, { bg: string; border: string; color: string; label: string; dot: string }> = {
+  pending:   { bg: 'rgba(233,193,118,0.07)', border: 'rgba(233,193,118,0.2)', color: 'var(--gold)',  label: 'Awaiting Response', dot: '#e9c176' },
+  accepted:  { bg: 'rgba(34,197,94,0.07)',   border: 'rgba(34,197,94,0.2)',   color: '#4ade80',      label: 'Accepted',          dot: '#4ade80' },
+  rejected:  { bg: 'rgba(239,68,68,0.07)',   border: 'rgba(239,68,68,0.2)',   color: '#f87171',      label: 'Declined',          dot: '#f87171' },
+  completed: { bg: 'rgba(99,102,241,0.07)',  border: 'rgba(99,102,241,0.2)',  color: '#a5b4fc',      label: 'Completed',         dot: '#a5b4fc' },
 }
 
-function RequestRow({
-  req,
-  mode,
-  actionId,
-  onAccept,
-  onReject,
-}: {
+function ReqCard({ req, mode, currentUserId, actionId, hasReviewed, onAccept, onReject, onOpenChat, onLeaveReview, onViewUser }: {
   req: RequestRow
   mode: 'incoming' | 'outgoing'
+  currentUserId: string
   actionId: string | null
+  hasReviewed?: boolean
   onAccept?: () => void
   onReject?: () => void
+  onOpenChat?: () => void
+  onLeaveReview?: () => void
+  onViewUser?: (uid: string) => void
 }) {
-  const style = STATUS_STYLES[req.status] ?? STATUS_STYLES.pending
+  const st = STATUS_STYLES[req.status] ?? STATUS_STYLES.pending
   const busy = actionId === req.id
-
-  const listingTitle = (req.listing as ListingRow | null | undefined)?.title ?? '—'
-  const skillOffered = (req.listing as ListingRow | null | undefined)?.skill_offered
-  const skillWanted = (req.listing as ListingRow | null | undefined)?.skill_wanted
+  const listing = req.listing as ListingRow | null
+  const listingTitle = listing?.title ?? '—'
+  const skillOffered = listing?.skill_offered
+  const skillWanted = listing?.skill_wanted
+  const otherUserId = mode === 'incoming' ? req.requester_id : listing?.user_id
   const personName = mode === 'incoming'
-    ? (req.requester as { full_name: string | null } | null | undefined)?.full_name ?? 'Someone'
-    : ((req.listing as { profile?: { full_name: string | null } | null } | null | undefined)?.profile?.full_name ?? 'Someone')
+    ? (req.requester?.full_name ?? 'Someone')
+    : (listing?.profile?.full_name ?? 'Someone')
 
   return (
-    <div style={{
-      background: 'rgba(255,255,255,0.03)',
-      border: '1px solid rgba(255,255,255,0.07)',
-      borderRadius: 12,
-      padding: '14px 18px',
-      display: 'flex',
-      alignItems: 'center',
-      gap: 14,
-      flexWrap: 'wrap',
-    }}>
-      <Avatar name={mode === 'incoming' ? personName : undefined} size={36} />
-
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>
-          {mode === 'incoming' ? personName : listingTitle}
+    <div style={{ background: 'var(--bg-card)', border: `1px solid ${st.border}`, borderRadius: 14, overflow: 'hidden' }}>
+      {/* Status bar + context */}
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.04)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <Avatar name={mode === 'incoming' ? personName : undefined} size={34} onClick={otherUserId ? () => onViewUser?.(otherUserId) : undefined} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span onClick={otherUserId ? () => onViewUser?.(otherUserId) : undefined}
+              style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', cursor: otherUserId ? 'pointer' : 'default' }}>
+              {mode === 'incoming' ? personName : listingTitle}
+            </span>
+            {mode === 'incoming' && (
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>on <span style={{ color: 'var(--text-secondary)' }}>"{listingTitle}"</span></span>
+            )}
+          </div>
+          {mode === 'outgoing' && skillOffered && skillWanted && (
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+              <span style={{ color: '#4ade80' }}>{skillOffered}</span>
+              <span style={{ margin: '0 5px', opacity: 0.4 }}>→</span>
+              <span style={{ color: 'var(--text-secondary)' }}>{skillWanted}</span>
+            </div>
+          )}
         </div>
-        {mode === 'incoming' && (
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: req.message ? 8 : 0 }}>
-            on listing: <span style={{ color: 'var(--text-secondary)' }}>{listingTitle}</span>
-          </div>
-        )}
-        {mode === 'incoming' && req.message && (
-          <div style={{
-            fontSize: 13,
-            color: 'var(--text-secondary)',
-            lineHeight: 1.55,
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(255,255,255,0.07)',
-            borderLeft: '3px solid var(--accent)',
-            borderRadius: 8,
-            padding: '9px 12px',
-            marginTop: 4,
-          }}>
-            {req.message}
-          </div>
-        )}
-        {mode === 'outgoing' && skillOffered && skillWanted && (
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-            <span style={{ color: '#4ade80' }}>{skillOffered}</span>
-            <span style={{ margin: '0 6px', opacity: 0.5 }}>⇄</span>
-            <span style={{ color: 'var(--text-secondary)' }}>{skillWanted}</span>
-          </div>
-        )}
+        {/* Status badge */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 12px', borderRadius: 9999, background: st.bg, border: `1px solid ${st.border}`, flexShrink: 0 }}>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: st.dot }} />
+          <span style={{ fontSize: 11, fontWeight: 700, color: st.color, letterSpacing: '0.05em' }}>{st.label}</span>
+        </div>
       </div>
 
-      {/* Status badge */}
-      <span style={{
-        padding: '4px 12px',
-        borderRadius: 9999,
-        background: style.bg,
-        color: style.color,
-        fontSize: 11,
-        fontWeight: 700,
-        letterSpacing: '0.06em',
-        flexShrink: 0,
-      }}>
-        {style.label.toUpperCase()}
-      </span>
-
-      {/* Incoming actions */}
-      {mode === 'incoming' && req.status === 'pending' && (
-        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-          <button
-            onClick={onReject}
-            disabled={busy}
-            style={{
-              padding: '6px 14px',
-              background: 'transparent',
-              border: '1px solid rgba(87,65,68,0.3)',
-              borderRadius: 7,
-              color: 'var(--text-muted)',
-              fontSize: 12,
-              fontWeight: 500,
-              cursor: busy ? 'default' : 'pointer',
-              opacity: busy ? 0.5 : 1,
-            }}
-          >
-            Decline
-          </button>
-          <button
-            onClick={onAccept}
-            disabled={busy}
-            style={{
-              padding: '6px 14px',
-              background: 'var(--accent)',
-              border: 'none',
-              borderRadius: 7,
-              color: '#fff',
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: busy ? 'default' : 'pointer',
-              opacity: busy ? 0.5 : 1,
-            }}
-          >
-            Accept
-          </button>
+      {/* Message (incoming only) */}
+      {mode === 'incoming' && req.message && (
+        <div style={{ padding: '12px 16px', background: 'rgba(0,0,0,0.15)', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6 }}>Their message</div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>{req.message}</div>
         </div>
       )}
+
+      {/* Actions */}
+      <div style={{ padding: '10px 16px', display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'center' }}>
+        {mode === 'incoming' && req.status === 'pending' && (
+          <>
+            <button className="action-btn" onClick={onReject} disabled={busy} style={{ padding: '7px 16px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-muted)', fontSize: 12, fontWeight: 600, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1, transition: 'opacity 0.15s' }}>Decline</button>
+            <button className="action-btn" onClick={onAccept} disabled={busy} style={{ padding: '7px 18px', background: 'var(--accent)', border: 'none', borderRadius: 8, color: '#fff', fontSize: 12, fontWeight: 700, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1, boxShadow: '0 2px 12px rgba(138,21,56,0.4)', transition: 'opacity 0.15s' }}>Accept Trade</button>
+          </>
+        )}
+        {req.status === 'accepted' && (
+          <button className="action-btn" onClick={onOpenChat} style={{ padding: '7px 18px', background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.3)', borderRadius: 8, color: '#38bdf8', fontSize: 12, fontWeight: 700, cursor: 'pointer', transition: 'opacity 0.15s' }}>Open Chat</button>
+        )}
+        {req.status === 'completed' && !hasReviewed && (
+          <button className="action-btn" onClick={onLeaveReview} style={{ padding: '7px 18px', background: 'rgba(233,193,118,0.1)', border: '1px solid rgba(233,193,118,0.3)', borderRadius: 8, color: 'var(--gold)', fontSize: 12, fontWeight: 700, cursor: 'pointer', transition: 'opacity 0.15s' }}>Leave a Review</button>
+        )}
+        {req.status === 'completed' && hasReviewed && (
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ color: '#4ade80' }}>✓</span> Review submitted
+          </span>
+        )}
+        {req.status === 'rejected' && (
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{mode === 'outgoing' ? 'Your request was declined.' : 'You declined this request.'}</span>
+        )}
+        {req.status === 'pending' && mode === 'outgoing' && (
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Waiting for a response…</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── WhiteboardModal ────────────────────────────────────────────────────────
+
+type WBTool = 'pen' | 'marker' | 'highlighter' | 'eraser' | 'line' | 'rect' | 'circle' | 'arrow' | 'laser' | 'text'
+
+const WB_PALETTE = ['#f3dddf','#ffffff','#ef4444','#f97316','#e9c176','#22c55e','#3b82f6','#a855f7','#ec4899','#000000']
+const WB_SIZES   = [2, 4, 8, 16, 28]
+const WB_TOOLS: { id: WBTool; icon: string; label: string; key: string }[] = [
+  { id:'pen',         icon:'✏️', label:'Pen',       key:'p' },
+  { id:'marker',      icon:'🖊',  label:'Marker',    key:'m' },
+  { id:'highlighter', icon:'🖍',  label:'Highlight', key:'h' },
+  { id:'eraser',      icon:'◻',  label:'Eraser',    key:'e' },
+  { id:'line',        icon:'╱',  label:'Line',      key:'l' },
+  { id:'rect',        icon:'▭',  label:'Rect',      key:'r' },
+  { id:'circle',      icon:'◯',  label:'Circle',    key:'c' },
+  { id:'arrow',       icon:'→',  label:'Arrow',     key:'a' },
+  { id:'laser',       icon:'🔴', label:'Laser',     key:'z' },
+  { id:'text',        icon:'T',  label:'Text',      key:'t' },
+]
+
+function wbArrow(ctx: CanvasRenderingContext2D, a: Pt, b: Pt) {
+  const len = 18, ang = Math.atan2(b.y - a.y, b.x - a.x)
+  ctx.beginPath()
+  ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y)
+  ctx.moveTo(b.x, b.y)
+  ctx.lineTo(b.x - len * Math.cos(ang - Math.PI/6), b.y - len * Math.sin(ang - Math.PI/6))
+  ctx.moveTo(b.x, b.y)
+  ctx.lineTo(b.x - len * Math.cos(ang + Math.PI/6), b.y - len * Math.sin(ang + Math.PI/6))
+  ctx.stroke()
+}
+
+function wbPaintStroke(ctx: CanvasRenderingContext2D, s: Stroke, glowOn: boolean) {
+  if (!s.points.length) return
+  ctx.save()
+  const isErase  = s.tool === 'eraser'
+  const isMark   = s.tool === 'marker'
+  const isHl     = s.tool === 'highlighter'
+  const isShape  = ['line','rect','circle','arrow'].includes(s.tool)
+  ctx.globalCompositeOperation = isErase ? 'destination-out' : 'source-over'
+  ctx.globalAlpha = isHl ? 0.28 : isMark ? 0.55 : 1
+  ctx.strokeStyle = isErase ? 'rgba(0,0,0,1)' : s.color
+  ctx.fillStyle   = s.color
+  ctx.lineWidth   = isHl ? s.width * 3 : s.width
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+  if (glowOn && !isErase && !isHl) { ctx.shadowBlur = s.width * 5; ctx.shadowColor = s.color }
+
+  const p = s.points
+  if (isShape) {
+    const a = p[0], b = p[p.length - 1]
+    if (s.tool === 'line')   { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke() }
+    if (s.tool === 'rect')   { ctx.beginPath(); ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y) }
+    if (s.tool === 'circle') {
+      const rx = Math.abs(b.x - a.x)/2, ry = Math.abs(b.y - a.y)/2
+      ctx.beginPath(); ctx.ellipse((a.x+b.x)/2, (a.y+b.y)/2, rx||1, ry||1, 0, 0, Math.PI*2); ctx.stroke()
+    }
+    if (s.tool === 'arrow')  { ctx.shadowBlur = 0; wbArrow(ctx, a, b) }
+  } else if (p.length === 1) {
+    ctx.beginPath(); ctx.arc(p[0].x, p[0].y, ctx.lineWidth/2, 0, Math.PI*2)
+    ctx.fillStyle = isErase ? 'rgba(0,0,0,1)' : s.color; ctx.fill()
+  } else {
+    ctx.beginPath(); ctx.moveTo(p[0].x, p[0].y)
+    for (let i = 1; i < p.length - 1; i++) {
+      ctx.quadraticCurveTo(p[i].x, p[i].y, (p[i].x+p[i+1].x)/2, (p[i].y+p[i+1].y)/2)
+    }
+    ctx.lineTo(p[p.length-1].x, p[p.length-1].y); ctx.stroke()
+  }
+  ctx.restore()
+}
+
+function WhiteboardModal({ trade, currentUserId, myName, otherName, onClose }: {
+  trade: RequestRow; currentUserId: string; myName: string; otherName: string; onClose: () => void
+}) {
+  const mainRef    = useRef<HTMLCanvasElement>(null)
+  const overlayRef = useRef<HTMLCanvasElement>(null)
+  const wrapRef    = useRef<HTMLDivElement>(null)
+  const textRef    = useRef<HTMLInputElement>(null)
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+  const allStrokes = useRef<Stroke[]>([])
+  const undoStack  = useRef<ImageData[]>([])
+  const redoStack  = useRef<ImageData[]>([])
+  const isDrawing  = useRef(false)
+  const startPt    = useRef<Pt | null>(null)
+  const lastPt     = useRef<Pt | null>(null)
+  const curPts     = useRef<Pt[]>([])
+  const laserSegs    = useRef<{ pts: Pt[]; ts: number }[]>([])
+  const rafRef       = useRef(0)
+  const strokeRafRef = useRef(0)
+  const cursorMs   = useRef(0)
+  const cursorTmo  = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const [tool, setTool]           = useState<WBTool>('pen')
+  const [color, setColor]         = useState('#f3dddf')
+  const [size, setSize]           = useState(4)
+  const [glow, setGlow]           = useState(true)
+  const [grid, setGrid]           = useState(true)
+  const [loading, setLoading]     = useState(true)
+  const [canUndo, setCanUndo]     = useState(false)
+  const [canRedo, setCanRedo]     = useState(false)
+  const [partner, setPartner]     = useState<Pt | null>(null)
+  const [textPos, setTextPos]     = useState<Pt | null>(null)
+  const [textVal, setTextVal]     = useState('')
+
+  // Refs to avoid stale closures in RAF / event handlers
+  const toolRef  = useRef(tool);  useEffect(() => { toolRef.current = tool },  [tool])
+  const colorRef = useRef(color); useEffect(() => { colorRef.current = color }, [color])
+  const sizeRef  = useRef(size);  useEffect(() => { sizeRef.current = size },  [size])
+  const glowRef  = useRef(glow);  useEffect(() => { glowRef.current = glow },  [glow])
+
+  const mc  = () => mainRef.current
+  const mct = () => mainRef.current?.getContext('2d') ?? null
+  const oct = () => overlayRef.current?.getContext('2d') ?? null
+
+  const saveUndo = useCallback(() => {
+    const c = mc(); const ctx = mct(); if (!c || !ctx) return
+    undoStack.current.push(ctx.getImageData(0, 0, c.width, c.height))
+    if (undoStack.current.length > 15) undoStack.current.shift()
+    redoStack.current = []; setCanUndo(true); setCanRedo(false)
+  }, [])
+
+  const doUndo = useCallback(() => {
+    const c = mc(); const ctx = mct(); if (!c || !ctx || !undoStack.current.length) return
+    redoStack.current.push(ctx.getImageData(0, 0, c.width, c.height))
+    ctx.putImageData(undoStack.current.pop()!, 0, 0)
+    setCanUndo(undoStack.current.length > 0); setCanRedo(true)
+  }, [])
+
+  const doRedo = useCallback(() => {
+    const c = mc(); const ctx = mct(); if (!c || !ctx || !redoStack.current.length) return
+    undoStack.current.push(ctx.getImageData(0, 0, c.width, c.height))
+    ctx.putImageData(redoStack.current.pop()!, 0, 0)
+    setCanUndo(true); setCanRedo(redoStack.current.length > 0)
+  }, [])
+
+  const replayAll = useCallback((strokes: Stroke[]) => {
+    const c = mc(); const ctx = mct(); if (!c || !ctx) return
+    ctx.clearRect(0, 0, c.width, c.height)
+    strokes.forEach(s => wbPaintStroke(ctx, s, glowRef.current))
+  }, [])
+
+  const initCanvases = useCallback(() => {
+    const wrap = wrapRef.current; if (!wrap) return
+    const d = window.devicePixelRatio || 1
+    const w = wrap.offsetWidth || wrap.clientWidth
+    const h = wrap.offsetHeight || wrap.clientHeight
+    if (!w || !h) return
+    ;[mainRef.current, overlayRef.current].forEach(cv => {
+      if (!cv) return
+      cv.width = w * d; cv.height = h * d
+      // Setting .width resets all context state, so we just apply scale fresh
+      const ctx = cv.getContext('2d')
+      if (ctx) ctx.scale(d, d)
+    })
+  }, [])
+
+  // Laser fade RAF — only runs while laserSegs has entries
+  const runLaser = useCallback(() => {
+    const oc = overlayRef.current; const octx = oct(); if (!oc || !octx) { rafRef.current = requestAnimationFrame(runLaser); return }
+    const now = Date.now()
+    laserSegs.current = laserSegs.current.filter(s => now - s.ts < 2200)
+    if (!laserSegs.current.length && !isDrawing.current) { rafRef.current = 0; return }
+    const d = window.devicePixelRatio || 1
+    octx.clearRect(0, 0, oc.width/d, oc.height/d)
+    for (const seg of laserSegs.current) {
+      const age = (now - seg.ts) / 2200
+      const alpha = Math.max(0, 1 - age)
+      if (seg.pts.length < 2) continue
+      octx.save()
+      octx.globalAlpha = alpha
+      octx.strokeStyle = '#ff2d55'; octx.lineWidth = 4; octx.lineCap = 'round'
+      octx.shadowBlur = 14; octx.shadowColor = '#ff2d55'
+      octx.beginPath(); octx.moveTo(seg.pts[0].x, seg.pts[0].y)
+      for (let i = 1; i < seg.pts.length-1; i++)
+        octx.quadraticCurveTo(seg.pts[i].x, seg.pts[i].y, (seg.pts[i].x+seg.pts[i+1].x)/2, (seg.pts[i].y+seg.pts[i+1].y)/2)
+      octx.lineTo(seg.pts[seg.pts.length-1].x, seg.pts[seg.pts.length-1].y); octx.stroke(); octx.restore()
+    }
+    rafRef.current = requestAnimationFrame(runLaser)
+  }, [])
+
+  // Init canvases synchronously after layout so dimensions are ready before any drawing
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { initCanvases() }, [])
+
+  useEffect(() => {
+    // Load saved strokes (non-blocking — canvas is already usable before this resolves)
+    supabase.from('skill_trade_whiteboards').select('strokes').eq('request_id', trade.id).maybeSingle()
+      .then(({ data }) => {
+        if (data?.strokes) { allStrokes.current = data.strokes as Stroke[]; replayAll(allStrokes.current) }
+      })
+      .catch(() => {}) // ignore errors — whiteboard works without saved state
+      .finally(() => setLoading(false))
+
+    const ch = supabase.channel(`whiteboard-${trade.id}`)
+      .on('broadcast', { event: 'stroke' }, ({ payload }) => {
+        const s = payload as Stroke; allStrokes.current.push(s)
+        const ctx = mct(); if (ctx) wbPaintStroke(ctx, s, glowRef.current)
+      })
+      .on('broadcast', { event: 'clear' }, () => {
+        allStrokes.current = []; replayAll([])
+        undoStack.current = []; redoStack.current = []; setCanUndo(false); setCanRedo(false)
+      })
+      .on('broadcast', { event: 'cursor' }, ({ payload }) => {
+        setPartner({ x: payload.x, y: payload.y })
+        if (cursorTmo.current) clearTimeout(cursorTmo.current)
+        cursorTmo.current = setTimeout(() => setPartner(null), 3000)
+      })
+      .subscribe()
+    channelRef.current = ch
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if ((e.ctrlKey||e.metaKey) && e.key==='z' && !e.shiftKey) { e.preventDefault(); doUndo() }
+      if ((e.ctrlKey||e.metaKey) && (e.key==='y' || (e.key==='z'&&e.shiftKey))) { e.preventDefault(); doRedo() }
+      const map: Partial<Record<string,WBTool>> = { p:'pen',m:'marker',h:'highlighter',e:'eraser',l:'line',r:'rect',c:'circle',a:'arrow',z:'laser',t:'text' }
+      if (!e.ctrlKey && !e.metaKey && map[e.key]) setTool(map[e.key]!)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      supabase.removeChannel(ch)
+      window.removeEventListener('keydown', onKey)
+      cancelAnimationFrame(rafRef.current)
+      if (cursorTmo.current) clearTimeout(cursorTmo.current)
+    }
+  }, [trade.id, replayAll, doUndo, doRedo, runLaser])
+
+  const getPos = (e: React.PointerEvent): Pt => {
+    const r = mainRef.current!.getBoundingClientRect()
+    return { x: e.clientX - r.left, y: e.clientY - r.top }
+  }
+
+  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    // Safety: re-init if canvas has 0 dimensions (can happen when flex layout runs after first effect)
+    if ((mainRef.current?.width ?? 0) === 0) initCanvases()
+
+    if (tool === 'text') {
+      setTextPos(getPos(e)); setTextVal(''); setTimeout(() => textRef.current?.focus(), 40); return
+    }
+    // Stop laser RAF if switching to shape tool
+    if (['line','rect','circle','arrow'].includes(tool)) {
+      cancelAnimationFrame(rafRef.current); rafRef.current = 0; laserSegs.current = []
+      const oc = overlayRef.current; const octx = oct()
+      if (oc && octx) { const d=window.devicePixelRatio||1; octx.clearRect(0,0,oc.width/d,oc.height/d) }
+    }
+    isDrawing.current = true
+    const pos = getPos(e); startPt.current = pos; lastPt.current = pos; curPts.current = [pos]
+    ;(e.target as HTMLCanvasElement).setPointerCapture(e.pointerId)
+  }
+
+  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const pos = getPos(e)
+    // Broadcast cursor position (~40ms throttle)
+    const now = Date.now()
+    if (now - cursorMs.current > 40) {
+      cursorMs.current = now
+      channelRef.current?.send({ type:'broadcast', event:'cursor', payload: { x:pos.x, y:pos.y } })
+    }
+    if (!isDrawing.current) return
+    curPts.current.push(pos)
+
+    if (['pen','marker','highlighter','eraser','laser'].includes(tool)) {
+      if (tool === 'eraser') {
+        // Eraser draws directly to main — use lineTo (not quadraticCurveTo) so every pixel
+        // from lastPt to pos is fully covered; quadraticCurveTo to midpoint left gaps
+        const ctx = mct()
+        if (ctx && lastPt.current) {
+          ctx.save()
+          ctx.globalCompositeOperation = 'destination-out'
+          ctx.strokeStyle = 'rgba(0,0,0,1)'; ctx.lineWidth = size; ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+          ctx.beginPath(); ctx.moveTo(lastPt.current.x, lastPt.current.y)
+          ctx.lineTo(pos.x, pos.y)
+          ctx.stroke(); ctx.restore()
+        }
+      } else if (tool === 'laser') {
+        // Laser draws on overlay incrementally (fades via RAF)
+        const ctx = oct()
+        if (ctx && lastPt.current) {
+          ctx.save()
+          ctx.strokeStyle = '#ff2d55'; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+          ctx.shadowBlur = 14; ctx.shadowColor = '#ff2d55'
+          const mid = { x:(lastPt.current.x+pos.x)/2, y:(lastPt.current.y+pos.y)/2 }
+          ctx.beginPath(); ctx.moveTo(lastPt.current.x, lastPt.current.y)
+          ctx.quadraticCurveTo(lastPt.current.x, lastPt.current.y, mid.x, mid.y)
+          ctx.stroke(); ctx.restore()
+        }
+        const last = laserSegs.current[laserSegs.current.length-1]
+        if (last && now - last.ts < 150) last.pts.push(pos)
+        else laserSegs.current.push({ pts: [lastPt.current ?? pos, pos], ts: now })
+      } else {
+        // pen/marker/highlighter: preview on overlay, RAF-batched so the drawer sees the same
+        // smooth bezier path the observer will see (fixes dashed-line appearance at speed)
+        if (!strokeRafRef.current) {
+          strokeRafRef.current = requestAnimationFrame(() => {
+            strokeRafRef.current = 0
+            const oc = overlayRef.current; const octx = oct()
+            if (!oc || !octx || !curPts.current.length) return
+            const d = window.devicePixelRatio || 1
+            octx.clearRect(0, 0, oc.width / d, oc.height / d)
+            wbPaintStroke(octx, {
+              id: 'preview', points: [...curPts.current],
+              color: colorRef.current, width: sizeRef.current, tool: toolRef.current as WBTool
+            }, glowRef.current)
+          })
+        }
+      }
+    } else if (['line','rect','circle','arrow'].includes(tool)) {
+      // Shape preview on overlay
+      const oc = overlayRef.current; const octx = oct(); const sp = startPt.current
+      if (!oc || !octx || !sp) { lastPt.current = pos; return }
+      const d = window.devicePixelRatio || 1; octx.clearRect(0, 0, oc.width/d, oc.height/d)
+      octx.save(); octx.strokeStyle = color; octx.lineWidth = size; octx.lineCap = 'round'
+      if (glowRef.current) { octx.shadowBlur = size*5; octx.shadowColor = color }
+      if (tool==='line')   { octx.beginPath(); octx.moveTo(sp.x,sp.y); octx.lineTo(pos.x,pos.y); octx.stroke() }
+      if (tool==='rect')   { octx.beginPath(); octx.strokeRect(sp.x,sp.y,pos.x-sp.x,pos.y-sp.y) }
+      if (tool==='circle') {
+        const rx=Math.abs(pos.x-sp.x)/2, ry=Math.abs(pos.y-sp.y)/2
+        octx.beginPath(); octx.ellipse((sp.x+pos.x)/2,(sp.y+pos.y)/2,rx||1,ry||1,0,0,Math.PI*2); octx.stroke()
+      }
+      if (tool==='arrow')  { octx.shadowBlur=0; wbArrow(octx,sp,pos) }
+      octx.restore()
+    }
+    lastPt.current = pos
+  }
+
+  const onPointerUp = () => {
+    if (!isDrawing.current) return; isDrawing.current = false
+    // Cancel any pending overlay preview RAF
+    if (strokeRafRef.current) { cancelAnimationFrame(strokeRafRef.current); strokeRafRef.current = 0 }
+    const sp = startPt.current ?? curPts.current[0]; if (!sp) return
+    const end = curPts.current[curPts.current.length-1] ?? sp
+    const pts = [...curPts.current]; curPts.current = []; startPt.current = null; lastPt.current = null
+
+    // Commit shape to main canvas & clear overlay
+    if (['line','rect','circle','arrow'].includes(tool)) {
+      const ctx = mct(); const oc = overlayRef.current; const octx = oct()
+      if (oc && octx) { const d=window.devicePixelRatio||1; octx.clearRect(0,0,oc.width/d,oc.height/d) }
+      if (ctx) {
+        ctx.save(); ctx.strokeStyle=color; ctx.lineWidth=size; ctx.lineCap='round'
+        if (glow) { ctx.shadowBlur=size*5; ctx.shadowColor=color }
+        if (tool==='line')   { ctx.beginPath();ctx.moveTo(sp.x,sp.y);ctx.lineTo(end.x,end.y);ctx.stroke() }
+        if (tool==='rect')   { ctx.beginPath();ctx.strokeRect(sp.x,sp.y,end.x-sp.x,end.y-sp.y) }
+        if (tool==='circle') {
+          const rx=Math.abs(end.x-sp.x)/2, ry=Math.abs(end.y-sp.y)/2
+          ctx.beginPath();ctx.ellipse((sp.x+end.x)/2,(sp.y+end.y)/2,rx||1,ry||1,0,0,Math.PI*2);ctx.stroke()
+        }
+        if (tool==='arrow')  { ctx.shadowBlur=0; wbArrow(ctx,sp,end) }
+        ctx.restore()
+      }
+    }
+
+    if (tool === 'laser') {
+      if (!rafRef.current) rafRef.current = requestAnimationFrame(runLaser)
+      return
+    }
+
+    const stroke: Stroke = {
+      id: crypto.randomUUID(),
+      points: ['line','rect','circle','arrow'].includes(tool) ? [sp, end] : pts,
+      color, width: size, tool,
+    }
+    // pen/marker/highlighter were drawn on overlay — clear overlay and commit to main now
+    if (['pen','marker','highlighter'].includes(tool)) {
+      const oc = overlayRef.current; const octx = oct()
+      if (oc && octx) { const d = window.devicePixelRatio || 1; octx.clearRect(0, 0, oc.width/d, oc.height/d) }
+      saveUndo()
+      const ctx = mct(); if (ctx) wbPaintStroke(ctx, stroke, glow)
+    } else {
+      saveUndo()
+    }
+    allStrokes.current.push(stroke)
+    channelRef.current?.send({ type:'broadcast', event:'stroke', payload: stroke })
+    supabase.from('skill_trade_whiteboards').upsert({ request_id:trade.id, strokes:allStrokes.current, updated_at:new Date().toISOString() })
+  }
+
+  const handleClear = () => {
+    saveUndo()
+    const c=mc();const ctx=mct();if(c&&ctx) ctx.clearRect(0,0,c.width,c.height)
+    allStrokes.current=[]
+    channelRef.current?.send({type:'broadcast',event:'clear',payload:{}})
+    supabase.from('skill_trade_whiteboards').upsert({request_id:trade.id,strokes:[],updated_at:new Date().toISOString()})
+  }
+
+  const handleDownload = () => {
+    const c = mc(); if (!c) return
+    const tmp = document.createElement('canvas'); tmp.width=c.width; tmp.height=c.height
+    const ctx = tmp.getContext('2d')!; ctx.fillStyle='#0d0809'; ctx.fillRect(0,0,tmp.width,tmp.height); ctx.drawImage(c,0,0)
+    const a = document.createElement('a'); a.href=tmp.toDataURL('image/png'); a.download=`whiteboard-${trade.id.slice(0,8)}.png`; a.click()
+  }
+
+  const commitText = () => {
+    if (!textPos || !textVal.trim()) { setTextPos(null); return }
+    const ctx = mct(); if (ctx) {
+      saveUndo()
+      ctx.save(); ctx.font=`${size*5+10}px 'Be Vietnam Pro',sans-serif`; ctx.fillStyle=color; ctx.globalAlpha=1
+      if (glow) { ctx.shadowBlur=10; ctx.shadowColor=color }
+      ctx.fillText(textVal, textPos.x, textPos.y); ctx.restore()
+    }
+    setTextPos(null); setTextVal('')
+  }
+
+  const TOOL_GROUPS: WBTool[][] = [
+    ['pen','marker','highlighter','eraser'],
+    ['line','rect','circle','arrow'],
+    ['laser','text'],
+  ]
+  const cursorStyle: React.CSSProperties['cursor'] =
+    tool==='eraser' ? 'cell' : tool==='text' ? 'text' : 'crosshair'
+
+  return (
+    <div style={{ position:'fixed',inset:0,zIndex:10001,background:'rgba(0,0,0,0.97)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:12 }}>
+      <div style={{ width:'100%',maxWidth:1100,height:'92vh',background:'#131010',border:'1px solid rgba(255,255,255,0.07)',borderRadius:24,display:'flex',flexDirection:'column',overflow:'hidden',boxShadow:'0 40px 120px rgba(0,0,0,0.9)' }}>
+
+        {/* ── Toolbar ── */}
+        <div style={{ padding:'8px 14px',borderBottom:'1px solid rgba(255,255,255,0.05)',background:'rgba(20,12,13,0.95)',display:'flex',alignItems:'center',gap:8,flexShrink:0,flexWrap:'wrap' }}>
+          <span style={{ fontSize:12,fontWeight:800,color:'var(--gold)',letterSpacing:'0.06em',marginRight:4 }}>🖊️ WHITEBOARD</span>
+          <div style={{ width:1,height:22,background:'rgba(255,255,255,0.07)' }} />
+
+          {/* Tool groups */}
+          {TOOL_GROUPS.map((group, gi) => (
+            <Fragment key={gi}>
+              <div style={{ display:'flex',gap:3 }}>
+                {group.map(t => {
+                  const info = WB_TOOLS.find(x=>x.id===t)!
+                  const active = tool===t
+                  return (
+                    <button key={t} onClick={()=>setTool(t)} title={`${info.label} [${info.key.toUpperCase()}]`}
+                      style={{ width:32,height:30,borderRadius:7,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.1s',
+                        border:`1px solid ${active?'var(--accent)':'rgba(87,65,68,0.2)'}`,
+                        background:active?'rgba(138,21,56,0.28)':'transparent',
+                        color:active?'#fff':'rgba(255,255,255,0.45)',
+                        boxShadow:active?'0 0 10px rgba(138,21,56,0.4)':undefined }}>
+                      {info.icon}
+                    </button>
+                  )
+                })}
+              </div>
+              {gi < TOOL_GROUPS.length-1 && <div style={{ width:1,height:22,background:'rgba(255,255,255,0.07)' }} />}
+            </Fragment>
+          ))}
+
+          <div style={{ width:1,height:22,background:'rgba(255,255,255,0.07)' }} />
+
+          {/* Palette + custom picker */}
+          <div style={{ display:'flex',gap:4,alignItems:'center' }}>
+            {WB_PALETTE.map(c=>(
+              <div key={c} onClick={()=>{setColor(c);if(tool==='eraser')setTool('pen')}} style={{
+                width:16,height:16,borderRadius:'50%',background:c,cursor:'pointer',flexShrink:0,transition:'transform 0.1s',
+                outline:color===c&&tool!=='eraser'?'2px solid #fff':'2px solid transparent',outlineOffset:2,
+                transform:color===c&&tool!=='eraser'?'scale(1.3)':'scale(1)',
+                border:c==='#000000'?'1px solid rgba(255,255,255,0.2)':undefined
+              }} />
+            ))}
+            <label title="Custom color" style={{ width:16,height:16,borderRadius:'50%',overflow:'hidden',cursor:'pointer',border:'1px dashed rgba(255,255,255,0.3)',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center' }}>
+              <input type="color" value={color} onChange={e=>{setColor(e.target.value);if(tool==='eraser')setTool('pen')}} style={{ width:24,height:24,border:'none',padding:0,cursor:'pointer',opacity:0,position:'absolute' }} />
+              <span style={{ fontSize:9,color:'rgba(255,255,255,0.5)' }}>+</span>
+            </label>
+          </div>
+
+          <div style={{ width:1,height:22,background:'rgba(255,255,255,0.07)' }} />
+
+          {/* Sizes */}
+          <div style={{ display:'flex',gap:4,alignItems:'center' }}>
+            {WB_SIZES.map(s=>(
+              <div key={s} onClick={()=>setSize(s)} style={{
+                width:26,height:26,borderRadius:7,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.1s',
+                border:`1px solid ${size===s?'var(--accent)':'rgba(87,65,68,0.2)'}`,
+                background:size===s?'rgba(138,21,56,0.18)':'transparent',
+              }}>
+                <div style={{ borderRadius:'50%',background:tool==='eraser'?'rgba(255,255,255,0.2)':color,width:Math.max(3,Math.min(s,18)),height:Math.max(3,Math.min(s,18)) }} />
+              </div>
+            ))}
+          </div>
+
+          <div style={{ width:1,height:22,background:'rgba(255,255,255,0.07)' }} />
+
+          {/* Toggles */}
+          <button onClick={()=>setGlow(g=>!g)} style={{ padding:'3px 9px',borderRadius:7,fontSize:10,fontWeight:700,cursor:'pointer',transition:'all 0.12s',
+            border:`1px solid ${glow?'rgba(233,193,118,0.5)':'rgba(87,65,68,0.2)'}`,
+            background:glow?'rgba(233,193,118,0.1)':'transparent',
+            color:glow?'var(--gold)':'rgba(255,255,255,0.3)' }}>✦ GLOW</button>
+          <button onClick={()=>setGrid(g=>!g)} style={{ padding:'3px 9px',borderRadius:7,fontSize:10,fontWeight:700,cursor:'pointer',transition:'all 0.12s',
+            border:`1px solid ${grid?'rgba(99,102,241,0.5)':'rgba(87,65,68,0.2)'}`,
+            background:grid?'rgba(99,102,241,0.1)':'transparent',
+            color:grid?'#a5b4fc':'rgba(255,255,255,0.3)' }}>⊞ GRID</button>
+
+          <div style={{ width:1,height:22,background:'rgba(255,255,255,0.07)' }} />
+
+          {/* Undo / Redo */}
+          <button onClick={doUndo} disabled={!canUndo} title="Undo (Ctrl+Z)"
+            style={{ width:28,height:28,borderRadius:7,border:'1px solid rgba(87,65,68,0.2)',background:'transparent',cursor:canUndo?'pointer':'default',fontSize:14,color:canUndo?'rgba(255,255,255,0.65)':'rgba(255,255,255,0.18)',display:'flex',alignItems:'center',justifyContent:'center' }}>↩</button>
+          <button onClick={doRedo} disabled={!canRedo} title="Redo (Ctrl+Y)"
+            style={{ width:28,height:28,borderRadius:7,border:'1px solid rgba(87,65,68,0.2)',background:'transparent',cursor:canRedo?'pointer':'default',fontSize:14,color:canRedo?'rgba(255,255,255,0.65)':'rgba(255,255,255,0.18)',display:'flex',alignItems:'center',justifyContent:'center' }}>↪</button>
+
+          <div style={{ flex:1 }} />
+
+          {/* Partner indicator */}
+          {partner && (
+            <div style={{ display:'flex',alignItems:'center',gap:5,padding:'3px 10px',background:'rgba(59,130,246,0.1)',border:'1px solid rgba(59,130,246,0.25)',borderRadius:20,fontSize:10,fontWeight:700,color:'#60a5fa' }}>
+              <div style={{ width:6,height:6,borderRadius:'50%',background:'#3b82f6',animation:'wbPulse 1s ease-in-out infinite' }} />
+              {otherName}
+            </div>
+          )}
+
+          <button onClick={handleClear} style={{ padding:'3px 10px',background:'transparent',border:'1px solid rgba(239,68,68,0.3)',borderRadius:7,color:'#f87171',fontSize:10,fontWeight:700,cursor:'pointer' }}>🗑 CLEAR</button>
+          <button onClick={handleDownload} style={{ padding:'3px 10px',background:'transparent',border:'1px solid rgba(99,102,241,0.3)',borderRadius:7,color:'#a5b4fc',fontSize:10,fontWeight:700,cursor:'pointer' }}>⬇ SAVE</button>
+          <button onClick={onClose} style={{ width:26,height:26,borderRadius:'50%',background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',color:'rgba(255,255,255,0.4)',fontSize:12,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>✕</button>
+        </div>
+
+        {/* ── Canvas area ── */}
+        <div ref={wrapRef} style={{ flex:1,position:'relative',overflow:'hidden',
+          background: grid
+            ? 'radial-gradient(circle, rgba(255,255,255,0.07) 1px, transparent 1px) 0 0 / 28px 28px, #0d0809'
+            : '#0d0809'
+        }}>
+          <style>{`@keyframes wbPulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
+          {loading && (
+            <div style={{ position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',color:'rgba(255,255,255,0.25)',fontSize:13 }}>Loading…</div>
+          )}
+
+          {/* Main canvas — receives all pointer events */}
+          <canvas ref={mainRef}
+            style={{ position:'absolute',inset:0,width:'100%',height:'100%',display:'block',touchAction:'none',cursor:cursorStyle }}
+            onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
+            onPointerLeave={()=>{
+              isDrawing.current=false; lastPt.current=null; startPt.current=null
+              if (strokeRafRef.current) { cancelAnimationFrame(strokeRafRef.current); strokeRafRef.current=0 }
+              const oc=overlayRef.current; const octx=oct()
+              if (oc&&octx) { const d=window.devicePixelRatio||1; octx.clearRect(0,0,oc.width/d,oc.height/d) }
+            }}
+          />
+
+          {/* Overlay canvas — shape preview + laser (no pointer events) */}
+          <canvas ref={overlayRef}
+            style={{ position:'absolute',inset:0,width:'100%',height:'100%',display:'block',pointerEvents:'none' }} />
+
+          {/* Partner cursor */}
+          {partner && (
+            <div style={{ position:'absolute',left:partner.x,top:partner.y,transform:'translate(-4px,-4px)',pointerEvents:'none',zIndex:20,transition:'left 0.04s linear,top 0.04s linear' }}>
+              <div style={{ width:10,height:10,background:'#3b82f6',borderRadius:'50% 50% 50% 0',transform:'rotate(-45deg)',boxShadow:'0 0 10px #3b82f6,0 0 20px rgba(59,130,246,0.4)' }} />
+              <div style={{ position:'absolute',top:12,left:8,background:'#3b82f6',borderRadius:'0 8px 8px 8px',padding:'2px 8px',fontSize:10,fontWeight:700,color:'#fff',whiteSpace:'nowrap',boxShadow:'0 2px 12px rgba(59,130,246,0.5)' }}>{otherName}</div>
+            </div>
+          )}
+
+          {/* Floating text input */}
+          {textPos && (
+            <div style={{ position:'absolute',left:textPos.x,top:textPos.y-20,zIndex:30,pointerEvents:'auto' }}>
+              <input ref={textRef} value={textVal} onChange={e=>setTextVal(e.target.value)}
+                onKeyDown={e=>{ if(e.key==='Enter'){e.preventDefault();commitText()} if(e.key==='Escape'){setTextPos(null);setTextVal('')} }}
+                onBlur={commitText}
+                style={{ background:'transparent',border:'none',borderBottom:`2px solid ${color}`,outline:'none',color,fontSize:size*5+10,fontFamily:"'Be Vietnam Pro',sans-serif",minWidth:100,caretColor:color,padding:'0 2px' }}
+                placeholder="Type…"
+              />
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

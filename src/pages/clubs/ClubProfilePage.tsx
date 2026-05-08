@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -41,6 +42,12 @@ interface ReplyRow {
 
 interface AnnouncementRow {
   id: string; club_id: string; user_id: string
+  content: string | null; image_url: string | null; created_at: string
+  profile?: { full_name: string | null } | null
+}
+
+interface EventAnnouncementRow {
+  id: string; event_id: string
   content: string; created_at: string
   profile?: { full_name: string | null } | null
 }
@@ -156,6 +163,9 @@ export default function ClubProfilePage() {
   const [eventFilter,  setEventFilter]  = useState<EventFilter>('upcoming')
   const [attendingId,  setAttendingId]  = useState<string | null>(null)
   const [communitySearch, setCommunitySearch] = useState('')
+  const [evtAnnModal, setEvtAnnModal] = useState<EventRow | null>(null)
+  const [evtAnns, setEvtAnns] = useState<EventAnnouncementRow[]>([])
+  const [loadingEvtAnns, setLoadingEvtAnns] = useState(false)
 
   // ── fetch ──
   const fetchAll = useCallback(async () => {
@@ -208,6 +218,19 @@ export default function ClubProfilePage() {
     setAttendingId(null)
     fetchAll()
   }
+
+  const handleViewEventAnn = useCallback(async (event: EventRow) => {
+    setEvtAnnModal(event)
+    setEvtAnns([])
+    setLoadingEvtAnns(true)
+    const { data } = await supabase
+      .from('event_announcements')
+      .select('id, event_id, content, created_at, profile:profiles(full_name)')
+      .eq('event_id', event.id)
+      .order('created_at', { ascending: false })
+    setEvtAnns((data as unknown as EventAnnouncementRow[]) ?? [])
+    setLoadingEvtAnns(false)
+  }, [])
 
   // ── derived ──
   const liveEvents     = events.filter(e => e.is_live)
@@ -409,7 +432,13 @@ export default function ClubProfilePage() {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {shownEvents.map(ev => (
-                    <EventCard key={ev.id} event={ev} onAttend={() => handleAttend(ev)} attending={attendingId === ev.id} />
+                    <EventCard
+                      key={ev.id}
+                      event={ev}
+                      onAttend={() => handleAttend(ev)}
+                      attending={attendingId === ev.id}
+                      onViewAnn={ev.is_live && ev.is_attending ? () => handleViewEventAnn(ev) : undefined}
+                    />
                   ))}
                 </div>
               )}
@@ -505,13 +534,23 @@ export default function ClubProfilePage() {
 
         </div>
       </div>
+
+      {/* Event Announcements Modal — live events only, visible to all members */}
+      {evtAnnModal && (
+        <EventAnnouncementsModal
+          event={evtAnnModal}
+          announcements={evtAnns}
+          loading={loadingEvtAnns}
+          onClose={() => setEvtAnnModal(null)}
+        />
+      )}
     </div>
   )
 }
 
 // ─────────────────────────────── EventCard ──────────
 
-function EventCard({ event, onAttend, attending }: { event: EventRow; onAttend: () => void; attending: boolean }) {
+function EventCard({ event, onAttend, attending, onViewAnn }: { event: EventRow; onAttend: () => void; attending: boolean; onViewAnn?: () => void }) {
   const full = event.max_attendees !== null && event.attendee_count >= event.max_attendees && !event.is_attending
   return (
     <div className="ev-card" style={{
@@ -568,17 +607,31 @@ function EventCard({ event, onAttend, attending }: { event: EventRow; onAttend: 
         </div>
       </div>
 
-      {/* RSVP */}
-      <button onClick={onAttend} disabled={attending || (full && !event.is_attending)} style={{
-        flexShrink: 0, padding: '7px 16px',
-        background: event.is_attending ? 'transparent' : full ? 'transparent' : 'rgba(52,39,40,0.8)',
-        border: event.is_attending ? '1px solid var(--accent)' : '1px solid rgba(87,65,68,0.25)',
-        borderRadius: 8, color: event.is_attending ? 'var(--accent)' : full ? 'var(--text-muted)' : 'var(--text-primary)',
-        fontSize: 13, fontWeight: 500, cursor: attending || full ? 'default' : 'pointer',
-        opacity: attending ? 0.6 : 1, whiteSpace: 'nowrap', transition: 'all 0.15s',
-      }}>
-        {attending ? '…' : event.is_attending ? 'Going ✓' : full ? 'Full' : 'RSVP'}
-      </button>
+      {/* Actions */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0, alignItems: 'stretch' }}>
+        {onViewAnn && (
+          <button onClick={onViewAnn} style={{
+            padding: '6px 14px',
+            background: 'rgba(255,180,171,0.08)',
+            border: '1px solid rgba(255,180,171,0.25)',
+            borderRadius: 8, color: 'var(--live-red)',
+            fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            whiteSpace: 'nowrap', transition: 'all 0.15s', textAlign: 'center',
+          }}>
+            📢 Updates
+          </button>
+        )}
+        <button onClick={onAttend} disabled={attending || (full && !event.is_attending)} style={{
+          padding: '7px 16px',
+          background: event.is_attending ? 'transparent' : full ? 'transparent' : 'rgba(52,39,40,0.8)',
+          border: event.is_attending ? '1px solid var(--accent)' : '1px solid rgba(87,65,68,0.25)',
+          borderRadius: 8, color: event.is_attending ? 'var(--accent)' : full ? 'var(--text-muted)' : 'var(--text-primary)',
+          fontSize: 13, fontWeight: 500, cursor: attending || full ? 'default' : 'pointer',
+          opacity: attending ? 0.6 : 1, whiteSpace: 'nowrap', transition: 'all 0.15s',
+        }}>
+          {attending ? '…' : event.is_attending ? 'Going ✓' : full ? 'Full' : 'RSVP'}
+        </button>
+      </div>
     </div>
   )
 }
@@ -778,6 +831,7 @@ function AnnouncementsSection({
   const [showForm, setShowForm]     = useState(false)
   const [content,  setContent]     = useState('')
   const [posting,  setPosting]     = useState(false)
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
 
   const handlePost = async () => {
     if (!user || !content.trim() || posting) return
@@ -905,13 +959,83 @@ function AnnouncementsSection({
                   </span>
                 </div>
                 {/* Content */}
-                <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.75, margin: 0, whiteSpace: 'pre-wrap' }}>
-                  {ann.content}
-                </p>
+                {ann.content && (
+                  <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.75, margin: 0, whiteSpace: 'pre-wrap' }}>
+                    {ann.content}
+                  </p>
+                )}
+                {ann.image_url && (
+                  <div
+                    onClick={() => setLightboxSrc(ann.image_url!)}
+                    style={{
+                      position: 'relative',
+                      marginTop: ann.content ? 12 : 0,
+                      marginLeft: -20, marginRight: -20,
+                      marginBottom: -18,
+                      borderRadius: '0 0 13px 0',
+                      overflow: 'hidden',
+                      cursor: 'pointer',
+                      lineHeight: 0,
+                    }}
+                  >
+                    <img
+                      src={ann.image_url}
+                      alt=""
+                      style={{ maxWidth: '100%', height: 'auto', display: 'block', margin: '0 auto' }}
+                    />
+                    <div style={{
+                      position: 'absolute', bottom: 10, right: 10,
+                      background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)',
+                      border: '1px solid rgba(255,255,255,0.18)',
+                      borderRadius: 8, padding: '5px 10px',
+                      display: 'flex', alignItems: 'center', gap: 5,
+                      fontSize: 11, fontWeight: 600, color: '#fff',
+                      pointerEvents: 'none',
+                    }}>
+                      <span style={{ fontSize: 13 }}>⛶</span> View full
+                    </div>
+                  </div>
+                )}
               </div>
             )
           })}
         </div>
+      )}
+
+      {/* Lightbox */}
+      {lightboxSrc && createPortal(
+        <div
+          onClick={() => setLightboxSrc(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: 'rgba(0,0,0,0.93)', backdropFilter: 'blur(18px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 20, cursor: 'zoom-out',
+          }}
+        >
+          <img
+            src={lightboxSrc}
+            alt=""
+            onClick={e => e.stopPropagation()}
+            style={{
+              maxWidth: '92vw', maxHeight: '88vh',
+              objectFit: 'contain', borderRadius: 14,
+              boxShadow: '0 32px 80px rgba(0,0,0,0.7)',
+              cursor: 'default',
+            }}
+          />
+          <button
+            onClick={() => setLightboxSrc(null)}
+            style={{
+              position: 'absolute', top: 18, right: 18,
+              width: 38, height: 38, borderRadius: '50%',
+              background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)',
+              color: '#fff', fontSize: 18, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >✕</button>
+        </div>,
+        document.body
       )}
     </div>
   )
@@ -1134,6 +1258,112 @@ function ThreadsSection({ clubId, threads, onRefresh }: { clubId: string; thread
           })}
         </div>
       )}
+    </div>
+  )
+}
+
+// ──────────────── EventAnnouncementsModal ───────────
+
+function EventAnnouncementsModal({
+  event, announcements, loading, onClose,
+}: {
+  event: EventRow
+  announcements: EventAnnouncementRow[]
+  loading: boolean
+  onClose: () => void
+}) {
+  return (
+    <div
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 60,
+        background: 'rgba(0,0,0,0.78)', backdropFilter: 'blur(10px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+      }}
+    >
+      <div style={{
+        width: '100%', maxWidth: 520,
+        background: 'var(--bg-card)', border: '1px solid rgba(255,180,171,0.15)',
+        borderRadius: 22, maxHeight: '80vh', overflowY: 'auto',
+        boxShadow: '0 32px 80px rgba(0,0,0,0.6)',
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: '22px 26px 18px',
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+          position: 'sticky', top: 0, background: 'var(--bg-card)', zIndex: 1,
+          borderRadius: '22px 22px 0 0',
+        }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
+              <div style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--live-red)', animation: 'livePulse 1.4s ease-in-out infinite' }}/>
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--live-red)', letterSpacing: '0.1em' }}>LIVE EVENT</span>
+            </div>
+            <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.2px' }}>
+              {event.title}
+            </h2>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+              Live updates from organizers
+            </p>
+          </div>
+          <button onClick={onClose} style={{
+            width: 30, height: 30, borderRadius: '50%',
+            background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)',
+            color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>✕</button>
+        </div>
+
+        <div style={{ padding: '20px 26px 28px' }}>
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)', fontSize: 13 }}>
+              Loading updates…
+            </div>
+          ) : announcements.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '40px 0' }}>
+              <div style={{ fontSize: 32, marginBottom: 12 }}>📢</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>No updates yet</div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                Organizers will post live updates here during the event.
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {announcements.map(ann => (
+                <div key={ann.id} style={{
+                  background: 'rgba(255,255,255,0.03)',
+                  borderLeft: '3px solid var(--live-red)',
+                  borderRadius: '0 12px 12px 0',
+                  padding: '14px 18px',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                    <Avatar name={ann.profile?.full_name} size={28} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {ann.profile?.full_name ?? 'Organizer'}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+                        {timeAgo(ann.created_at)}
+                      </div>
+                    </div>
+                    <span style={{
+                      fontSize: 9, fontWeight: 700, letterSpacing: '0.07em',
+                      background: 'rgba(255,180,171,0.1)', border: '1px solid rgba(255,180,171,0.22)',
+                      borderRadius: 9999, padding: '2px 8px', color: 'var(--live-red)',
+                    }}>
+                      LIVE UPDATE
+                    </span>
+                  </div>
+                  <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.7, margin: 0, whiteSpace: 'pre-wrap' }}>
+                    {ann.content}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

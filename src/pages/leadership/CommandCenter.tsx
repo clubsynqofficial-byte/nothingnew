@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, type FormEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -14,9 +15,17 @@ interface Stats {
 
 interface AnnouncementRow {
   id: string
-  content: string
+  content: string | null
+  image_url: string | null
   created_at: string
   profile: { full_name: string | null; role: string | null } | null
+}
+
+interface EventAnnouncementRow {
+  id: string
+  content: string
+  created_at: string
+  profile: { full_name: string | null } | null
 }
 
 interface MembershipRow {
@@ -71,6 +80,16 @@ export default function CommandCenter({ club }: Props) {
   // Announcement state
   const [annContent, setAnnContent] = useState('')
   const [postingAnn, setPostingAnn] = useState(false)
+  const [annImageFile, setAnnImageFile] = useState<File | null>(null)
+  const [annImagePreview, setAnnImagePreview] = useState<string | null>(null)
+  const annImgRef = useRef<HTMLInputElement>(null)
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
+
+  // Event-specific announcement state
+  const [evtAnnEvent, setEvtAnnEvent] = useState<Event | null>(null)
+  const [evtAnnContent, setEvtAnnContent] = useState('')
+  const [postingEvtAnn, setPostingEvtAnn] = useState(false)
+  const [evtAnnouncements, setEvtAnnouncements] = useState<EventAnnouncementRow[]>([])
 
   useEffect(() => { fetchAll() }, [club.id])
 
@@ -174,17 +193,78 @@ export default function CommandCenter({ club }: Props) {
     fetchAll()
   }
 
+  function handleAnnImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setAnnImageFile(file)
+    const reader = new FileReader()
+    reader.onload = () => setAnnImagePreview(reader.result as string)
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
+
+  function clearAnnImage() {
+    setAnnImageFile(null)
+    setAnnImagePreview(null)
+  }
+
   async function handlePostAnnouncement() {
-    if (!user || !annContent.trim()) return
+    if (!user || (!annContent.trim() && !annImageFile)) return
     setPostingAnn(true)
+
+    let imageUrl: string | null = null
+    if (annImageFile) {
+      const ext = annImageFile.name.split('.').pop() ?? 'jpg'
+      const path = `announcement-images/${club.id}/${Date.now()}.${ext}`
+      const { error: upErr } = await supabase.storage
+        .from('clubs')
+        .upload(path, annImageFile, { upsert: true })
+      if (!upErr) {
+        const { data: urlData } = supabase.storage.from('clubs').getPublicUrl(path)
+        imageUrl = urlData.publicUrl
+      }
+    }
+
     await supabase.from('club_announcements').insert({
       club_id: club.id,
       user_id: user.id,
-      content: annContent.trim(),
+      content: annContent.trim() || null,
+      image_url: imageUrl,
     })
     setAnnContent('')
+    clearAnnImage()
     setPostingAnn(false)
     fetchAll()
+  }
+
+  async function fetchEventAnnouncements(eventId: string) {
+    const { data } = await supabase
+      .from('event_announcements')
+      .select('id, content, created_at, profile:profiles(full_name)')
+      .eq('event_id', eventId)
+      .order('created_at', { ascending: false })
+      .limit(30)
+    setEvtAnnouncements((data as unknown as EventAnnouncementRow[]) ?? [])
+  }
+
+  async function handleOpenEventAnn(event: Event) {
+    setEvtAnnEvent(event)
+    setEvtAnnContent('')
+    await fetchEventAnnouncements(event.id)
+  }
+
+  async function handlePostEventAnn() {
+    if (!user || !evtAnnEvent || !evtAnnContent.trim()) return
+    setPostingEvtAnn(true)
+    await supabase.from('event_announcements').insert({
+      event_id: evtAnnEvent.id,
+      club_id: club.id,
+      user_id: user.id,
+      content: evtAnnContent.trim(),
+    })
+    setEvtAnnContent('')
+    setPostingEvtAnn(false)
+    fetchEventAnnouncements(evtAnnEvent.id)
   }
 
   // Debounced profile search
@@ -573,21 +653,80 @@ export default function CommandCenter({ club }: Props) {
               border: '1px solid rgba(255,255,255,0.07)',
             }}
           />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{annContent.length} / 600</span>
+
+          {/* Image preview */}
+          {annImagePreview && (
+            <div style={{
+              position: 'relative', marginBottom: 10,
+              borderRadius: 10, overflow: 'hidden',
+              background: 'rgba(0,0,0,0.45)',
+              border: '1px solid rgba(255,255,255,0.09)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              minHeight: 80,
+            }}>
+              <img
+                src={annImagePreview}
+                alt="preview"
+                style={{
+                  maxWidth: '100%', maxHeight: 260,
+                  width: 'auto', height: 'auto',
+                  display: 'block', objectFit: 'contain',
+                }}
+              />
+              <button
+                onClick={clearAnnImage}
+                style={{
+                  position: 'absolute', top: 8, right: 8,
+                  width: 28, height: 28, borderRadius: '50%',
+                  background: 'rgba(0,0,0,0.7)', border: '1px solid rgba(255,255,255,0.2)',
+                  color: '#fff', fontSize: 14, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  lineHeight: 1,
+                }}
+              >✕</button>
+            </div>
+          )}
+
+          {/* Toolbar + post button */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                ref={annImgRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={handleAnnImageSelect}
+              />
+              <button
+                onClick={() => annImgRef.current?.click()}
+                title="Attach image"
+                style={{
+                  padding: '6px 12px', borderRadius: 7,
+                  background: annImageFile ? 'rgba(138,21,56,0.2)' : 'rgba(255,255,255,0.05)',
+                  border: annImageFile ? '1px solid rgba(138,21,56,0.4)' : '1px solid rgba(255,255,255,0.1)',
+                  color: annImageFile ? 'var(--accent)' : 'var(--text-muted)',
+                  fontSize: 13, cursor: 'pointer', transition: 'all 0.15s',
+                  display: 'flex', alignItems: 'center', gap: 5,
+                }}
+              >
+                🖼 {annImageFile ? 'Image added' : 'Add image'}
+              </button>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{annContent.length} / 600</span>
+            </div>
             <button
               onClick={handlePostAnnouncement}
-              disabled={postingAnn || !annContent.trim()}
+              disabled={postingAnn || (!annContent.trim() && !annImageFile)}
               style={{
-                background: annContent.trim() ? 'var(--accent)' : 'rgba(87,65,68,0.18)',
+                background: (annContent.trim() || annImageFile) ? 'var(--accent)' : 'rgba(87,65,68,0.18)',
                 border: 'none',
                 borderRadius: 9,
                 padding: '9px 22px',
-                color: annContent.trim() ? '#fff' : 'var(--text-muted)',
+                color: (annContent.trim() || annImageFile) ? '#fff' : 'var(--text-muted)',
                 fontSize: 13,
                 fontWeight: 700,
-                cursor: annContent.trim() ? 'pointer' : 'default',
+                cursor: (annContent.trim() || annImageFile) ? 'pointer' : 'default',
                 transition: 'all 0.15s',
+                opacity: postingAnn ? 0.7 : 1,
               }}
             >
               {postingAnn ? 'Posting…' : 'Post Announcement'}
@@ -636,9 +775,43 @@ export default function CommandCenter({ club }: Props) {
                       })}
                     </span>
                   </div>
-                  <p style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.65, margin: 0 }}>
-                    {ann.content}
-                  </p>
+                  {ann.content && (
+                    <p style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.65, margin: 0, whiteSpace: 'pre-wrap' }}>
+                      {ann.content}
+                    </p>
+                  )}
+                  {ann.image_url && (
+                    <div
+                      onClick={() => setLightboxSrc(ann.image_url!)}
+                      style={{
+                        position: 'relative',
+                        marginTop: ann.content ? 12 : 0,
+                        marginLeft: -16, marginRight: -16,
+                        marginBottom: -13,
+                        borderRadius: '0 0 9px 0',
+                        overflow: 'hidden',
+                        cursor: 'pointer',
+                        lineHeight: 0,
+                      }}
+                    >
+                      <img
+                        src={ann.image_url}
+                        alt=""
+                        style={{ maxWidth: '100%', height: 'auto', display: 'block', margin: '0 auto' }}
+                      />
+                      <div style={{
+                        position: 'absolute', bottom: 10, right: 10,
+                        background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)',
+                        border: '1px solid rgba(255,255,255,0.18)',
+                        borderRadius: 8, padding: '5px 10px',
+                        display: 'flex', alignItems: 'center', gap: 5,
+                        fontSize: 11, fontWeight: 600, color: '#fff',
+                        pointerEvents: 'none',
+                      }}>
+                        <span style={{ fontSize: 13 }}>⛶</span> View full
+                      </div>
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -720,6 +893,19 @@ export default function CommandCenter({ club }: Props) {
                         🎓 Send Certs
                       </button>
                     )}
+                    {ev.is_live && (
+                      <button
+                        onClick={() => handleOpenEventAnn(ev)}
+                        style={{
+                          padding: '4px 11px', borderRadius: 9999,
+                          border: '1px solid rgba(255,180,171,0.35)',
+                          background: 'rgba(255,180,171,0.08)',
+                          color: 'var(--live-red)', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                        }}
+                      >
+                        📢 Announce
+                      </button>
+                    )}
                     <button
                       onClick={() => toggleLive(ev)}
                       style={{
@@ -752,6 +938,55 @@ export default function CommandCenter({ club }: Props) {
           club={club}
           members={teamMembers}
           onClose={() => setCertEvent(null)}
+        />
+      )}
+
+      {/* Image lightbox */}
+      {lightboxSrc && createPortal(
+        <div
+          onClick={() => setLightboxSrc(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: 'rgba(0,0,0,0.93)', backdropFilter: 'blur(18px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 20, cursor: 'zoom-out',
+          }}
+        >
+          <img
+            src={lightboxSrc}
+            alt=""
+            onClick={e => e.stopPropagation()}
+            style={{
+              maxWidth: '92vw', maxHeight: '88vh',
+              objectFit: 'contain', borderRadius: 14,
+              boxShadow: '0 32px 80px rgba(0,0,0,0.7)',
+              cursor: 'default',
+            }}
+          />
+          <button
+            onClick={() => setLightboxSrc(null)}
+            style={{
+              position: 'absolute', top: 18, right: 18,
+              width: 38, height: 38, borderRadius: '50%',
+              background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)',
+              color: '#fff', fontSize: 18, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >✕</button>
+        </div>,
+        document.body
+      )}
+
+      {/* Event Announcement Modal */}
+      {evtAnnEvent && (
+        <EventAnnouncementModal
+          event={evtAnnEvent}
+          announcements={evtAnnouncements}
+          content={evtAnnContent}
+          posting={postingEvtAnn}
+          onContentChange={setEvtAnnContent}
+          onPost={handlePostEventAnn}
+          onClose={() => setEvtAnnEvent(null)}
         />
       )}
     </div>
@@ -1316,6 +1551,144 @@ const cfi: React.CSSProperties = {
   fontSize: 13,
   outline: 'none',
   fontFamily: 'inherit',
+}
+
+// ─── EventAnnouncementModal ──────────────────────────────────────────────────
+
+function EventAnnouncementModal({
+  event, announcements, content, posting,
+  onContentChange, onPost, onClose,
+}: {
+  event: Event
+  announcements: EventAnnouncementRow[]
+  content: string
+  posting: boolean
+  onContentChange: (v: string) => void
+  onPost: () => void
+  onClose: () => void
+}) {
+  return (
+    <div
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 60,
+        background: 'rgba(0,0,0,0.78)', backdropFilter: 'blur(10px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+      }}
+    >
+      <div style={{
+        width: '100%', maxWidth: 560,
+        background: 'var(--bg-card)', border: '1px solid rgba(255,180,171,0.15)',
+        borderRadius: 22, maxHeight: '90vh', overflowY: 'auto',
+        boxShadow: '0 32px 80px rgba(0,0,0,0.6)',
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: '24px 28px 20px',
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+          position: 'sticky', top: 0, background: 'var(--bg-card)', zIndex: 1,
+          borderRadius: '22px 22px 0 0',
+        }}>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--live-red)', textTransform: 'uppercase', marginBottom: 5 }}>
+              ● Live Event · Announcements
+            </div>
+            <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>
+              {event.title}
+            </h2>
+          </div>
+          <button onClick={onClose} style={{
+            width: 30, height: 30, borderRadius: '50%',
+            background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)',
+            color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>✕</button>
+        </div>
+
+        <div style={{ padding: '22px 28px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {/* Compose */}
+          <div style={{
+            background: 'rgba(41,28,30,0.5)',
+            border: '1px solid rgba(138,21,56,0.2)',
+            borderRadius: 12, padding: 16,
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--live-red)', textTransform: 'uppercase', marginBottom: 10 }}>
+              Post Event Announcement
+            </div>
+            <textarea
+              value={content}
+              onChange={e => onContentChange(e.target.value)}
+              placeholder="Share a live update, schedule change, or important notice for this event…"
+              rows={3}
+              maxLength={600}
+              style={{
+                ...cfi, resize: 'vertical', marginBottom: 10,
+                lineHeight: 1.65, background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.07)',
+              }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{content.length} / 600</span>
+              <button
+                onClick={onPost}
+                disabled={posting || !content.trim()}
+                style={{
+                  background: content.trim() ? 'var(--live-red)' : 'rgba(87,65,68,0.18)',
+                  border: 'none', borderRadius: 9, padding: '9px 22px',
+                  color: content.trim() ? '#fff' : 'var(--text-muted)',
+                  fontSize: 13, fontWeight: 700,
+                  cursor: content.trim() ? 'pointer' : 'default',
+                  transition: 'all 0.15s', opacity: posting ? 0.7 : 1,
+                }}
+              >
+                {posting ? 'Posting…' : 'Post Update'}
+              </button>
+            </div>
+          </div>
+
+          {/* Feed */}
+          {announcements.length === 0 ? (
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>
+              No announcements yet for this event. Post one above.
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {announcements.map(ann => (
+                <div key={ann.id} style={{
+                  background: 'rgba(255,255,255,0.025)',
+                  borderLeft: '3px solid var(--live-red)',
+                  borderRadius: '0 10px 10px 0',
+                  padding: '13px 16px',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                    <span style={{
+                      background: 'rgba(255,180,171,0.12)', borderRadius: 9999,
+                      padding: '2px 8px', fontSize: 10, fontWeight: 700,
+                      color: 'var(--live-red)', letterSpacing: '0.06em',
+                    }}>
+                      LIVE UPDATE
+                    </span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      {ann.profile?.full_name ?? 'Admin'}
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>
+                      {new Date(ann.created_at).toLocaleDateString('en-US', {
+                        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                      })}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.65, margin: 0, whiteSpace: 'pre-wrap' }}>
+                    {ann.content}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ─── QRModal ────────────────────────────────────────────────────────────────
