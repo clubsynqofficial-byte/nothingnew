@@ -74,6 +74,23 @@ export default function CommandCenter({ club }: Props) {
 
   useEffect(() => { fetchAll() }, [club.id])
 
+  // Live attendee count — patches only the changed event so no full re-fetch needed
+  useEffect(() => {
+    const channel = supabase
+      .channel(`cmd-events-${club.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'events', filter: `club_id=eq.${club.id}` },
+        payload => {
+          setEvents(prev =>
+            prev.map(e => e.id === payload.new.id ? { ...e, attendee_count: payload.new.attendee_count } : e)
+          )
+        },
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [club.id])
+
   async function fetchAll() {
     setLoadingStats(true)
     const thirtyDaysAgo = new Date()
@@ -636,7 +653,7 @@ export default function CommandCenter({ club }: Props) {
                   gap: 12,
                 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 2 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
                       <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {ev.title}
                       </div>
@@ -649,8 +666,19 @@ export default function CommandCenter({ club }: Props) {
                         }}>COMPLETED</span>
                       )}
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                      {ev.location ?? 'No location'} · {ev.karak_points_reward} pts · {ev.attendee_count} attending
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        {ev.location ?? 'No location'} · {ev.karak_points_reward} pts
+                      </span>
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 4,
+                        fontSize: 11, fontWeight: 700,
+                        padding: '2px 8px', borderRadius: 9999,
+                        background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.25)',
+                        color: '#38bdf8',
+                      }}>
+                        👥 {ev.attendee_count} checked in
+                      </span>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
