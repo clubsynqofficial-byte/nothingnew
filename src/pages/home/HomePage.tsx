@@ -264,7 +264,7 @@ export default function HomePage() {
   const canPost = !posting && (!!composeText.trim() || !!composeImage)
 
   return (
-    <div className="page-content" style={{ maxWidth: 640, margin: '0 auto', paddingBottom: 64 }}>
+    <div className="page-content" style={{ maxWidth: 980, margin: '0 auto', paddingBottom: 64 }}>
 
       {/* ── Page header ── */}
       <div style={{ marginBottom: 28, paddingBottom: 20, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
