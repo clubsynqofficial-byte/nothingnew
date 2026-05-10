@@ -70,10 +70,8 @@ export default function DiscoveryPage() {
     setJoiningId(club.id)
     if (club.is_member) {
       await supabase.from('club_memberships').delete().eq('club_id', club.id).eq('user_id', user.id)
-      await supabase.from('clubs').update({ member_count: Math.max(0, club.member_count - 1) }).eq('id', club.id)
     } else {
       await supabase.from('club_memberships').insert({ club_id: club.id, user_id: user.id })
-      await supabase.from('clubs').update({ member_count: club.member_count + 1 }).eq('id', club.id)
       await supabase.from('karak_transactions').insert({
         user_id: user.id, points: 5, reason: `Joined club: ${club.name}`,
       })

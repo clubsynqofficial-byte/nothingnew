@@ -88,8 +88,6 @@ export default function CommandCenter({ club }: Props) {
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
 
   // Club appearance state
-  const [logoFile, setLogoFile] = useState<File | null>(null)
-  const [bannerFile, setBannerFile] = useState<File | null>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(club.logo_url ?? null)
   const [bannerPreview, setBannerPreview] = useState<string | null>(club.banner_url ?? null)
   const [uploadingLogo, setUploadingLogo] = useState(false)
@@ -286,7 +284,6 @@ export default function CommandCenter({ club }: Props) {
     const url = urlData.publicUrl + `?t=${Date.now()}`
     await supabase.from('clubs').update({ logo_url: urlData.publicUrl }).eq('id', club.id)
     setLogoPreview(url)
-    setLogoFile(file)
     setAppearanceMsg('Logo saved!')
     setUploadingLogo(false)
   }
@@ -307,7 +304,6 @@ export default function CommandCenter({ club }: Props) {
     const url = urlData.publicUrl + `?t=${Date.now()}`
     await supabase.from('clubs').update({ banner_url: urlData.publicUrl }).eq('id', club.id)
     setBannerPreview(url)
-    setBannerFile(file)
     setAppearanceMsg('Banner saved!')
     setUploadingBanner(false)
   }
@@ -367,7 +363,6 @@ export default function CommandCenter({ club }: Props) {
       club_id: club.id, user_id: userId, role,
       custom_role: customRole ?? null,
     })
-    await supabase.from('clubs').update({ member_count: stats.memberCount + 1 }).eq('id', club.id)
     setMemberSearch('')
     setSearchProfiles([])
     fetchAll()
@@ -384,7 +379,6 @@ export default function CommandCenter({ club }: Props) {
   async function handleRemoveMember(membershipId: string) {
     setActionLoading(membershipId)
     await supabase.from('club_memberships').delete().eq('id', membershipId)
-    await supabase.from('clubs').update({ member_count: Math.max(0, stats.memberCount - 1) }).eq('id', club.id)
     setTeamMembers(prev => prev.filter(m => m.id !== membershipId))
     fetchAll()
     setActionLoading(null)
