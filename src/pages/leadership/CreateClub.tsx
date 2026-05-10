@@ -1,6 +1,7 @@
 import { useState, useRef, type FormEvent, type DragEvent, type ChangeEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { filterText, validateImage } from '../../lib/contentFilter'
 
 const CATEGORIES = [
   'Technology', 'Arts & Culture', 'Sports', 'Entrepreneurship',
@@ -91,6 +92,19 @@ export default function CreateClub({ onCreated }: Props) {
     e.preventDefault()
     if (!user) return
     setError('')
+
+    const textCheck = filterText(name, description)
+    if (!textCheck.ok) { setError(textCheck.reason!); return }
+
+    if (bannerFile) {
+      const imgCheck = validateImage(bannerFile)
+      if (!imgCheck.ok) { setError(imgCheck.reason!); return }
+    }
+    if (logoFile) {
+      const imgCheck = validateImage(logoFile)
+      if (!imgCheck.ok) { setError(imgCheck.reason!); return }
+    }
+
     setLoading(true)
 
     const prefix = `${user.id}/${Date.now()}`

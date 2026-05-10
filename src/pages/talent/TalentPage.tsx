@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { filterText, validateImage } from '../../lib/contentFilter'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -155,6 +156,9 @@ export default function TalentPage() {
   const [editTarget, setEditTarget] = useState<ListingRow | null>(null)
   const [form, setForm] = useState({ title: '', description: '', skill_offered: '', skill_wanted: '', category: 'Tech' })
   const [saving, setSaving] = useState(false)
+  const [listingError, setListingError] = useState('')
+  const [requestError, setRequestError] = useState('')
+  const [ratingError, setRatingError] = useState('')
 
   // Collaboration state
   const [chatTrade, setChatTrade] = useState<RequestRow | null>(null)
@@ -236,6 +240,9 @@ export default function TalentPage() {
 
   const handleRequest = async () => {
     if (!user || !requestPrompt || !requestMessage.trim()) return
+    const check = filterText(requestMessage)
+    if (!check.ok) { setRequestError(check.reason!); return }
+    setRequestError('')
     setRequestingId(requestPrompt.id)
     await supabase.from('skill_requests').insert({ listing_id: requestPrompt.id, requester_id: user.id, message: requestMessage.trim(), status: 'pending' })
     setRequestingId(null); setRequestPrompt(null); setRequestMessage('')
@@ -259,6 +266,9 @@ export default function TalentPage() {
 
   const submitRating = async () => {
     if (!user || !ratingTrade) return
+    const check = filterText(ratingComment)
+    if (!check.ok) { setRatingError(check.reason!); return }
+    setRatingError('')
     setSubmittingRating(true)
     const revieweeId = ratingTrade.requester_id === user.id
       ? (ratingTrade.listing as ListingRow)?.user_id
@@ -274,6 +284,9 @@ export default function TalentPage() {
 
   const handleSave = async () => {
     if (!user || !form.title.trim() || !form.skill_offered.trim() || !form.skill_wanted.trim()) return
+    const check = filterText(form.title, form.description, form.skill_offered, form.skill_wanted)
+    if (!check.ok) { setListingError(check.reason!); return }
+    setListingError('')
     setSaving(true)
     const payload = { user_id: user.id, title: form.title.trim(), description: form.description.trim() || null, skill_offered: form.skill_offered.trim(), skill_wanted: form.skill_wanted.trim(), category: form.category, is_active: true }
     if (editTarget) await supabase.from('skill_listings').update(payload).eq('id', editTarget.id)
@@ -463,7 +476,7 @@ export default function TalentPage() {
                     <ReqCard key={req.id} req={req} mode="incoming" currentUserId={user?.id ?? ''} actionId={actionId} hasReviewed={reviewedIds.has(req.id)}
                       onAccept={() => handleRequestAction(req.id, 'accepted')}
                       onReject={() => handleRequestAction(req.id, 'rejected')}
-                      onOpenChat={() => setChatTrade(req)}
+                      onOpenChat={() => req.status === 'accepted' && setChatTrade(req)}
                       onLeaveReview={() => { setRatingValue(5); setRatingComment(''); setRatingTrade(req) }}
                       onViewUser={setViewingUserId}
                     />
@@ -483,7 +496,7 @@ export default function TalentPage() {
               : <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {outgoing.map(req => (
                     <ReqCard key={req.id} req={req} mode="outgoing" currentUserId={user?.id ?? ''} actionId={actionId} hasReviewed={reviewedIds.has(req.id)}
-                      onOpenChat={() => setChatTrade(req)}
+                      onOpenChat={() => req.status === 'accepted' && setChatTrade(req)}
                       onLeaveReview={() => { setRatingValue(5); setRatingComment(''); setRatingTrade(req) }}
                       onViewUser={setViewingUserId}
                     />
@@ -514,8 +527,9 @@ export default function TalentPage() {
               <textarea autoFocus value={requestMessage} onChange={e => setRequestMessage(e.target.value)} placeholder="e.g. I've shipped three React projects and have been looking for someone to level up my design eye…" rows={4} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.65 }} />
               <div style={{ textAlign: 'right', fontSize: 11, color: requestMessage.length > 400 ? '#f87171' : 'var(--text-muted)', marginTop: 5 }}>{requestMessage.length} / 400</div>
             </div>
+            {requestError && <div style={{ fontSize: 12, color: '#f87171', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 8, padding: '8px 12px', marginBottom: 12 }}>{requestError}</div>}
             <div style={{ display: 'flex', gap: 12 }}>
-              <button onClick={() => setRequestPrompt(null)} style={{ flex: 1, padding: '11px', background: 'transparent', border: '1px solid rgba(87,65,68,0.3)', borderRadius: 10, color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => { setRequestPrompt(null); setRequestError('') }} style={{ flex: 1, padding: '11px', background: 'transparent', border: '1px solid rgba(87,65,68,0.3)', borderRadius: 10, color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
               <button onClick={handleRequest} disabled={!requestMessage.trim() || requestMessage.length > 400 || !!requestingId}
                 style={{ flex: 2, padding: '11px', background: !requestMessage.trim() || requestMessage.length > 400 || !!requestingId ? 'rgba(138,21,56,0.3)' : 'var(--accent)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 14, fontWeight: 600, cursor: !requestMessage.trim() || !!requestingId ? 'default' : 'pointer', transition: 'background 0.15s' }}>
                 {requestingId ? 'Sending…' : 'Send Request'}
@@ -546,8 +560,9 @@ export default function TalentPage() {
               </Field>
               <Field label="Description"><textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="More detail about the trade, experience level, timeline…" rows={3} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }} /></Field>
             </div>
-            <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-              <button onClick={() => setShowModal(false)} style={{ flex: 1, padding: '11px', background: 'transparent', border: '1px solid rgba(87,65,68,0.3)', borderRadius: 10, color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
+            {listingError && <div style={{ fontSize: 12, color: '#f87171', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 8, padding: '8px 12px', marginTop: 12 }}>{listingError}</div>}
+            <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
+              <button onClick={() => { setShowModal(false); setListingError('') }} style={{ flex: 1, padding: '11px', background: 'transparent', border: '1px solid rgba(87,65,68,0.3)', borderRadius: 10, color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer' }}>Cancel</button>
               <button onClick={handleSave} disabled={saving || !form.title.trim() || !form.skill_offered.trim() || !form.skill_wanted.trim()}
                 style={{ flex: 2, padding: '11px', background: saving || !form.title.trim() || !form.skill_offered.trim() || !form.skill_wanted.trim() ? 'rgba(138,21,56,0.3)' : 'var(--accent)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 14, fontWeight: 600, cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1, transition: 'background 0.15s' }}>
                 {saving ? 'Saving…' : editTarget ? 'Save Changes' : 'Post Listing'}
@@ -581,9 +596,10 @@ export default function TalentPage() {
               <StarPicker value={ratingValue} onChange={setRatingValue} />
             </div>
             <textarea value={ratingComment} onChange={e => setRatingComment(e.target.value)} placeholder="Add a short review (optional)…" rows={3} maxLength={200} style={{ ...inputStyle, resize: 'none', lineHeight: 1.6, marginBottom: 6 }} />
-            <div style={{ textAlign: 'right', fontSize: 11, color: 'var(--text-muted)', marginBottom: 20 }}>{ratingComment.length} / 200</div>
+            <div style={{ textAlign: 'right', fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>{ratingComment.length} / 200</div>
+            {ratingError && <div style={{ fontSize: 12, color: '#f87171', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 8, padding: '8px 12px', marginBottom: 12 }}>{ratingError}</div>}
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setRatingTrade(null)} style={{ flex: 1, padding: '11px', background: 'transparent', border: '1px solid rgba(87,65,68,0.3)', borderRadius: 10, color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer' }}>Skip</button>
+              <button onClick={() => { setRatingTrade(null); setRatingError('') }} style={{ flex: 1, padding: '11px', background: 'transparent', border: '1px solid rgba(87,65,68,0.3)', borderRadius: 10, color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer' }}>Skip</button>
               <button onClick={submitRating} disabled={submittingRating} style={{ flex: 2, padding: '11px', background: 'var(--accent)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 14, fontWeight: 600, cursor: submittingRating ? 'default' : 'pointer', opacity: submittingRating ? 0.7 : 1 }}>
                 {submittingRating ? 'Submitting…' : 'Submit Review'}
               </button>
@@ -618,6 +634,7 @@ function TradeChatModal({ trade, currentUserId, onClose, onMarkComplete }: {
   const [confirmComplete, setConfirmComplete] = useState(false)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [whiteboardOpen, setWhiteboardOpen] = useState(false)
+  const [sendError, setSendError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -654,6 +671,11 @@ function TradeChatModal({ trade, currentUserId, onClose, onMarkComplete }: {
     const text = extraPayload ? (extraPayload.content ?? '') : input.trim()
     if (!extraPayload && !text) return
     if (sending) return
+    if (!extraPayload && text) {
+      const check = filterText(text)
+      if (!check.ok) { setSendError(check.reason!); return }
+    }
+    setSendError('')
     setSending(true)
     if (!extraPayload) setInput('')
     await supabase.from('skill_trade_messages').insert({
@@ -676,8 +698,13 @@ function TradeChatModal({ trade, currentUserId, onClose, onMarkComplete }: {
     if (mime.startsWith('image/')) mediaType = 'image'
     else if (mime.startsWith('video/')) mediaType = 'video'
 
+    if (mime.startsWith('image/')) {
+      const imgCheck = validateImage(file)
+      if (!imgCheck.ok) { setSendError(imgCheck.reason!); return }
+    }
+
     if (file.size > 500 * 1024 * 1024) {
-      alert('File too large. Max 500 MB.')
+      setSendError('File too large. Max 500 MB.')
       return
     }
 
@@ -790,6 +817,12 @@ function TradeChatModal({ trade, currentUserId, onClose, onMarkComplete }: {
           </div>
 
           {/* Input */}
+          {sendError && (
+            <div style={{ padding: '6px 16px', background: 'rgba(248,113,113,0.1)', borderTop: '1px solid rgba(248,113,113,0.2)', fontSize: 12, color: '#f87171', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <span>{sendError}</span>
+              <button onClick={() => setSendError('')} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0 }}>✕</button>
+            </div>
+          )}
           <div style={{ padding: '10px 16px 14px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0 }}>
             <input ref={fileInputRef} type="file" accept="image/*,video/*,application/pdf" style={{ display: 'none' }} onChange={handleFileChange} />
             <button onClick={() => fileInputRef.current?.click()} disabled={uploading}

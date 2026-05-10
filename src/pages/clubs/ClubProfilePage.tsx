@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { filterText } from '../../lib/contentFilter'
 
 // ─────────────────────────────────────────── Types ──
 
@@ -151,7 +152,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 export default function ClubProfilePage() {
   const { clubId } = useParams<{ clubId: string }>()
   const navigate = useNavigate()
-  const { user, profile: authProfile } = useAuth()
+  const { user, profile: authProfile, refreshProfile } = useAuth()
 
   const [club,          setClub]          = useState<ClubDetail | null>(null)
   const [events,        setEvents]        = useState<EventRow[]>([])
@@ -209,11 +210,13 @@ export default function ClubProfilePage() {
     } else {
       await supabase.from('event_attendees').insert({ event_id: event.id, user_id: user.id })
       await supabase.from('events').update({ attendee_count: event.attendee_count + 1 }).eq('id', event.id)
-      if (event.karak_points_reward > 0)
+      if (event.karak_points_reward > 0) {
         await supabase.from('karak_transactions').insert({
           user_id: user.id, points: event.karak_points_reward,
           reason: `Attending: ${event.title}`, event_id: event.id,
         })
+        await refreshProfile()
+      }
     }
     setAttendingId(null)
     fetchAll()
@@ -516,6 +519,7 @@ export default function ClubProfilePage() {
           {tab === 'announcements' && (
             <AnnouncementsSection
               clubId={clubId!}
+              clubName={club?.name ?? ''}
               announcements={announcements}
               members={members}
               canPost={canPost}
@@ -819,26 +823,41 @@ function CalendarSection({ events }: { events: EventRow[] }) {
 // ─────────────────────── AnnouncementsSection ───────
 
 function AnnouncementsSection({
-  clubId, announcements, members, canPost, onRefresh,
+  clubId, clubName, announcements, members, canPost, onRefresh,
 }: {
   clubId: string
+  clubName: string
   announcements: AnnouncementRow[]
   members: MemberRow[]
   canPost: boolean
   onRefresh: () => void
 }) {
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
   const [showForm, setShowForm]     = useState(false)
   const [content,  setContent]     = useState('')
   const [posting,  setPosting]     = useState(false)
+  const [postError, setPostError]  = useState('')
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
 
   const handlePost = async () => {
     if (!user || !content.trim() || posting) return
+    const check = filterText(content)
+    if (!check.ok) { setPostError(check.reason!); return }
+    setPostError('')
     setPosting(true)
+    const trimmed = content.trim()
     await supabase.from('club_announcements').insert({
-      club_id: clubId, user_id: user.id, content: content.trim(),
+      club_id: clubId, user_id: user.id, content: trimmed,
     })
+    // Fire-and-forget — don't block the UI on email delivery
+    supabase.functions.invoke('send-announcement-email', {
+      body: {
+        clubId,
+        clubName,
+        content: trimmed,
+        posterName: profile?.full_name ?? 'Club Admin',
+      },
+    }).catch(() => {/* email failure is non-fatal */})
     setContent('')
     setShowForm(false)
     setPosting(false)
@@ -902,8 +921,9 @@ function AnnouncementsSection({
             rows={4}
             style={{ ...inputSt, resize: 'vertical', lineHeight: 1.7, marginBottom: 14, fontSize: 14 }}
           />
+          {postError && <div style={{ fontSize: 12, color: '#f87171', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 8, padding: '8px 12px', marginBottom: 10 }}>{postError}</div>}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-            <button onClick={() => { setShowForm(false); setContent('') }} style={{ padding: '8px 18px', background: 'transparent', border: '1px solid rgba(87,65,68,0.3)', borderRadius: 8, color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer' }}>
+            <button onClick={() => { setShowForm(false); setContent(''); setPostError('') }} style={{ padding: '8px 18px', background: 'transparent', border: '1px solid rgba(87,65,68,0.3)', borderRadius: 8, color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer' }}>
               Cancel
             </button>
             <button
@@ -1049,10 +1069,12 @@ function ThreadsSection({ clubId, threads, onRefresh }: { clubId: string; thread
   const [replies, setReplies] = useState<Record<string, ReplyRow[]>>({})
   const [replyText, setReplyText] = useState<Record<string, string>>({})
   const [postingReply, setPostingReply] = useState(false)
+  const [replyError, setReplyError] = useState('')
   const [showNewThread, setShowNewThread] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [newContent, setNewContent] = useState('')
   const [postingThread, setPostingThread] = useState(false)
+  const [threadError, setThreadError] = useState('')
   const bottomRef = useRef<HTMLTextAreaElement>(null)
 
   const fetchReplies = useCallback(async (threadId: string) => {
@@ -1073,6 +1095,9 @@ function ThreadsSection({ clubId, threads, onRefresh }: { clubId: string; thread
   const handleReply = async (threadId: string) => {
     const text = (replyText[threadId] ?? '').trim()
     if (!user || !text || postingReply) return
+    const check = filterText(text)
+    if (!check.ok) { setReplyError(check.reason!); return }
+    setReplyError('')
     setPostingReply(true)
     await supabase.from('club_thread_replies').insert({ thread_id: threadId, user_id: user.id, content: text })
     const thread = threads.find(t => t.id === threadId)
@@ -1085,6 +1110,9 @@ function ThreadsSection({ clubId, threads, onRefresh }: { clubId: string; thread
 
   const handlePostThread = async () => {
     if (!user || !newTitle.trim() || postingThread) return
+    const check = filterText(newTitle, newContent)
+    if (!check.ok) { setThreadError(check.reason!); return }
+    setThreadError('')
     setPostingThread(true)
     await supabase.from('club_threads').insert({
       club_id: clubId, user_id: user.id,
@@ -1136,8 +1164,9 @@ function ThreadsSection({ clubId, threads, onRefresh }: { clubId: string; thread
             rows={3}
             style={{ ...inputSt, resize: 'vertical', lineHeight: 1.65, marginBottom: 14 }}
           />
+          {threadError && <div style={{ fontSize: 12, color: '#f87171', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 8, padding: '8px 12px', marginBottom: 10 }}>{threadError}</div>}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-            <button onClick={() => setShowNewThread(false)} style={{ padding: '8px 18px', background: 'transparent', border: '1px solid rgba(87,65,68,0.3)', borderRadius: 8, color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+            <button onClick={() => { setShowNewThread(false); setThreadError('') }} style={{ padding: '8px 18px', background: 'transparent', border: '1px solid rgba(87,65,68,0.3)', borderRadius: 8, color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
             <button
               onClick={handlePostThread}
               disabled={!newTitle.trim() || postingThread}
@@ -1225,13 +1254,14 @@ function ThreadsSection({ clubId, threads, onRefresh }: { clubId: string; thread
                     )}
 
                     {/* Reply input */}
+                    {replyError && <div style={{ padding: '5px 18px', fontSize: 12, color: '#f87171', background: 'rgba(248,113,113,0.08)', borderTop: '1px solid rgba(248,113,113,0.15)' }}>{replyError}</div>}
                     <div style={{ padding: '12px 18px 16px', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', gap: 10, alignItems: 'flex-end' }}>
                       <Avatar name={undefined} size={28} />
                       <div style={{ flex: 1 }}>
                         <textarea
                           ref={bottomRef}
                           value={replyText[thread.id] ?? ''}
-                          onChange={e => setReplyText(r => ({ ...r, [thread.id]: e.target.value }))}
+                          onChange={e => { setReplyText(r => ({ ...r, [thread.id]: e.target.value })); setReplyError('') }}
                           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleReply(thread.id) } }}
                           placeholder="Write a reply… (Enter to send)"
                           rows={1}

@@ -4,6 +4,7 @@ import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import type { Club, Event } from '../../types'
+import { filterText, validateImage } from '../../lib/contentFilter'
 
 interface Stats {
   memberCount: number
@@ -48,7 +49,7 @@ interface Props {
 }
 
 export default function CommandCenter({ club }: Props) {
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
   const [stats, setStats] = useState<Stats>({ memberCount: 0, eventCount: 0, totalAttendees: 0, threadCount: 0, newMembersThisMonth: 0 })
   const [events, setEvents] = useState<Event[]>([])
   const [announcements, setAnnouncements] = useState<AnnouncementRow[]>([])
@@ -80,6 +81,7 @@ export default function CommandCenter({ club }: Props) {
   // Announcement state
   const [annContent, setAnnContent] = useState('')
   const [postingAnn, setPostingAnn] = useState(false)
+  const [annError, setAnnError] = useState('')
   const [annImageFile, setAnnImageFile] = useState<File | null>(null)
   const [annImagePreview, setAnnImagePreview] = useState<string | null>(null)
   const annImgRef = useRef<HTMLInputElement>(null)
@@ -165,6 +167,8 @@ export default function CommandCenter({ club }: Props) {
   async function handleCreateEvent(e: FormEvent) {
     e.preventDefault()
     setEventError('')
+    const textCheck = filterText(evTitle, evDesc, evLocation, evCategory)
+    if (!textCheck.ok) { setEventError(textCheck.reason!); return }
     setCreatingEvent(true)
 
     const { error } = await supabase.from('events').insert({
@@ -210,6 +214,15 @@ export default function CommandCenter({ club }: Props) {
 
   async function handlePostAnnouncement() {
     if (!user || (!annContent.trim() && !annImageFile)) return
+    if (annContent.trim()) {
+      const check = filterText(annContent)
+      if (!check.ok) { setAnnError(check.reason!); return }
+    }
+    if (annImageFile) {
+      const imgCheck = validateImage(annImageFile)
+      if (!imgCheck.ok) { setAnnError(imgCheck.reason!); return }
+    }
+    setAnnError('')
     setPostingAnn(true)
 
     let imageUrl: string | null = null
@@ -231,6 +244,15 @@ export default function CommandCenter({ club }: Props) {
       content: annContent.trim() || null,
       image_url: imageUrl,
     })
+    // Fire-and-forget email to all members
+    supabase.functions.invoke('send-announcement-email', {
+      body: {
+        clubId: club.id,
+        clubName: club.name,
+        content: annContent.trim() || '[image]',
+        posterName: profile?.full_name ?? 'Club Admin',
+      },
+    }).catch(() => {})
     setAnnContent('')
     clearAnnImage()
     setPostingAnn(false)
@@ -255,6 +277,8 @@ export default function CommandCenter({ club }: Props) {
 
   async function handlePostEventAnn() {
     if (!user || !evtAnnEvent || !evtAnnContent.trim()) return
+    const check = filterText(evtAnnContent)
+    if (!check.ok) { alert(check.reason); return }
     setPostingEvtAnn(true)
     await supabase.from('event_announcements').insert({
       event_id: evtAnnEvent.id,
@@ -713,6 +737,7 @@ export default function CommandCenter({ club }: Props) {
               </button>
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{annContent.length} / 600</span>
             </div>
+            {annError && <div style={{ fontSize: 12, color: '#f87171', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 8, padding: '8px 12px', marginBottom: 8 }}>{annError}</div>}
             <button
               onClick={handlePostAnnouncement}
               disabled={postingAnn || (!annContent.trim() && !annImageFile)}

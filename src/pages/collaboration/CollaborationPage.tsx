@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { filterText } from '../../lib/contentFilter'
 
 interface FounderCard {
   id: string
@@ -126,6 +127,7 @@ export default function CollaborationPage() {
   const [swipeDir, setSwipeDir] = useState<'left' | 'right' | null>(null)
   const [form, setForm] = useState({ skills_needed: '', skills_offered: '' })
   const [saving, setSaving] = useState(false)
+  const [profileError, setProfileError] = useState('')
 
   const fetchMyProfile = useCallback(async () => {
     if (!user) return
@@ -228,6 +230,9 @@ export default function CollaborationPage() {
 
   const handleSaveProfile = async () => {
     if (!user) return
+    const check = filterText(form.skills_needed, form.skills_offered)
+    if (!check.ok) { setProfileError(check.reason!); return }
+    setProfileError('')
     setSaving(true)
     const parseSkills = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean)
     const payload = {
@@ -851,9 +856,10 @@ export default function CollaborationPage() {
               </Field>
             </div>
 
-            <div style={{ display: 'flex', gap: 10, marginTop: 28 }}>
+            {profileError && <div style={{ fontSize: 12, color: '#f87171', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 8, padding: '8px 12px', marginTop: 12 }}>{profileError}</div>}
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
               <button
-                onClick={() => setShowProfileModal(false)}
+                onClick={() => { setShowProfileModal(false); setProfileError('') }}
                 style={{
                   flex: 1, padding: '12px',
                   background: 'transparent',

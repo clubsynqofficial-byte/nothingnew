@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import type { Club } from '../../types'
@@ -28,7 +29,8 @@ interface ClubWithMeta extends Club {
 }
 
 export default function DiscoveryPage() {
-  const { user } = useAuth()
+  const { user, refreshProfile } = useAuth()
+  const navigate = useNavigate()
   const [clubs, setClubs] = useState<ClubWithMeta[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -72,6 +74,10 @@ export default function DiscoveryPage() {
     } else {
       await supabase.from('club_memberships').insert({ club_id: club.id, user_id: user.id })
       await supabase.from('clubs').update({ member_count: club.member_count + 1 }).eq('id', club.id)
+      await supabase.from('karak_transactions').insert({
+        user_id: user.id, points: 5, reason: `Joined club: ${club.name}`,
+      })
+      await refreshProfile()
     }
     setJoiningId(null)
     fetchClubs()
@@ -83,47 +89,146 @@ export default function DiscoveryPage() {
   return (
     <>
       <style>{`
+        /* ── Card ── */
         .disc-card {
-          transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+          transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.3s ease, border-color 0.3s ease;
+          will-change: transform;
         }
         .disc-card:hover {
-          transform: translateY(-6px);
-          box-shadow: 0 24px 48px rgba(0,0,0,0.45) !important;
-          border-color: rgba(138,21,56,0.3) !important;
+          transform: translateY(-10px) scale(1.015);
+          box-shadow: 0 32px 72px rgba(0,0,0,0.55), 0 0 52px var(--cat-glow, rgba(138,21,56,0.15)) !important;
+          border-color: rgba(138,21,56,0.35) !important;
         }
-        .disc-join { transition: all 0.15s ease; }
-        .disc-join:hover:not(:disabled) { filter: brightness(1.12); transform: translateY(-1px); }
+
+        /* ── Join button ── */
+        .disc-join { transition: all 0.18s ease; }
+        .disc-join:hover:not(:disabled) {
+          filter: brightness(1.14);
+          transform: translateY(-2px);
+          box-shadow: 0 10px 32px rgba(138,21,56,0.5) !important;
+        }
+        .disc-join-shimmer {
+          background: linear-gradient(135deg, #6e1030 0%, #8a1538 30%, #c0255a 55%, #8a1538 80%, #6e1030 100%) !important;
+          background-size: 300% auto !important;
+          animation: joinShimmer 4s linear infinite;
+        }
+
+        /* ── Search ── */
         .disc-search:focus {
           outline: none !important;
           border-color: rgba(138,21,56,0.65) !important;
-          box-shadow: 0 0 0 3px rgba(138,21,56,0.15), 0 0 28px rgba(138,21,56,0.08) !important;
+          box-shadow: 0 0 0 3px rgba(138,21,56,0.14), 0 0 44px rgba(138,21,56,0.09) !important;
         }
-        .disc-cat { transition: all 0.15s ease; }
+
+        /* ── Category pills ── */
+        .disc-cat { transition: all 0.2s ease; }
         .disc-cat:hover:not(.disc-cat-active) {
           border-color: rgba(87,65,68,0.5) !important;
           color: var(--text-secondary) !important;
           background: rgba(41,28,30,0.8) !important;
+          transform: translateY(-1px);
+        }
+        .disc-cat-active {
+          transform: scale(1.04);
+        }
+
+        /* ── Logo hover ── */
+        .disc-logo {
+          transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.3s ease;
+        }
+        .disc-card:hover .disc-logo {
+          transform: translateY(-4px) scale(1.08);
+          box-shadow: 0 8px 24px rgba(0,0,0,0.7) !important;
+        }
+
+        /* ── Banner zoom ── */
+        .disc-banner-img {
+          transition: transform 0.5s ease;
+        }
+        .disc-card:hover .disc-banner-img {
+          transform: scale(1.06);
+        }
+
+        /* ── Keyframes ── */
+        @keyframes fadeUp {
+          from { opacity: 0; transform: translateY(22px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes cardIn {
+          from { opacity: 0; transform: translateY(32px) scale(0.96); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes orbFloat1 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          38%      { transform: translate(22px, -18px) scale(1.07); }
+          70%      { transform: translate(-12px, 12px) scale(0.96); }
+        }
+        @keyframes orbFloat2 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          32%      { transform: translate(-16px, 14px) scale(1.05); }
+          65%      { transform: translate(12px, -10px) scale(0.97); }
+        }
+        @keyframes orbFloat3 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          50%      { transform: translate(10px, 20px) scale(1.04); }
+        }
+        @keyframes joinShimmer {
+          0%   { background-position: 200% center; }
+          100% { background-position: -200% center; }
+        }
+        @keyframes discSkeletonShimmer {
+          0%   { background-position: -300% 0; }
+          100% { background-position: 300% 0; }
         }
         @keyframes discSkeletonPulse {
-          0%, 100% { opacity: 0.25; }
-          50% { opacity: 0.55; }
+          0%, 100% { opacity: 0.28; }
+          50%      { opacity: 0.55; }
+        }
+        @keyframes resultsIn {
+          from { opacity: 0; transform: translateX(-8px); }
+          to   { opacity: 1; transform: translateX(0); }
         }
       `}</style>
 
       <div className="page-content" style={{ maxWidth: 1320 }}>
 
         {/* ── Hero ── */}
-        <div style={{ marginBottom: 44, position: 'relative' }}>
+        <div style={{ marginBottom: 44, position: 'relative', overflow: 'hidden' }}>
+          {/* Ambient orb 1 */}
           <div style={{
             position: 'absolute',
             top: '50%', left: -20,
             transform: 'translateY(-60%)',
-            width: 500, height: 160,
-            background: 'radial-gradient(ellipse, rgba(138,21,56,0.22) 0%, transparent 68%)',
+            width: 500, height: 180,
+            background: 'radial-gradient(ellipse, rgba(138,21,56,0.24) 0%, transparent 68%)',
+            animation: 'orbFloat1 14s ease-in-out infinite',
             pointerEvents: 'none',
           }} />
+          {/* Ambient orb 2 */}
+          <div style={{
+            position: 'absolute',
+            top: '-20px', right: -60,
+            width: 380, height: 200,
+            background: 'radial-gradient(ellipse, rgba(90,10,35,0.15) 0%, transparent 65%)',
+            animation: 'orbFloat2 18s ease-in-out 2s infinite',
+            pointerEvents: 'none',
+          }} />
+          {/* Ambient orb 3 */}
+          <div style={{
+            position: 'absolute',
+            bottom: -30, left: '40%',
+            width: 320, height: 140,
+            background: 'radial-gradient(ellipse, rgba(138,21,56,0.1) 0%, transparent 68%)',
+            animation: 'orbFloat3 22s ease-in-out 5s infinite',
+            pointerEvents: 'none',
+          }} />
+
           <div style={{ position: 'relative' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+            {/* Label badge */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14,
+              animation: 'fadeUp 0.5s ease both',
+            }}>
               <div style={{
                 width: 32, height: 32, borderRadius: 9,
                 background: 'linear-gradient(135deg, var(--accent) 0%, #c0255a 100%)',
@@ -140,22 +245,30 @@ export default function DiscoveryPage() {
                 Discovery
               </span>
             </div>
+
             <h1 style={{
               fontSize: 46, fontWeight: 800,
               color: 'var(--text-primary)',
               letterSpacing: '-1.5px', lineHeight: 1.08,
               marginBottom: 14,
+              animation: 'fadeUp 0.55s 0.08s ease both',
             }}>
               Find Your Community
             </h1>
-            <p style={{ fontSize: 16, color: 'var(--text-secondary)', lineHeight: 1.65, maxWidth: 460 }}>
+            <p style={{
+              fontSize: 16, color: 'var(--text-secondary)', lineHeight: 1.65, maxWidth: 460,
+              animation: 'fadeUp 0.55s 0.18s ease both',
+            }}>
               Explore student clubs and organizations across Qatar's universities. Join, connect, and make an impact.
             </p>
           </div>
         </div>
 
         {/* ── Search ── */}
-        <div style={{ position: 'relative', maxWidth: 580, marginBottom: 20 }}>
+        <div style={{
+          position: 'relative', maxWidth: 580, marginBottom: 20,
+          animation: 'fadeUp 0.5s 0.28s ease both',
+        }}>
           <svg
             style={{ position: 'absolute', left: 20, top: '50%', transform: 'translateY(-50%)', opacity: 0.38, pointerEvents: 'none' }}
             width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
@@ -178,14 +291,14 @@ export default function DiscoveryPage() {
               color: 'var(--text-primary)',
               fontSize: 15,
               backdropFilter: 'blur(16px)',
-              transition: 'border-color 0.15s, box-shadow 0.15s',
+              transition: 'border-color 0.2s, box-shadow 0.2s',
             }}
           />
         </div>
 
         {/* ── Category filters ── */}
         <div style={{ display: 'flex', gap: 7, marginBottom: 36, flexWrap: 'wrap' }}>
-          {CATEGORIES.map(cat => {
+          {CATEGORIES.map((cat, i) => {
             const active = cat === activeCategory
             const catColor = CATEGORY_COLORS[cat]
             return (
@@ -209,7 +322,8 @@ export default function DiscoveryPage() {
                   fontWeight: 800,
                   letterSpacing: '0.07em',
                   cursor: 'pointer',
-                  boxShadow: active && catColor ? `0 0 20px ${catColor}20` : 'none',
+                  boxShadow: active && catColor ? `0 0 24px ${catColor}20` : 'none',
+                  animation: `fadeUp 0.45s ${0.34 + i * 0.045}s ease both`,
                 }}
               >
                 {cat.toUpperCase()}
@@ -220,7 +334,10 @@ export default function DiscoveryPage() {
 
         {/* ── Results label ── */}
         {!loading && clubs.length > 0 && (
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 22, letterSpacing: '0.03em' }}>
+          <div style={{
+            fontSize: 12, color: 'var(--text-muted)', marginBottom: 22, letterSpacing: '0.03em',
+            animation: 'resultsIn 0.35s ease both',
+          }}>
             {clubs.length} club{clubs.length !== 1 ? 's' : ''}
             {activeCategory !== 'All' ? ` · ${activeCategory}` : ''}
             {search ? ` · "${search}"` : ''}
@@ -238,11 +355,13 @@ export default function DiscoveryPage() {
             gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))',
             gap: 22,
           }}>
-            {clubs.map(club => (
+            {clubs.map((club, i) => (
               <ClubCard
                 key={club.id}
                 club={club}
+                index={i}
                 onJoin={() => handleJoin(club)}
+                onOpen={() => navigate(`/clubs/${club.id}`)}
                 joining={joiningId === club.id}
                 initials={initials}
               />
@@ -254,9 +373,11 @@ export default function DiscoveryPage() {
   )
 }
 
-function ClubCard({ club, onJoin, joining, initials }: {
+function ClubCard({ club, index, onJoin, onOpen, joining, initials }: {
   club: ClubWithMeta
+  index: number
   onJoin: () => void
+  onOpen: () => void
   joining: boolean
   initials: (n: string) => string
 }) {
@@ -267,9 +388,12 @@ function ClubCard({ club, onJoin, joining, initials }: {
     ? (club.university.short_name ?? club.university.name)
     : null
 
+  const animDelay = `${Math.min(index * 0.06, 0.38)}s`
+
   return (
     <div
       className="disc-card"
+      onClick={onOpen}
       style={{
         background: 'rgba(41,28,30,0.55)',
         border: '1px solid rgba(87,65,68,0.18)',
@@ -279,7 +403,10 @@ function ClubCard({ club, onJoin, joining, initials }: {
         flexDirection: 'column',
         backdropFilter: 'blur(12px)',
         boxShadow: '0 4px 20px rgba(0,0,0,0.28)',
-      }}
+        animation: `cardIn 0.5s ${animDelay} ease both`,
+        cursor: 'pointer',
+        ['--cat-glow' as string]: `${catColor}26`,
+      } as React.CSSProperties}
     >
       {/* ── Banner ── */}
       <div style={{
@@ -293,11 +420,11 @@ function ClubCard({ club, onJoin, joining, initials }: {
           <img
             src={club.banner_url}
             alt=""
+            className="disc-banner-img"
             style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
           />
         )}
 
-        {/* Category accent bar at top for gradient banners */}
         {!club.banner_url && (
           <div style={{
             position: 'absolute', top: 0, left: 0, right: 0, height: 3,
@@ -369,18 +496,21 @@ function ClubCard({ club, onJoin, joining, initials }: {
       {/* ── Body ── */}
       <div style={{ padding: '0 20px', flex: 1 }}>
         {/* Logo overlapping banner */}
-        <div style={{
-          marginTop: -28, marginBottom: 12,
-          width: 54, height: 54, borderRadius: 14,
-          border: '3px solid rgba(27,16,18,1)',
-          outline: '1px solid rgba(255,255,255,0.08)',
-          overflow: 'hidden',
-          background: 'var(--bg-muted)',
-          boxShadow: '0 4px 18px rgba(0,0,0,0.6)',
-          position: 'relative', zIndex: 1,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexShrink: 0,
-        }}>
+        <div
+          className="disc-logo"
+          style={{
+            marginTop: -28, marginBottom: 12,
+            width: 54, height: 54, borderRadius: 14,
+            border: '3px solid rgba(27,16,18,1)',
+            outline: '1px solid rgba(255,255,255,0.08)',
+            overflow: 'hidden',
+            background: 'var(--bg-muted)',
+            boxShadow: '0 4px 18px rgba(0,0,0,0.6)',
+            position: 'relative', zIndex: 1,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        >
           {club.logo_url ? (
             <img src={club.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           ) : (
@@ -439,8 +569,8 @@ function ClubCard({ club, onJoin, joining, initials }: {
       {/* ── Join button ── */}
       <div style={{ padding: '4px 20px 20px' }}>
         <button
-          className="disc-join"
-          onClick={onJoin}
+          className={`disc-join${!club.is_member ? ' disc-join-shimmer' : ''}`}
+          onClick={e => { e.stopPropagation(); onJoin() }}
           disabled={joining}
           style={{
             width: '100%',
@@ -469,6 +599,7 @@ function ClubCard({ club, onJoin, joining, initials }: {
 }
 
 function SkeletonGrid() {
+  const shimmerBg = 'linear-gradient(90deg, rgba(52,39,40,0.3) 0%, rgba(72,54,57,0.55) 45%, rgba(52,39,40,0.3) 100%)'
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))', gap: 22 }}>
       {Array.from({ length: 6 }).map((_, i) => (
@@ -476,9 +607,14 @@ function SkeletonGrid() {
           background: 'rgba(41,28,30,0.35)',
           border: '1px solid rgba(87,65,68,0.12)',
           borderRadius: 20, overflow: 'hidden',
-          animation: `discSkeletonPulse 1.8s ease-in-out ${i * 0.12}s infinite`,
+          animation: `discSkeletonPulse 1.9s ease-in-out ${i * 0.13}s infinite`,
         }}>
-          <div style={{ height: 150, background: 'rgba(52,39,40,0.55)' }} />
+          <div style={{
+            height: 150,
+            backgroundImage: shimmerBg,
+            backgroundSize: '300% 100%',
+            animation: `discSkeletonShimmer 2.2s linear ${i * 0.15}s infinite`,
+          }} />
           <div style={{ padding: '0 20px 20px' }}>
             <div style={{ width: 54, height: 54, borderRadius: 14, background: 'rgba(52,39,40,0.75)', marginTop: -28, marginBottom: 12 }} />
             <div style={{ height: 17, background: 'rgba(52,39,40,0.65)', borderRadius: 6, marginBottom: 9, width: '58%' }} />
@@ -494,7 +630,7 @@ function SkeletonGrid() {
 
 function EmptyState({ search, category }: { search: string; category: string }) {
   return (
-    <div style={{ textAlign: 'center', padding: '80px 0' }}>
+    <div style={{ textAlign: 'center', padding: '80px 0', animation: 'fadeUp 0.4s ease both' }}>
       <div style={{
         width: 60, height: 60, borderRadius: 17,
         background: 'rgba(138,21,56,0.09)',

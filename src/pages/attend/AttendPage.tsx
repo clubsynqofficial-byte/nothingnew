@@ -15,7 +15,7 @@ type Status = 'loading' | 'already' | 'success' | 'error'
 
 export default function AttendPage() {
   const { eventId } = useParams<{ eventId: string }>()
-  const { user } = useAuth()
+  const { user, refreshProfile } = useAuth()
   const navigate = useNavigate()
   const [event, setEvent] = useState<EventInfo | null>(null)
   const [status, setStatus] = useState<Status>('loading')
@@ -54,6 +54,7 @@ export default function AttendPage() {
         reason: `Attended: ${ev.title}`,
         event_id: eventId,
       })
+      await refreshProfile()
     }
 
     setStatus('success')
