@@ -93,6 +93,7 @@ export default function CommandCenter({ club }: Props) {
   const [uploadingLogo, setUploadingLogo] = useState(false)
   const [uploadingBanner, setUploadingBanner] = useState(false)
   const [appearanceMsg, setAppearanceMsg] = useState('')
+  const [bannerCropFile, setBannerCropFile] = useState<File | null>(null)
   const logoRef = useRef<HTMLInputElement>(null)
   const bannerRef = useRef<HTMLInputElement>(null)
 
@@ -288,17 +289,22 @@ export default function CommandCenter({ club }: Props) {
     setUploadingLogo(false)
   }
 
-  async function handleBannerChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleBannerChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
     if (!file.type.startsWith('image/')) { setAppearanceMsg('Please select an image file.'); return }
-    if (file.size > 10 * 1024 * 1024) { setAppearanceMsg('Banner must be under 10 MB.'); return }
+    if (file.size > 20 * 1024 * 1024) { setAppearanceMsg('Banner must be under 20 MB.'); return }
+    setAppearanceMsg('')
+    setBannerCropFile(file)
+  }
+
+  async function handleBannerCropSave(blob: Blob) {
     setUploadingBanner(true)
     setAppearanceMsg('')
-    const ext = file.name.split('.').pop() ?? 'jpg'
-    const path = `banners/${club.id}.${ext}`
-    const { error: upErr } = await supabase.storage.from('clubs').upload(path, file, { upsert: true })
+    setBannerCropFile(null)
+    const path = `banners/${club.id}.jpg`
+    const { error: upErr } = await supabase.storage.from('clubs').upload(path, blob, { upsert: true, contentType: 'image/jpeg' })
     if (upErr) { setAppearanceMsg('Upload failed: ' + upErr.message); setUploadingBanner(false); return }
     const { data: urlData } = supabase.storage.from('clubs').getPublicUrl(path)
     const url = urlData.publicUrl + `?t=${Date.now()}`
@@ -1143,6 +1149,15 @@ export default function CommandCenter({ club }: Props) {
         )}
       </div>
 
+      {/* Banner Crop Modal */}
+      {bannerCropFile && (
+        <BannerCropModal
+          file={bannerCropFile}
+          onSave={handleBannerCropSave}
+          onClose={() => setBannerCropFile(null)}
+        />
+      )}
+
       {/* QR Modal */}
       {qrEvent && (
         <QRModal event={qrEvent} onClose={() => setQrEvent(null)} />
@@ -1985,6 +2000,276 @@ function QRModal({ event, onClose }: { event: Event; onClose: () => void }) {
           >
             Close
           </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── BannerCropModal ─────────────────────────────────────────────────────────
+// Canvas-based crop: drag to reposition, slider to zoom, saves at 1200×300.
+
+function BannerCropModal({
+  file, onSave, onClose,
+}: {
+  file: File
+  onSave: (blob: Blob) => void
+  onClose: () => void
+}) {
+  // Output dimensions (4:1)
+  const OUT_W = 1200
+  const OUT_H = 300
+
+  const [imgSrc] = useState(() => URL.createObjectURL(file))
+  const [imgNatural, setImgNatural] = useState({ w: 0, h: 0 })
+  const [zoom, setZoom] = useState(1)
+  const [offset, setOffset] = useState({ x: 0, y: 0 })
+  const [saving, setSaving] = useState(false)
+
+  const cropW = 560  // preview box CSS width (px) — 4:1
+  const cropH = 140  // preview box CSS height (px)
+
+  const imgRef = useRef<HTMLImageElement>(null)
+  const isDragging = useRef(false)
+  const dragOrigin = useRef({ mx: 0, my: 0, ox: 0, oy: 0 })
+
+  // Derive min zoom so image always covers the crop box
+  const minZoom = imgNatural.w > 0
+    ? Math.max(cropW / imgNatural.w, cropH / imgNatural.h)
+    : 1
+
+  // Clamp offset so image never shows empty space
+  function clamp(ox: number, oy: number, z: number) {
+    const sw = imgNatural.w * z
+    const sh = imgNatural.h * z
+    return {
+      x: Math.min(0, Math.max(cropW - sw, ox)),
+      y: Math.min(0, Math.max(cropH - sh, oy)),
+    }
+  }
+
+  function onImgLoad() {
+    const img = imgRef.current!
+    const nat = { w: img.naturalWidth, h: img.naturalHeight }
+    setImgNatural(nat)
+    const initZoom = Math.max(cropW / nat.w, cropH / nat.h)
+    const initZ = Math.max(initZoom, 1)
+    setZoom(initZ)
+    // Center
+    const sw = nat.w * initZ
+    const sh = nat.h * initZ
+    setOffset({ x: (cropW - sw) / 2, y: (cropH - sh) / 2 })
+  }
+
+  function onMouseDown(e: React.MouseEvent) {
+    isDragging.current = true
+    dragOrigin.current = { mx: e.clientX, my: e.clientY, ox: offset.x, oy: offset.y }
+    e.preventDefault()
+  }
+  function onMouseMove(e: React.MouseEvent) {
+    if (!isDragging.current) return
+    const dx = e.clientX - dragOrigin.current.mx
+    const dy = e.clientY - dragOrigin.current.my
+    setOffset(clamp(dragOrigin.current.ox + dx, dragOrigin.current.oy + dy, zoom))
+  }
+  function onMouseUp() { isDragging.current = false }
+
+  function onTouchStart(e: React.TouchEvent) {
+    const t = e.touches[0]
+    isDragging.current = true
+    dragOrigin.current = { mx: t.clientX, my: t.clientY, ox: offset.x, oy: offset.y }
+  }
+  function onTouchMove(e: React.TouchEvent) {
+    if (!isDragging.current) return
+    const t = e.touches[0]
+    const dx = t.clientX - dragOrigin.current.mx
+    const dy = t.clientY - dragOrigin.current.my
+    setOffset(clamp(dragOrigin.current.ox + dx, dragOrigin.current.oy + dy, zoom))
+  }
+
+  function handleZoomChange(val: number) {
+    const clamped = clamp(offset.x, offset.y, val)
+    setZoom(val)
+    setOffset(clamped)
+  }
+
+  async function handleSave() {
+    if (imgNatural.w === 0) return
+    setSaving(true)
+
+    const canvas = document.createElement('canvas')
+    canvas.width = OUT_W
+    canvas.height = OUT_H
+    const ctx = canvas.getContext('2d')!
+
+    const img = new Image()
+    img.src = imgSrc
+    await new Promise<void>(res => { img.onload = () => res() })
+
+    // Scale factor from CSS crop box → output canvas
+    const scaleX = OUT_W / cropW
+    const scaleY = OUT_H / cropH
+    const { x: ox, y: oy } = clamp(offset.x, offset.y, zoom)
+    ctx.drawImage(
+      img,
+      ox * scaleX,
+      oy * scaleY,
+      imgNatural.w * zoom * scaleX,
+      imgNatural.h * zoom * scaleY,
+    )
+
+    canvas.toBlob(blob => {
+      if (blob) onSave(blob)
+    }, 'image/jpeg', 0.93)
+  }
+
+  return (
+    <div
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 80,
+        background: 'rgba(0,0,0,0.88)', backdropFilter: 'blur(12px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+      }}
+    >
+      <div style={{
+        width: '100%', maxWidth: 620,
+        background: 'var(--bg-card)', border: '1px solid rgba(255,255,255,0.09)',
+        borderRadius: 22, boxShadow: '0 32px 80px rgba(0,0,0,0.7)',
+        overflow: 'hidden',
+      }}>
+        {/* Header */}
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: '20px 24px',
+          borderBottom: '1px solid rgba(255,255,255,0.07)',
+        }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>
+              Crop Banner
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              Drag to reposition · Use slider to zoom
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+            background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+            color: 'var(--text-muted)', fontSize: 15, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>✕</button>
+        </div>
+
+        <div style={{ padding: '24px' }}>
+          {/* Crop preview box */}
+          <div style={{
+            width: cropW, height: cropH, maxWidth: '100%',
+            borderRadius: 12, overflow: 'hidden',
+            background: '#111',
+            position: 'relative',
+            cursor: 'grab',
+            border: '1px solid rgba(255,255,255,0.1)',
+            margin: '0 auto',
+            boxShadow: '0 0 0 1px rgba(138,21,56,0.3)',
+          }}
+            onMouseDown={onMouseDown}
+            onMouseMove={onMouseMove}
+            onMouseUp={onMouseUp}
+            onMouseLeave={onMouseUp}
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onMouseUp}
+          >
+            {/* Grid overlay */}
+            <div style={{
+              position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none',
+              backgroundImage: `
+                linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px)
+              `,
+              backgroundSize: `${cropW / 3}px ${cropH / 3}px`,
+            }} />
+            {/* Corner guides */}
+            {[
+              { top: 8, left: 8, borderTop: '2px solid rgba(255,255,255,0.6)', borderLeft: '2px solid rgba(255,255,255,0.6)' },
+              { top: 8, right: 8, borderTop: '2px solid rgba(255,255,255,0.6)', borderRight: '2px solid rgba(255,255,255,0.6)' },
+              { bottom: 8, left: 8, borderBottom: '2px solid rgba(255,255,255,0.6)', borderLeft: '2px solid rgba(255,255,255,0.6)' },
+              { bottom: 8, right: 8, borderBottom: '2px solid rgba(255,255,255,0.6)', borderRight: '2px solid rgba(255,255,255,0.6)' },
+            ].map((s, i) => (
+              <div key={i} style={{ position: 'absolute', width: 14, height: 14, zIndex: 3, pointerEvents: 'none', ...s }} />
+            ))}
+            <img
+              ref={imgRef}
+              src={imgSrc}
+              onLoad={onImgLoad}
+              draggable={false}
+              alt=""
+              style={{
+                position: 'absolute',
+                left: offset.x,
+                top: offset.y,
+                width: imgNatural.w * zoom,
+                height: imgNatural.h * zoom,
+                userSelect: 'none',
+                pointerEvents: 'none',
+              }}
+            />
+          </div>
+
+          {/* Zoom slider */}
+          <div style={{ marginTop: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                Zoom
+              </span>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                {Math.round(zoom / minZoom * 100)}%
+              </span>
+            </div>
+            <input
+              type="range"
+              min={minZoom}
+              max={minZoom * 3}
+              step={minZoom * 0.01}
+              value={zoom}
+              onChange={e => handleZoomChange(parseFloat(e.target.value))}
+              style={{ width: '100%', accentColor: 'var(--accent)' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Fit</span>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>3×</span>
+            </div>
+          </div>
+
+          {/* Action buttons */}
+          <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
+            <button
+              onClick={onClose}
+              style={{
+                flex: 1, padding: '11px',
+                background: 'transparent', border: '1px solid rgba(87,65,68,0.35)',
+                borderRadius: 11, color: 'var(--text-muted)',
+                fontSize: 14, cursor: 'pointer',
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving || imgNatural.w === 0}
+              style={{
+                flex: 2, padding: '11px',
+                background: saving ? 'rgba(138,21,56,0.4)' : 'var(--accent)',
+                border: 'none', borderRadius: 11,
+                color: '#fff', fontSize: 14, fontWeight: 700,
+                cursor: saving ? 'default' : 'pointer',
+                boxShadow: saving ? 'none' : '0 4px 16px rgba(138,21,56,0.35)',
+                transition: 'all 0.15s',
+              }}
+            >
+              {saving ? 'Saving…' : 'Save Banner'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
