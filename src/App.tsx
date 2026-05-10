@@ -4,6 +4,7 @@ import AppLayout from './components/layout/AppLayout'
 import LandingPage from './pages/landing/LandingPage'
 import SignIn from './pages/auth/SignIn'
 import SignUp from './pages/auth/SignUp'
+import HomePage from './pages/home/HomePage'
 import DiscoveryPage from './pages/discovery/DiscoveryPage'
 import LeadershipPage from './pages/leadership/LeadershipPage'
 import CollaborationPage from './pages/collaboration/CollaborationPage'
@@ -31,7 +32,7 @@ function ProtectedRouteRaw({ children }: { children: React.ReactNode }) {
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
   if (loading) return <LoadingScreen />
-  if (session) return <Navigate to="/discovery" replace />
+  if (session) return <Navigate to="/home" replace />
   return <>{children}</>
 }
 
@@ -69,6 +70,7 @@ function AppRoutes() {
       <Route path="/" element={<LandingPage />} />
       <Route path="/signin" element={<PublicRoute><SignIn /></PublicRoute>} />
       <Route path="/signup" element={<PublicRoute><SignUp /></PublicRoute>} />
+      <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
       <Route path="/discovery" element={<ProtectedRoute><DiscoveryPage /></ProtectedRoute>} />
       <Route path="/leadership" element={<ProtectedRoute><LeadershipPage /></ProtectedRoute>} />
       <Route path="/collaboration" element={<ProtectedRoute><CollaborationPage /></ProtectedRoute>} />
@@ -78,7 +80,7 @@ function AppRoutes() {
       <Route path="/attend/:eventId" element={<ProtectedRouteRaw><AttendPage /></ProtectedRouteRaw>} />
       <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
       <Route path="/profile/:userId" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
-      <Route path="*" element={<Navigate to="/discovery" replace />} />
+      <Route path="*" element={<Navigate to="/home" replace />} />
     </Routes>
   )
 }

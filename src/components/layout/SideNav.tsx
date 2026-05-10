@@ -2,6 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 
 const NAV_ITEMS = [
+  { path: '/home', label: 'Home' },
   { path: '/discovery', label: 'Discovery' },
   { path: '/leadership', label: 'Leadership' },
   { path: '/collaboration', label: 'Collaboration' },
