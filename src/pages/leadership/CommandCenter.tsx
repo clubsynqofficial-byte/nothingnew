@@ -87,6 +87,17 @@ export default function CommandCenter({ club }: Props) {
   const annImgRef = useRef<HTMLInputElement>(null)
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
 
+  // Club appearance state
+  const [logoFile, setLogoFile] = useState<File | null>(null)
+  const [bannerFile, setBannerFile] = useState<File | null>(null)
+  const [logoPreview, setLogoPreview] = useState<string | null>(club.logo_url ?? null)
+  const [bannerPreview, setBannerPreview] = useState<string | null>(club.banner_url ?? null)
+  const [uploadingLogo, setUploadingLogo] = useState(false)
+  const [uploadingBanner, setUploadingBanner] = useState(false)
+  const [appearanceMsg, setAppearanceMsg] = useState('')
+  const logoRef = useRef<HTMLInputElement>(null)
+  const bannerRef = useRef<HTMLInputElement>(null)
+
   // Event-specific announcement state
   const [evtAnnEvent, setEvtAnnEvent] = useState<Event | null>(null)
   const [evtAnnContent, setEvtAnnContent] = useState('')
@@ -257,6 +268,48 @@ export default function CommandCenter({ club }: Props) {
     clearAnnImage()
     setPostingAnn(false)
     fetchAll()
+  }
+
+  async function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    if (!file.type.startsWith('image/')) { setAppearanceMsg('Please select an image file.'); return }
+    if (file.size > 5 * 1024 * 1024) { setAppearanceMsg('Image must be under 5 MB.'); return }
+    setUploadingLogo(true)
+    setAppearanceMsg('')
+    const ext = file.name.split('.').pop() ?? 'jpg'
+    const path = `logos/${club.id}.${ext}`
+    const { error: upErr } = await supabase.storage.from('clubs').upload(path, file, { upsert: true })
+    if (upErr) { setAppearanceMsg('Upload failed: ' + upErr.message); setUploadingLogo(false); return }
+    const { data: urlData } = supabase.storage.from('clubs').getPublicUrl(path)
+    const url = urlData.publicUrl + `?t=${Date.now()}`
+    await supabase.from('clubs').update({ logo_url: urlData.publicUrl }).eq('id', club.id)
+    setLogoPreview(url)
+    setLogoFile(file)
+    setAppearanceMsg('Logo saved!')
+    setUploadingLogo(false)
+  }
+
+  async function handleBannerChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    if (!file.type.startsWith('image/')) { setAppearanceMsg('Please select an image file.'); return }
+    if (file.size > 10 * 1024 * 1024) { setAppearanceMsg('Banner must be under 10 MB.'); return }
+    setUploadingBanner(true)
+    setAppearanceMsg('')
+    const ext = file.name.split('.').pop() ?? 'jpg'
+    const path = `banners/${club.id}.${ext}`
+    const { error: upErr } = await supabase.storage.from('clubs').upload(path, file, { upsert: true })
+    if (upErr) { setAppearanceMsg('Upload failed: ' + upErr.message); setUploadingBanner(false); return }
+    const { data: urlData } = supabase.storage.from('clubs').getPublicUrl(path)
+    const url = urlData.publicUrl + `?t=${Date.now()}`
+    await supabase.from('clubs').update({ banner_url: urlData.publicUrl }).eq('id', club.id)
+    setBannerPreview(url)
+    setBannerFile(file)
+    setAppearanceMsg('Banner saved!')
+    setUploadingBanner(false)
   }
 
   async function fetchEventAnnouncements(eventId: string) {
@@ -840,6 +893,151 @@ export default function CommandCenter({ club }: Props) {
                 </div>
               )
             })}
+          </div>
+        )}
+      </div>
+
+      {/* Club Appearance */}
+      <div style={{
+        background: 'rgba(255,255,255,0.03)',
+        border: '1px solid rgba(255,255,255,0.07)',
+        borderRadius: 16,
+        padding: 24,
+        marginBottom: 22,
+      }}>
+        <div style={{ marginBottom: 20 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 3 }}>Club Appearance</h2>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Upload a logo and banner image for your club's public profile</p>
+        </div>
+
+        {/* Banner */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>
+            Banner Image
+          </div>
+          <div
+            onClick={() => !uploadingBanner && bannerRef.current?.click()}
+            style={{
+              width: '100%', height: 140,
+              borderRadius: 12,
+              border: `2px dashed ${bannerPreview ? 'rgba(138,21,56,0.4)' : 'rgba(255,255,255,0.12)'}`,
+              background: bannerPreview ? 'transparent' : 'rgba(255,255,255,0.02)',
+              cursor: uploadingBanner ? 'default' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              overflow: 'hidden', position: 'relative',
+              transition: 'border-color 0.15s',
+            }}
+            onMouseEnter={e => { if (!uploadingBanner) e.currentTarget.style.borderColor = 'rgba(138,21,56,0.7)' }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = bannerPreview ? 'rgba(138,21,56,0.4)' : 'rgba(255,255,255,0.12)' }}
+          >
+            {bannerPreview ? (
+              <>
+                <img src={bannerPreview} alt="banner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <div style={{
+                  position: 'absolute', inset: 0,
+                  background: 'rgba(0,0,0,0.5)', opacity: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 13, fontWeight: 700, color: '#fff', transition: 'opacity 0.15s',
+                }}
+                  onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                  onMouseLeave={e => (e.currentTarget.style.opacity = '0')}
+                >
+                  {uploadingBanner ? 'Uploading…' : 'Change Banner'}
+                </div>
+              </>
+            ) : uploadingBanner ? (
+              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Uploading…</div>
+            ) : (
+              <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+                <div style={{ fontSize: 28, marginBottom: 8 }}>🖼</div>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Click to upload banner</div>
+                <div style={{ fontSize: 11 }}>Recommended: 1200 × 400 · Max 10 MB</div>
+              </div>
+            )}
+          </div>
+          <input ref={bannerRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleBannerChange} />
+        </div>
+
+        {/* Logo */}
+        <div style={{ marginBottom: appearanceMsg ? 16 : 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>
+            Club Logo
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+            <div
+              onClick={() => !uploadingLogo && logoRef.current?.click()}
+              style={{
+                width: 88, height: 88, borderRadius: 16, flexShrink: 0,
+                border: `2px dashed ${logoPreview ? 'rgba(138,21,56,0.4)' : 'rgba(255,255,255,0.12)'}`,
+                background: logoPreview ? 'transparent' : 'rgba(255,255,255,0.02)',
+                cursor: uploadingLogo ? 'default' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                overflow: 'hidden', position: 'relative', transition: 'border-color 0.15s',
+              }}
+              onMouseEnter={e => { if (!uploadingLogo) e.currentTarget.style.borderColor = 'rgba(138,21,56,0.7)' }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = logoPreview ? 'rgba(138,21,56,0.4)' : 'rgba(255,255,255,0.12)' }}
+            >
+              {logoPreview ? (
+                <>
+                  <img src={logoPreview} alt="logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <div style={{
+                    position: 'absolute', inset: 0, borderRadius: 14,
+                    background: 'rgba(0,0,0,0.55)', opacity: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 11, fontWeight: 700, color: '#fff', transition: 'opacity 0.15s',
+                  }}
+                    onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                    onMouseLeave={e => (e.currentTarget.style.opacity = '0')}
+                  >
+                    {uploadingLogo ? '…' : 'Change'}
+                  </div>
+                </>
+              ) : uploadingLogo ? (
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>…</div>
+              ) : (
+                <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 6 }}>
+                  <div style={{ fontSize: 20, marginBottom: 4 }}>+</div>
+                  <div style={{ fontSize: 10, lineHeight: 1.3 }}>Logo</div>
+                </div>
+              )}
+            </div>
+            <input ref={logoRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleLogoChange} />
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
+                {club.name}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+                Square image · PNG or JPG · Max 5 MB
+              </div>
+              <button
+                onClick={() => !uploadingLogo && logoRef.current?.click()}
+                disabled={uploadingLogo}
+                style={{
+                  padding: '6px 16px', borderRadius: 8,
+                  background: 'rgba(138,21,56,0.15)', border: '1px solid rgba(138,21,56,0.3)',
+                  color: 'var(--accent)', fontSize: 12, fontWeight: 700,
+                  cursor: uploadingLogo ? 'default' : 'pointer', opacity: uploadingLogo ? 0.6 : 1,
+                }}
+              >
+                {uploadingLogo ? 'Uploading…' : logoPreview ? 'Change Logo' : 'Upload Logo'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Status message */}
+        {appearanceMsg && (
+          <div style={{
+            marginTop: 12, padding: '9px 14px', borderRadius: 9,
+            background: appearanceMsg.startsWith('Upload failed') || appearanceMsg.startsWith('Please') || appearanceMsg.includes('must be')
+              ? 'rgba(255,107,107,0.08)' : 'rgba(34,197,94,0.08)',
+            border: appearanceMsg.startsWith('Upload failed') || appearanceMsg.startsWith('Please') || appearanceMsg.includes('must be')
+              ? '1px solid rgba(255,107,107,0.25)' : '1px solid rgba(34,197,94,0.25)',
+            fontSize: 13, fontWeight: 600,
+            color: appearanceMsg.startsWith('Upload failed') || appearanceMsg.startsWith('Please') || appearanceMsg.includes('must be')
+              ? '#ff6b6b' : '#4ade80',
+          }}>
+            {appearanceMsg}
           </div>
         )}
       </div>
