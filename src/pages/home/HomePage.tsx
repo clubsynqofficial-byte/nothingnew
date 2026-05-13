@@ -729,7 +729,7 @@ function Skeleton() {
       {[0,1,2,3].map(i=>(
         <div key={i} style={{ background:'#231518', border:'1px solid rgba(255,255,255,.07)', borderRadius:18, padding:'16px 18px', opacity:1-i*.18 }}>
           <div style={{ display:'flex', gap:13 }}>
-            <div style={{ width:44,height:44,borderRadius:'50%',flexShrink:0,...sh,animationDelay:`${i*.1}s` }}/>
+            <div style={{ ...sh,width:44,height:44,borderRadius:'50%',flexShrink:0,animationDelay:`${i*.1}s` }}/>
             <div style={{ flex:1 }}>
               <div style={{ height:13,width:'28%',marginBottom:10,...sh,animationDelay:`${i*.1+.05}s` }}/>
               <div style={{ height:13,width:'85%',marginBottom:8,...sh,animationDelay:`${i*.1+.1}s` }}/>

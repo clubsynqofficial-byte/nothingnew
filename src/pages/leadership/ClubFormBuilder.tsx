@@ -61,7 +61,7 @@ export default function ClubFormBuilder({ club }: { club: Club }) {
       .select('id, user_id, answers, status, created_at, profile:profiles(full_name, email)')
       .eq('club_id', club.id)
       .order('created_at', { ascending: false })
-    setResponses((data as ResponseRow[]) ?? [])
+    setResponses((data as unknown as ResponseRow[]) ?? [])
   }
 
   useEffect(() => {

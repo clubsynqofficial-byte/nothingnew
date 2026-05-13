@@ -152,6 +152,7 @@ export default function CreateClub({ onCreated }: Props) {
 
     setLoading(false)
     setSubmitted(true)
+    onCreated()
   }
 
   // ── render ────────────────────────────────────────────────────────────────
