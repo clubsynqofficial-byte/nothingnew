@@ -1,6 +1,8 @@
-import { useState, type ReactNode } from 'react'
+import { useState, useEffect, type ReactNode } from 'react'
 import SideNav from './SideNav'
 import TopBar from './TopBar'
+import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
 
 interface Props {
   children: ReactNode
@@ -10,6 +12,15 @@ interface Props {
 
 export default function AppLayout({ children, searchPlaceholder, onSearch }: Props) {
   const [navOpen, setNavOpen] = useState(false)
+  const { user } = useAuth()
+
+  useEffect(() => {
+    if (!user) return
+    const ping = () => supabase.rpc('touch_last_seen')
+    ping()
+    const id = setInterval(ping, 60_000)
+    return () => clearInterval(id)
+  }, [user])
 
   return (
     <div className="app-shell">

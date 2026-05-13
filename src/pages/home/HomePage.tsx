@@ -539,17 +539,6 @@ function Card({
     <div className="pcard" style={{ animation:`fadeUp .36s cubic-bezier(.22,1,.36,1) both`, animationDelay:`${Math.min(idx,6)*50}ms` }}>
       <div className="pcard-pad" style={{ padding:'16px 18px 12px' }}>
 
-        {/* Repost banner */}
-        {isRO && (
-          <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:10, padding:'5px 10px', borderRadius:8, background:'rgba(74,222,128,.07)', border:'1px solid rgba(74,222,128,.15)' }}>
-            <span style={{ color:'#4ade80', opacity:.8, display:'flex' }}><Repeat/></span>
-            <span onClick={()=>onProfile(post.user_id)} style={{ fontSize:12, color:'#4ade80', fontWeight:600, cursor:'pointer', opacity:.85 }}
-              onMouseEnter={e=>e.currentTarget.style.opacity='1'} onMouseLeave={e=>e.currentTarget.style.opacity='.85'}>
-              {post.profile?.full_name??'Someone'} reposted
-            </span>
-          </div>
-        )}
-
         {/* Header */}
         <div style={{ display:'flex', alignItems:'flex-start', gap:12, marginBottom: dContent||dImg ? 11 : 0 }}>
           <Av url={dp?.avatar_url??null} name={dp?.full_name??null} size={44} onClick={()=>onProfile(dUid)}/>

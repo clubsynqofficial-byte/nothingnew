@@ -125,7 +125,7 @@ export default function CollaborationPage() {
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [matchFlash, setMatchFlash] = useState<string | null>(null)
   const [swipeDir, setSwipeDir] = useState<'left' | 'right' | null>(null)
-  const [form, setForm] = useState({ skills_needed: '', skills_offered: '' })
+  const [form, setForm] = useState({ project_title: '', project_description: '', skills_needed: '', skills_offered: '' })
   const [saving, setSaving] = useState(false)
   const [profileError, setProfileError] = useState('')
 
@@ -139,6 +139,8 @@ export default function CollaborationPage() {
     setMyProfile(data ?? null)
     if (data) {
       setForm({
+        project_title: data.project_title ?? '',
+        project_description: data.project_description ?? '',
         skills_needed: (data.skills_needed ?? []).join(', '),
         skills_offered: (data.skills_offered ?? []).join(', '),
       })
@@ -230,15 +232,16 @@ export default function CollaborationPage() {
 
   const handleSaveProfile = async () => {
     if (!user) return
-    const check = filterText(form.skills_needed, form.skills_offered)
+    if (!form.project_title.trim()) { setProfileError('Please enter your startup idea / project title.'); return }
+    const check = filterText(form.project_title, form.project_description, form.skills_needed, form.skills_offered)
     if (!check.ok) { setProfileError(check.reason!); return }
     setProfileError('')
     setSaving(true)
     const parseSkills = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean)
     const payload = {
       user_id: user.id,
-      project_title: myProfile?.project_title ?? '',
-      project_description: myProfile?.project_description ?? null,
+      project_title: form.project_title.trim(),
+      project_description: form.project_description.trim() || null,
       skills_needed: parseSkills(form.skills_needed),
       skills_offered: parseSkills(form.skills_offered),
       is_active: true,
@@ -837,6 +840,29 @@ export default function CollaborationPage() {
             }} />
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <Field label="Startup Idea / Project Title" hint="What are you building?">
+                <input
+                  value={form.project_title}
+                  onChange={(e) => setForm((f) => ({ ...f, project_title: e.target.value }))}
+                  placeholder="e.g. AI-powered campus marketplace"
+                  maxLength={100}
+                  style={inputStyle}
+                />
+              </Field>
+
+              <Field label="Description" hint="Briefly describe your idea, the problem it solves, or your vision.">
+                <textarea
+                  value={form.project_description}
+                  onChange={(e) => setForm((f) => ({ ...f, project_description: e.target.value }))}
+                  placeholder="We're building a platform that connects students with…"
+                  maxLength={500}
+                  rows={4}
+                  style={{ ...inputStyle, resize: 'vertical', minHeight: 90, lineHeight: 1.6 }}
+                />
+              </Field>
+
+              <div style={{ height: 1, background: 'rgba(87,65,68,0.25)', borderRadius: 9999 }} />
+
               <Field label="Skills Needed" hint="Comma-separated — e.g. Backend Dev, UI Design">
                 <input
                   value={form.skills_needed}

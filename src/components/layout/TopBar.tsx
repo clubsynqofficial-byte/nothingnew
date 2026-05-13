@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, type ChangeEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
@@ -11,6 +12,11 @@ interface Notification {
   link: string | null
   read: boolean
   created_at: string
+}
+
+interface Toast {
+  id: string
+  notif: Notification
 }
 
 const NOTIF_META: Record<Notification['type'], { icon: string; color: string; bg: string }> = {
@@ -42,6 +48,7 @@ export default function TopBar({ searchPlaceholder = 'Search...', onSearch, onMe
   const [query, setQuery] = useState('')
   const [notifs, setNotifs] = useState<Notification[]>([])
   const [open, setOpen] = useState(false)
+  const [toasts, setToasts] = useState<Toast[]>([])
   const panelRef = useRef<HTMLDivElement>(null)
 
   const unread = notifs.filter(n => !n.read).length
@@ -67,7 +74,13 @@ export default function TopBar({ searchPlaceholder = 'Search...', onSearch, onMe
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'notifications',
         filter: `user_id=eq.${user.id}`,
-      }, () => fetchNotifs())
+      }, (payload) => {
+        fetchNotifs()
+        const n = payload.new as Notification
+        const toast: Toast = { id: `t-${Date.now()}`, notif: n }
+        setToasts(prev => [...prev, toast])
+        setTimeout(() => setToasts(prev => prev.filter(t => t.id !== toast.id)), 4500)
+      })
       .subscribe()
 
     return () => { supabase.removeChannel(ch) }
@@ -109,7 +122,43 @@ export default function TopBar({ searchPlaceholder = 'Search...', onSearch, onMe
     onSearch?.(e.target.value)
   }
 
+  const toastPortal = createPortal(
+    <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 99999, display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-end', pointerEvents: 'none' }}>
+      {toasts.map(t => {
+        const meta = NOTIF_META[t.notif.type] ?? NOTIF_META.announcement
+        return (
+          <div
+            key={t.id}
+            className="notif-toast"
+            style={{
+              display: 'flex', alignItems: 'flex-start', gap: 12,
+              background: 'rgba(27,16,18,0.97)',
+              border: '1px solid rgba(87,65,68,0.4)',
+              borderLeft: `3px solid ${meta.color}`,
+              borderRadius: 14, padding: '12px 16px',
+              boxShadow: '0 16px 48px rgba(0,0,0,0.55)',
+              maxWidth: 320, pointerEvents: 'auto',
+            }}
+          >
+            <div style={{ width: 32, height: 32, borderRadius: 9, flexShrink: 0, background: meta.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>
+              {meta.icon}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', marginBottom: 3 }}>{t.notif.title}</div>
+              {t.notif.body && (
+                <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.55)', lineHeight: 1.5, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{t.notif.body}</div>
+              )}
+            </div>
+          </div>
+        )
+      })}
+    </div>,
+    document.body
+  )
+
   return (
+    <>
+    {toastPortal}
     <header className="top-bar" style={{
       background: 'rgba(18,18,18,0.7)',
       backdropFilter: 'blur(16px)',
@@ -188,7 +237,7 @@ export default function TopBar({ searchPlaceholder = 'Search...', onSearch, onMe
 
           {/* ── Panel ── */}
           {open && (
-            <div style={{
+            <div className="notif-panel" style={{
               position: 'absolute', top: 'calc(100% + 10px)', right: 0,
               width: 360, maxHeight: 500,
               background: 'rgba(27,16,18,0.98)', backdropFilter: 'blur(24px)',
@@ -219,7 +268,7 @@ export default function TopBar({ searchPlaceholder = 'Search...', onSearch, onMe
                     <div style={{ fontSize: 28, marginBottom: 10, opacity: 0.4 }}>🔔</div>
                     <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No notifications yet</div>
                   </div>
-                ) : notifs.map(n => {
+                ) : notifs.map((n, i) => {
                   const meta = NOTIF_META[n.type]
                   return (
                     <div
@@ -232,6 +281,7 @@ export default function TopBar({ searchPlaceholder = 'Search...', onSearch, onMe
                         borderBottom: '1px solid rgba(87,65,68,0.12)',
                         transition: 'background 0.12s',
                         alignItems: 'flex-start',
+                        animation: `notif-row 0.3s cubic-bezier(0.22,1,0.36,1) ${i * 0.045}s both`,
                       }}
                     >
                       {/* Icon */}
@@ -289,7 +339,28 @@ export default function TopBar({ searchPlaceholder = 'Search...', onSearch, onMe
           from { transform: scale(0.5); opacity: 0; }
           to   { transform: scale(1);   opacity: 1; }
         }
+        @keyframes notif-panel {
+          from { opacity: 0; transform: translateY(-10px) scale(0.96); }
+          to   { opacity: 1; transform: translateY(0)     scale(1);    }
+        }
+        @keyframes notif-row {
+          from { opacity: 0; transform: translateX(-8px); }
+          to   { opacity: 1; transform: translateX(0);    }
+        }
+        @keyframes notif-toast-in {
+          from { opacity: 0; transform: translateY(20px) scale(0.95); }
+          to   { opacity: 1; transform: translateY(0)    scale(1);    }
+        }
+        @keyframes notif-toast-out {
+          from { opacity: 1; transform: translateY(0)    scale(1);    }
+          to   { opacity: 0; transform: translateY(10px) scale(0.95); }
+        }
+        .notif-panel { animation: notif-panel 0.22s cubic-bezier(0.22,1,0.36,1) both; }
+        .notif-toast { animation: notif-toast-in 0.3s cubic-bezier(0.34,1.56,0.64,1) both; }
+        .notif-toast.leaving { animation: notif-toast-out 0.25s ease forwards; }
       `}</style>
+
     </header>
+    </>
   )
 }

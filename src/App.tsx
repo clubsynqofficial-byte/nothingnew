@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { PresenceProvider } from './contexts/PresenceContext'
 import AppLayout from './components/layout/AppLayout'
 import LandingPage from './pages/landing/LandingPage'
 import SignIn from './pages/auth/SignIn'
@@ -14,6 +15,7 @@ import ClubProfilePage from './pages/clubs/ClubProfilePage'
 import AttendPage from './pages/attend/AttendPage'
 import ProfilePage from './pages/profile/ProfilePage'
 import PositionsPage from './pages/positions/PositionsPage'
+import MessagesPage from './pages/messages/MessagesPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
@@ -87,6 +89,7 @@ function AppRoutes() {
       <Route path="/positions" element={<ProtectedRoute><PositionsPage /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><ProfilePage key="own" /></ProtectedRoute>} />
       <Route path="/profile/:userId" element={<ProtectedRoute><ProfilePageWithKey /></ProtectedRoute>} />
+      <Route path="/messages" element={<ProtectedRoute><MessagesPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/home" replace />} />
     </Routes>
   )
@@ -96,7 +99,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
+        <PresenceProvider>
+          <AppRoutes />
+        </PresenceProvider>
       </AuthProvider>
     </BrowserRouter>
   )
