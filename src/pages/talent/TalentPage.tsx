@@ -26,6 +26,7 @@ interface RequestRow {
   requester_id: string
   message: string | null
   status: 'pending' | 'accepted' | 'rejected' | 'completed'
+  end_requested_by: string | null
   created_at: string
   listing?: ListingRow | null
   requester?: { full_name: string | null; avatar_url: string | null } | null
@@ -64,7 +65,7 @@ interface ReviewRow {
   profile?: { full_name: string | null } | null
 }
 
-type Tab = 'browse' | 'my-listings' | 'requests'
+type Tab = 'browse' | 'my-listings' | 'requests' | 'ongoing-trades'
 
 const CATEGORIES = ['All', 'Tech', 'Design', 'Business', 'Marketing', 'Finance', 'Writing', 'Arts', 'Other']
 
@@ -139,7 +140,7 @@ function StarPicker({ value, onChange }: { value: number; onChange: (v: number) 
 // ── Main Page ──────────────────────────────────────────────────────────────
 
 export default function TalentPage() {
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
   const [tab, setTab] = useState<Tab>('browse')
   const [listings, setListings] = useState<ListingRow[]>([])
   const [myListings, setMyListings] = useState<ListingRow[]>([])
@@ -200,7 +201,7 @@ export default function TalentPage() {
     if (ids.length > 0) {
       const { data: inc } = await supabase
         .from('skill_requests')
-        .select('*, listing:skill_listings(*, profile:profiles(full_name, avatar_url)), requester:profiles(full_name, avatar_url)')
+        .select('*, end_requested_by, listing:skill_listings(*, profile:profiles(full_name, avatar_url)), requester:profiles(full_name, avatar_url)')
         .in('listing_id', ids).order('created_at', { ascending: false })
       setIncoming((inc as unknown as RequestRow[]) ?? [])
     } else {
@@ -208,7 +209,7 @@ export default function TalentPage() {
     }
     const { data: out } = await supabase
       .from('skill_requests')
-      .select('*, listing:skill_listings(*, profile:profiles(full_name, avatar_url))')
+      .select('*, end_requested_by, listing:skill_listings(*, profile:profiles(full_name, avatar_url))')
       .eq('requester_id', user.id).order('created_at', { ascending: false })
     setOutgoing((out as unknown as RequestRow[]) ?? [])
   }, [user])
@@ -236,6 +237,23 @@ export default function TalentPage() {
   useEffect(() => { fetchListings(); fetchMyListings(); fetchRequests(); fetchMyReviews() }, [fetchListings, fetchMyListings, fetchRequests, fetchMyReviews])
   useEffect(() => { computeUnread(incoming, outgoing) }, [incoming, outgoing, computeUnread])
 
+  // Realtime: patch scalar fields only — preserve joined listing/requester objects
+  useEffect(() => {
+    if (!user) return
+    const ch = supabase.channel(`talent-requests-rt-${user.id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'skill_requests' }, payload => {
+        const p = payload.new as { id: string; status: string; end_requested_by: string | null }
+        const patch = (r: RequestRow): RequestRow =>
+          r.id === p.id
+            ? { ...r, status: p.status as RequestRow['status'], end_requested_by: p.end_requested_by }
+            : r
+        setIncoming(prev => prev.map(patch))
+        setOutgoing(prev => prev.map(patch))
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [user])
+
   // ── Actions ──
 
   const handleRequest = async () => {
@@ -254,6 +272,45 @@ export default function TalentPage() {
     setActionId(requestId)
     await supabase.from('skill_requests').update({ status }).eq('id', requestId)
     setActionId(null); fetchRequests()
+  }
+
+  const handleRequestEnd = async (tradeId: string, partnerId: string, listingTitle: string) => {
+    if (!user) return
+    await supabase.from('skill_requests').update({ end_requested_by: user.id }).eq('id', tradeId)
+    setIncoming(prev => prev.map(r => r.id === tradeId ? { ...r, end_requested_by: user.id } : r))
+    setOutgoing(prev => prev.map(r => r.id === tradeId ? { ...r, end_requested_by: user.id } : r))
+    const myName = profile?.full_name ?? 'Your trade partner'
+    await supabase.from('notifications').insert({
+      user_id: partnerId,
+      type: 'end_trade_request',
+      title: 'Trade End Requested',
+      body: `${myName} wants to end the trade on "${listingTitle}". Open Ongoing Trades to respond.`,
+      link: '/talent',
+    })
+  }
+
+  const handleCancelEnd = async (tradeId: string) => {
+    await supabase.from('skill_requests').update({ end_requested_by: null }).eq('id', tradeId)
+    setIncoming(prev => prev.map(r => r.id === tradeId ? { ...r, end_requested_by: null } : r))
+    setOutgoing(prev => prev.map(r => r.id === tradeId ? { ...r, end_requested_by: null } : r))
+  }
+
+  const handleConfirmEnd = async (trade: RequestRow) => {
+    await supabase.from('skill_requests').update({ status: 'completed', end_requested_by: null }).eq('id', trade.id)
+    // notify the person who originally requested the end
+    if (trade.end_requested_by && trade.end_requested_by !== user?.id) {
+      const listing = trade.listing as ListingRow | null
+      const myName = profile?.full_name ?? 'Your trade partner'
+      await supabase.from('notifications').insert({
+        user_id: trade.end_requested_by,
+        type: 'end_trade_request',
+        title: 'Trade Ended',
+        body: `${myName} agreed to end the trade on "${listing?.title ?? 'your listing'}". The trade is now complete.`,
+        link: '/talent',
+      })
+    }
+    await fetchRequests()
+    setRatingValue(5); setRatingComment(''); setRatingTrade({ ...trade, status: 'completed' })
   }
 
   const handleMarkComplete = async (requestId: string) => {
@@ -309,6 +366,8 @@ export default function TalentPage() {
   const requestsBadge = pendingIncoming > 0 ? { label: String(pendingIncoming), color: 'var(--accent)' }
     : unreadCount > 0 ? { label: '●', color: '#ef4444' } : null
 
+  const activeTrades = [...incoming, ...outgoing].filter(r => r.status === 'accepted')
+
   return (
     <div className="page-content" style={{ maxWidth: 1100 }}>
       <style>{`
@@ -353,6 +412,7 @@ export default function TalentPage() {
           { key: 'browse' as Tab, label: 'Browse', icon: '⊞' },
           { key: 'my-listings' as Tab, label: 'My Listings', icon: '◫', count: myListings.length },
           { key: 'requests' as Tab, label: 'Requests', icon: '⟳' },
+          { key: 'ongoing-trades' as Tab, label: 'Ongoing Trades', icon: '⇄', count: activeTrades.length },
         ] as { key: Tab; label: string; icon: string; count?: number }[]).map(({ key, label, icon, count }) => (
           <button key={key} onClick={() => setTab(key)} style={{
             padding: '8px 20px', background: tab === key ? 'var(--bg-card)' : 'transparent',
@@ -372,6 +432,11 @@ export default function TalentPage() {
             )}
             {key === 'my-listings' && count !== undefined && count > 0 && (
               <span style={{ fontSize: 10, background: 'rgba(255,255,255,0.08)', color: 'var(--text-muted)', borderRadius: 9999, padding: '1px 7px', fontWeight: 700, lineHeight: 1.6 }}>
+                {count}
+              </span>
+            )}
+            {key === 'ongoing-trades' && count !== undefined && count > 0 && (
+              <span style={{ fontSize: 10, background: 'rgba(34,197,94,0.2)', color: '#4ade80', borderRadius: 9999, padding: '1px 7px', fontWeight: 700, lineHeight: 1.6, border: '1px solid rgba(34,197,94,0.3)' }}>
                 {count}
               </span>
             )}
@@ -529,6 +594,170 @@ export default function TalentPage() {
                 </div>
             }
           </section>
+        </div>
+      )}
+
+      {/* ── ONGOING TRADES ── */}
+      {tab === 'ongoing-trades' && (
+        <div className="tp-panel">
+          {activeTrades.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '80px 0' }}>
+              <div style={{ width: 64, height: 64, borderRadius: 18, background: 'var(--bg-card)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, margin: '0 auto 20px' }}>⇄</div>
+              <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>No active trades</div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 24 }}>Once a request is accepted on either side, the trade will appear here.</div>
+              <button onClick={() => setTab('browse')} style={{ padding: '10px 24px', background: 'var(--accent)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Browse Skills</button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#4ade80', boxShadow: '0 0 8px rgba(74,222,128,0.6)' }} />
+                <span style={{ fontSize: 13, color: 'var(--text-muted)' }}><span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{activeTrades.length}</span> active trade{activeTrades.length !== 1 ? 's' : ''} in progress</span>
+              </div>
+              {activeTrades.map((trade, i) => {
+                const listing = trade.listing as ListingRow | null
+                const isRequester = trade.requester_id === user?.id
+                const partnerName = isRequester
+                  ? (listing?.profile?.full_name ?? 'Partner')
+                  : (trade.requester?.full_name ?? 'Partner')
+                const mySkill = isRequester ? listing?.skill_wanted : listing?.skill_offered
+                const theirSkill = isRequester ? listing?.skill_offered : listing?.skill_wanted
+                const iAskedToEnd = trade.end_requested_by === user?.id
+                const partnerAskedToEnd = !!trade.end_requested_by && trade.end_requested_by !== user?.id
+                const endPending = !!trade.end_requested_by
+                const borderColor = endPending ? 'rgba(251,146,60,0.35)' : 'rgba(34,197,94,0.2)'
+                return (
+                  <div key={trade.id} style={{
+                    background: 'var(--bg-card)', border: `1px solid ${borderColor}`,
+                    borderRadius: 16, padding: '20px 22px',
+                    animation: `tp-up 0.4s cubic-bezier(0.22,1,0.36,1) ${i * 0.05}s both`,
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
+                    transition: 'border-color 0.3s',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+                        <div style={{ position: 'relative', flexShrink: 0 }}>
+                          <Avatar name={partnerName} size={44} />
+                          <div style={{ position: 'absolute', bottom: 1, right: 1, width: 11, height: 11, borderRadius: '50%', background: '#4ade80', border: '2px solid var(--bg-card)', boxShadow: '0 0 6px rgba(74,222,128,0.5)' }} />
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{partnerName}</div>
+                          <div style={{ fontSize: 12, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {listing?.title ?? 'Skill Trade'}
+                          </div>
+                        </div>
+                      </div>
+                      {endPending ? (
+                        <span style={{ fontSize: 10, fontWeight: 700, background: 'rgba(251,146,60,0.15)', color: '#fb923c', border: '1px solid rgba(251,146,60,0.3)', borderRadius: 9999, padding: '4px 10px', flexShrink: 0 }}>
+                          Ending…
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 10, fontWeight: 700, background: 'rgba(34,197,94,0.12)', color: '#4ade80', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 9999, padding: '4px 10px', flexShrink: 0 }}>
+                          Active
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '16px 0', background: 'rgba(0,0,0,0.2)', borderRadius: 10, padding: '10px 14px' }}>
+                      <div style={{ textAlign: 'center', flex: 1 }}>
+                        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>You bring</div>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#4ade80', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 9999, padding: '4px 12px' }}>
+                          {mySkill ?? '—'}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 16, color: 'var(--text-muted)', opacity: 0.5, flexShrink: 0 }}>⇄</div>
+                      <div style={{ textAlign: 'center', flex: 1 }}>
+                        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>They bring</div>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', background: 'rgba(138,21,56,0.12)', border: '1px solid rgba(138,21,56,0.3)', borderRadius: 9999, padding: '4px 12px' }}>
+                          {theirSkill ?? '—'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* End-trade banner — shown when one side has requested to end */}
+                    {iAskedToEnd && (
+                      <div style={{ background: 'rgba(251,146,60,0.08)', border: '1px solid rgba(251,146,60,0.25)', borderRadius: 10, padding: '10px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                        <div style={{ fontSize: 12, color: '#fb923c' }}>
+                          <strong>You requested to end this trade.</strong> Waiting for {partnerName} to confirm.
+                        </div>
+                        <button
+                          onClick={() => handleCancelEnd(trade.id)}
+                          style={{ flexShrink: 0, padding: '5px 12px', background: 'transparent', border: '1px solid rgba(251,146,60,0.4)', borderRadius: 7, color: '#fb923c', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                    {partnerAskedToEnd && (
+                      <div style={{ background: 'rgba(251,146,60,0.08)', border: '1px solid rgba(251,146,60,0.25)', borderRadius: 10, padding: '10px 14px', marginBottom: 12 }}>
+                        <div style={{ fontSize: 12, color: '#fb923c', marginBottom: 10 }}>
+                          <strong>{partnerName} wants to end this trade.</strong> Do you agree?
+                        </div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button
+                            onClick={() => handleCancelEnd(trade.id)}
+                            style={{ flex: 1, padding: '7px', background: 'transparent', border: '1px solid rgba(87,65,68,0.35)', borderRadius: 8, color: 'var(--text-muted)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            Decline
+                          </button>
+                          <button
+                            onClick={() => handleConfirmEnd(trade)}
+                            style={{ flex: 2, padding: '7px', background: 'rgba(251,146,60,0.2)', border: '1px solid rgba(251,146,60,0.45)', borderRadius: 8, color: '#fb923c', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                          >
+                            Yes, End Trade
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        onClick={() => setChatTrade(trade)}
+                        style={{
+                          flex: 1, padding: '10px', background: 'rgba(138,21,56,0.12)',
+                          border: '1px solid rgba(138,21,56,0.3)', borderRadius: 9,
+                          color: 'var(--text-secondary)', fontSize: 13, fontWeight: 600,
+                          cursor: 'pointer', transition: 'all 0.15s', display: 'flex',
+                          alignItems: 'center', justifyContent: 'center', gap: 7,
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'var(--accent)'; e.currentTarget.style.color = '#fff'; e.currentTarget.style.borderColor = 'var(--accent)' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(138,21,56,0.12)'; e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.borderColor = 'rgba(138,21,56,0.3)' }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                        </svg>
+                        Open Chat
+                      </button>
+                      {!endPending && (
+                        <button
+                          onClick={() => {
+                            const listing = trade.listing as ListingRow | null
+                            const isReq = trade.requester_id === user?.id
+                            const partnerId = isReq ? (listing?.user_id ?? '') : trade.requester_id
+                            handleRequestEnd(trade.id, partnerId, listing?.title ?? 'this trade')
+                          }}
+                          style={{
+                            padding: '10px 14px', background: 'transparent',
+                            border: '1px solid rgba(87,65,68,0.35)', borderRadius: 9,
+                            color: 'var(--text-muted)', fontSize: 12, fontWeight: 600,
+                            cursor: 'pointer', transition: 'all 0.15s', display: 'flex',
+                            alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(251,146,60,0.5)'; e.currentTarget.style.color = '#fb923c'; e.currentTarget.style.background = 'rgba(251,146,60,0.08)' }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(87,65,68,0.35)'; e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'transparent' }}
+                          title="Request to end trade (partner must confirm)"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                          </svg>
+                          End Trade
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 

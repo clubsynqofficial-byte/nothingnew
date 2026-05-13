@@ -181,6 +181,21 @@ export default function ProfilePage() {
     }
   }, [user, paramUserId, isOwnProfile, fetchAll])
 
+  // Realtime: refetch completed trade count + reviews when trades finish or reviews are posted
+  useEffect(() => {
+    const targetId = isOwnProfile ? user?.id : paramUserId
+    if (!targetId) return
+    const ch = supabase.channel(`profile-rt-${targetId}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'skill_requests' }, payload => {
+        if (payload.new.status === 'completed') fetchAll(targetId)
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'skill_trade_reviews' }, () => {
+        fetchAll(targetId)
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [user, paramUserId, isOwnProfile, fetchAll])
+
   function openEdit() {
     setEditName(profile?.full_name ?? '')
     setEditBio(profile?.bio ?? '')

@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabase'
 
 interface Notification {
   id: string
-  type: 'announcement' | 'message' | 'accepted' | 'match'
+  type: 'announcement' | 'message' | 'accepted' | 'match' | 'end_trade_request'
   title: string
   body: string | null
   link: string | null
@@ -20,10 +20,11 @@ interface Toast {
 }
 
 const NOTIF_META: Record<Notification['type'], { icon: string; color: string; bg: string }> = {
-  match:        { icon: '🤝', color: '#4ade80', bg: 'rgba(34,197,94,0.1)'   },
-  accepted:     { icon: '✓',  color: '#4ade80', bg: 'rgba(34,197,94,0.12)'  },
-  message:      { icon: '💬', color: '#38bdf8', bg: 'rgba(14,165,233,0.1)'  },
-  announcement: { icon: '📢', color: '#e9c176', bg: 'rgba(233,193,118,0.1)' },
+  match:             { icon: '🤝', color: '#4ade80', bg: 'rgba(34,197,94,0.1)'   },
+  accepted:          { icon: '✓',  color: '#4ade80', bg: 'rgba(34,197,94,0.12)'  },
+  message:           { icon: '💬', color: '#38bdf8', bg: 'rgba(14,165,233,0.1)'  },
+  announcement:      { icon: '📢', color: '#e9c176', bg: 'rgba(233,193,118,0.1)' },
+  end_trade_request: { icon: '⇄',  color: '#fb923c', bg: 'rgba(251,146,60,0.1)' },
 }
 
 function timeAgo(iso: string): string {

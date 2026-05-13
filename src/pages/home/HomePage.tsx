@@ -5,7 +5,8 @@ import { useAuth } from '../../contexts/AuthContext'
 
 interface PostRow {
   id: string; user_id: string; content: string | null
-  image_url: string | null; repost_of: string | null; created_at: string
+  image_url: string | null; image_urls: string[] | null
+  repost_of: string | null; created_at: string
   profile: { full_name: string | null; avatar_url: string | null } | null
 }
 interface FeedPost extends PostRow {
@@ -61,8 +62,8 @@ export default function HomePage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const [txt, setTxt]               = useState('')
-  const [img, setImg]               = useState<File | null>(null)
-  const [preview, setPreview]       = useState<string | null>(null)
+  const [imgs, setImgs]             = useState<File[]>([])
+  const [previews, setPreviews]     = useState<string[]>([])
   const [posting, setPosting]       = useState(false)
   const [compErr, setCompErr]       = useState('')
   const [focused, setFocused]       = useState(false)
@@ -98,7 +99,7 @@ export default function HomePage() {
   async function fetchFeed() {
     setLoading(true)
     const { data: raw } = await supabase
-      .from('posts').select('id,user_id,content,image_url,repost_of,created_at,profile:profiles!user_id(full_name,avatar_url)')
+      .from('posts').select('id,user_id,content,image_url,image_urls,repost_of,created_at,profile:profiles!user_id(full_name,avatar_url)')
       .order('created_at', { ascending: false }).limit(60)
     if (!raw) { setLoading(false); return }
 
@@ -108,7 +109,7 @@ export default function HomePage() {
       ids.length ? supabase.from('post_likes').select('post_id,user_id').in('post_id', ids) : { data: [] as any[] },
       ids.length ? supabase.from('post_comments').select('post_id').in('post_id', ids) : { data: [] as any[] },
       ids.length ? supabase.from('posts').select('repost_of').in('repost_of', ids) : { data: [] as any[] },
-      rids.length ? supabase.from('posts').select('id,user_id,content,image_url,repost_of,created_at,profile:profiles!user_id(full_name,avatar_url)').in('id', rids) : { data: [] as any[] },
+      rids.length ? supabase.from('posts').select('id,user_id,content,image_url,image_urls,repost_of,created_at,profile:profiles!user_id(full_name,avatar_url)').in('id', rids) : { data: [] as any[] },
     ])
     const likeMap: Record<string, string[]> = {}
     for (const l of lk.data ?? []) { if (!likeMap[l.post_id]) likeMap[l.post_id] = []; likeMap[l.post_id].push(l.user_id) }
@@ -135,22 +136,46 @@ export default function HomePage() {
     const t = e.target; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 260) + 'px'
   }
   function onImgSel(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0]; if (!f) return; e.target.value = ''
-    if (f.size > 15e6) { setCompErr('Max 15 MB'); return }
-    setImg(f); const r = new FileReader(); r.onload = () => setPreview(r.result as string); r.readAsDataURL(f)
+    const files = Array.from(e.target.files ?? []); e.target.value = ''
+    if (!files.length) return
+    const remaining = 4 - imgs.length
+    if (remaining <= 0) { setCompErr('Max 4 images'); return }
+    const toAdd = files.slice(0, remaining)
+    for (const f of toAdd) {
+      if (f.size > 15e6) { setCompErr('Max 15 MB per image'); return }
+    }
+    setCompErr('')
+    setImgs(prev => [...prev, ...toAdd])
+    toAdd.forEach(f => {
+      const r = new FileReader(); r.onload = () => setPreviews(prev => [...prev, r.result as string]); r.readAsDataURL(f)
+    })
+  }
+  function removeImg(idx: number) {
+    setImgs(prev => prev.filter((_, i) => i !== idx))
+    setPreviews(prev => prev.filter((_, i) => i !== idx))
   }
   async function doPost() {
-    if (!user || (!txt.trim() && !img)) return
+    if (!user || (!txt.trim() && imgs.length === 0)) return
     if (txt.length > 500) { setCompErr('Max 500 chars'); return }
     setPosting(true); setCompErr('')
-    let url: string | null = null
-    if (img) {
-      const ext = img.name.split('.').pop() ?? 'jpg'
-      const { error } = await supabase.storage.from('post-media').upload(`${user.id}/${Date.now()}.${ext}`, img)
-      if (!error) { const { data } = supabase.storage.from('post-media').getPublicUrl(`${user.id}/${Date.now()}.${ext}`); url = data.publicUrl }
+    let imageUrls: string[] = []
+    if (imgs.length > 0) {
+      const ts = Date.now()
+      const uploads = await Promise.all(imgs.map(async (img, i) => {
+        const ext = img.name.split('.').pop() ?? 'jpg'
+        const path = `${user.id}/${ts}_${i}.${ext}`
+        const { error } = await supabase.storage.from('post-media').upload(path, img)
+        if (error) return null
+        return supabase.storage.from('post-media').getPublicUrl(path).data.publicUrl
+      }))
+      imageUrls = uploads.filter(Boolean) as string[]
     }
-    await supabase.from('posts').insert({ user_id: user.id, content: txt.trim() || null, image_url: url })
-    setTxt(''); setImg(null); setPreview(null); setFocused(false)
+    await supabase.from('posts').insert({
+      user_id: user.id, content: txt.trim() || null,
+      image_url: imageUrls[0] ?? null,
+      image_urls: imageUrls.length > 0 ? imageUrls : null,
+    })
+    setTxt(''); setImgs([]); setPreviews([]); setFocused(false)
     if (taRef.current) taRef.current.style.height = 'auto'
     setPosting(false); fetchFeed()
   }
@@ -194,7 +219,7 @@ export default function HomePage() {
     await loadComments(pid); setPostingC(null)
   }
 
-  const canPost = !posting && (!!txt.trim() || !!img)
+  const canPost = !posting && (!!txt.trim() || imgs.length > 0)
   const myPosts = posts.filter(p => p.user_id === user?.id)
   const myLikes = myPosts.reduce((s, p) => s + p.likeCount, 0)
 
@@ -310,14 +335,18 @@ export default function HomePage() {
                       minHeight: focused ? 72 : 46, paddingTop:4,
                       transition:'min-height .2s', caretColor:'var(--accent)',
                     }}/>
-                  {preview && (
-                    <div style={{ position:'relative', marginTop:10, borderRadius:14, overflow:'hidden', border:'1px solid rgba(255,255,255,.08)', lineHeight:0 }}>
-                      <img src={preview} alt="" style={{ width:'100%', maxHeight:300, objectFit:'cover', display:'block' }}/>
-                      <button onClick={() => { setImg(null); setPreview(null) }} style={{
-                        position:'absolute', top:8, right:8, width:28, height:28, borderRadius:'50%',
-                        background:'rgba(0,0,0,.75)', border:'1px solid rgba(255,255,255,.15)',
-                        color:'#fff', fontSize:12, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center',
-                      }}>✕</button>
+                  {previews.length > 0 && (
+                    <div style={{ marginTop:10, display:'grid', gridTemplateColumns: previews.length === 1 ? '1fr' : previews.length === 2 ? '1fr 1fr' : previews.length === 3 ? '1fr 1fr 1fr' : '1fr 1fr', gap:6 }}>
+                      {previews.map((src, i) => (
+                        <div key={i} style={{ position:'relative', borderRadius:12, overflow:'hidden', border:'1px solid rgba(255,255,255,.08)', lineHeight:0, aspectRatio: previews.length === 1 ? 'auto' : '1/1' }}>
+                          <img src={src} alt="" style={{ width:'100%', height:'100%', objectFit:'cover', display:'block', maxHeight: previews.length === 1 ? 300 : 180 }}/>
+                          <button onClick={() => removeImg(i)} style={{
+                            position:'absolute', top:6, right:6, width:24, height:24, borderRadius:'50%',
+                            background:'rgba(0,0,0,.8)', border:'1px solid rgba(255,255,255,.2)',
+                            color:'#fff', fontSize:11, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center',
+                          }}>✕</button>
+                        </div>
+                      ))}
                     </div>
                   )}
                   {compErr && <div style={{ fontSize:12, color:'#f87171', marginTop:8, padding:'5px 10px', borderRadius:8, background:'rgba(248,113,113,.08)' }}>{compErr}</div>}
@@ -327,17 +356,18 @@ export default function HomePage() {
             {/* toolbar */}
             <div className="compose-toolbar" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 18px 14px 74px', borderTop:'1px solid rgba(255,255,255,.05)', marginTop:10 }}>
               <div>
-                <input ref={imgRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" style={{ display:'none' }} onChange={onImgSel}/>
-                <button onClick={() => imgRef.current?.click()} style={{
+                <input ref={imgRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple style={{ display:'none' }} onChange={onImgSel}/>
+                <button onClick={() => imgs.length < 4 && imgRef.current?.click()} disabled={imgs.length >= 4} style={{
                   display:'inline-flex', alignItems:'center', gap:6, padding:'6px 12px', borderRadius:9999,
-                  border:'none', cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:600,
-                  background: img ? 'rgba(138,21,56,.18)' : 'transparent',
-                  color: img ? 'var(--accent)' : 'var(--text-muted)', transition:'all .15s',
+                  border:'none', cursor: imgs.length >= 4 ? 'default' : 'pointer', fontFamily:'inherit', fontSize:13, fontWeight:600,
+                  background: imgs.length > 0 ? 'rgba(138,21,56,.18)' : 'transparent',
+                  color: imgs.length > 0 ? 'var(--accent)' : imgs.length >= 4 ? 'rgba(255,255,255,.2)' : 'var(--text-muted)', transition:'all .15s',
+                  opacity: imgs.length >= 4 ? .4 : 1,
                 }}
-                  onMouseEnter={e => { e.currentTarget.style.background='rgba(138,21,56,.12)'; e.currentTarget.style.color='var(--accent)' }}
-                  onMouseLeave={e => { e.currentTarget.style.background=img?'rgba(138,21,56,.18)':'transparent'; e.currentTarget.style.color=img?'var(--accent)':'var(--text-muted)' }}
+                  onMouseEnter={e => { if (imgs.length < 4) { e.currentTarget.style.background='rgba(138,21,56,.12)'; e.currentTarget.style.color='var(--accent)' } }}
+                  onMouseLeave={e => { e.currentTarget.style.background=imgs.length>0?'rgba(138,21,56,.18)':'transparent'; e.currentTarget.style.color=imgs.length>0?'var(--accent)':'var(--text-muted)' }}
                 >
-                  <Img/>{img ? <span style={{ fontSize:11 }}>{img.name.split('.').pop()?.toUpperCase()}</span> : <span>Photo</span>}
+                  <Img/>{imgs.length > 0 ? <span style={{ fontSize:11 }}>{imgs.length}/4</span> : <span>Photo</span>}
                 </button>
               </div>
               <div style={{ display:'flex', alignItems:'center', gap:10 }}>
@@ -502,6 +532,72 @@ export default function HomePage() {
   )
 }
 
+// ─── Image Carousel ───────────────────────────────────────────────────────────
+function ImageCarousel({ urls }: { urls: string[] }) {
+  const [cur, setCur] = useState(0)
+  const [touchX, setTouchX] = useState<number | null>(null)
+  if (urls.length === 0) return null
+  if (urls.length === 1) return (
+    <div style={{ borderRadius:14, overflow:'hidden', border:'1px solid rgba(255,255,255,.06)', lineHeight:0 }}>
+      <img src={urls[0]} alt="" style={{ width:'100%', maxHeight:460, objectFit:'cover', display:'block' }}/>
+    </div>
+  )
+  const prev = () => setCur(c => (c - 1 + urls.length) % urls.length)
+  const next = () => setCur(c => (c + 1) % urls.length)
+  return (
+    <div style={{ position:'relative', borderRadius:14, overflow:'hidden', border:'1px solid rgba(255,255,255,.06)', lineHeight:0, userSelect:'none' }}
+      onTouchStart={e => setTouchX(e.touches[0].clientX)}
+      onTouchEnd={e => {
+        if (touchX === null) return
+        const dx = e.changedTouches[0].clientX - touchX
+        if (dx < -40) next(); else if (dx > 40) prev()
+        setTouchX(null)
+      }}
+    >
+      {/* Slides */}
+      <div style={{ display:'flex', transition:'transform .3s cubic-bezier(.22,1,.36,1)', transform:`translateX(-${cur * 100}%)` }}>
+        {urls.map((u, i) => (
+          <img key={i} src={u} alt="" style={{ width:'100%', flexShrink:0, maxHeight:460, objectFit:'cover', display:'block' }}/>
+        ))}
+      </div>
+
+      {/* Arrows */}
+      {cur > 0 && (
+        <button onClick={e => { e.stopPropagation(); prev() }} style={{
+          position:'absolute', left:10, top:'50%', transform:'translateY(-50%)',
+          width:32, height:32, borderRadius:'50%', border:'none',
+          background:'rgba(0,0,0,.65)', backdropFilter:'blur(6px)',
+          color:'#fff', fontSize:16, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1,
+        }}>‹</button>
+      )}
+      {cur < urls.length - 1 && (
+        <button onClick={e => { e.stopPropagation(); next() }} style={{
+          position:'absolute', right:10, top:'50%', transform:'translateY(-50%)',
+          width:32, height:32, borderRadius:'50%', border:'none',
+          background:'rgba(0,0,0,.65)', backdropFilter:'blur(6px)',
+          color:'#fff', fontSize:16, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1,
+        }}>›</button>
+      )}
+
+      {/* Dots */}
+      <div style={{ position:'absolute', bottom:10, left:'50%', transform:'translateX(-50%)', display:'flex', gap:5 }}>
+        {urls.map((_, i) => (
+          <button key={i} onClick={e => { e.stopPropagation(); setCur(i) }} style={{
+            width: i === cur ? 18 : 7, height:7, borderRadius:9999, border:'none',
+            background: i === cur ? '#fff' : 'rgba(255,255,255,.45)',
+            cursor:'pointer', padding:0, transition:'all .25s',
+          }}/>
+        ))}
+      </div>
+
+      {/* Counter badge */}
+      <div style={{ position:'absolute', top:10, right:10, background:'rgba(0,0,0,.65)', backdropFilter:'blur(6px)', borderRadius:9999, padding:'3px 9px', fontSize:11, fontWeight:700, color:'#fff' }}>
+        {cur + 1} / {urls.length}
+      </div>
+    </div>
+  )
+}
+
 // ─── Post Card ────────────────────────────────────────────────────────────────
 function Card({
   post, idx, uid, myProfile, threadOpen, comments, cTxt, postingC,
@@ -517,14 +613,15 @@ function Card({
   onCChange:(t:string)=>void; onComment:()=>void; onProfile:(uid:string)=>void
 }) {
   const cinRef = useRef<HTMLInputElement>(null)
-  const isRO = !!post.repost_of && !post.content && !post.image_url
+  const effectiveImgs = (p: PostRow) => (p.image_urls && p.image_urls.length > 0) ? p.image_urls : (p.image_url ? [p.image_url] : [])
+  const isRO = !!post.repost_of && !post.content && effectiveImgs(post).length === 0
   const isOwn = post.user_id === uid
 
   const dp = isRO ? post.repostSource?.profile : post.profile
   const dUid = isRO ? (post.repostSource?.user_id ?? post.user_id) : post.user_id
   const dTime = isRO ? (post.repostSource?.created_at ?? post.created_at) : post.created_at
   const dContent = isRO ? post.repostSource?.content : post.content
-  const dImg = isRO ? post.repostSource?.image_url : post.image_url
+  const dImgs = isRO && post.repostSource ? effectiveImgs(post.repostSource) : effectiveImgs(post)
 
   const [lPop, setLPop] = useState(false)
   const prevLiked = useRef(post.isLiked)
@@ -540,7 +637,7 @@ function Card({
       <div className="pcard-pad" style={{ padding:'16px 18px 12px' }}>
 
         {/* Header */}
-        <div style={{ display:'flex', alignItems:'flex-start', gap:12, marginBottom: dContent||dImg ? 11 : 0 }}>
+        <div style={{ display:'flex', alignItems:'flex-start', gap:12, marginBottom: dContent||dImgs.length ? 11 : 0 }}>
           <Av url={dp?.avatar_url??null} name={dp?.full_name??null} size={44} onClick={()=>onProfile(dUid)}/>
 
           <div style={{ flex:1, minWidth:0 }}>
@@ -577,10 +674,10 @@ function Card({
           )}
         </div>
 
-        {/* Image */}
-        {dImg && (
-          <div style={{ marginBottom:12, borderRadius:14, overflow:'hidden', border:'1px solid rgba(255,255,255,.06)', lineHeight:0 }}>
-            <img src={dImg} alt="" style={{ width:'100%', maxHeight:460, objectFit:'cover', display:'block' }}/>
+        {/* Image(s) */}
+        {dImgs.length > 0 && (
+          <div style={{ marginBottom:12 }}>
+            <ImageCarousel urls={dImgs}/>
           </div>
         )}
 
@@ -596,7 +693,7 @@ function Card({
               </div>
             </div>
             {post.repostSource.content && <p style={{ fontSize:13, color:'var(--text-secondary)', lineHeight:1.65, margin:0, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{post.repostSource.content}</p>}
-            {post.repostSource.image_url && <div style={{ borderRadius:10,overflow:'hidden',lineHeight:0,marginTop:8 }}><img src={post.repostSource.image_url} alt="" style={{ width:'100%',maxHeight:220,objectFit:'cover' }}/></div>}
+            {effectiveImgs(post.repostSource).length > 0 && <div style={{ marginTop:8 }}><ImageCarousel urls={effectiveImgs(post.repostSource)}/></div>}
           </div>
         )}
 
