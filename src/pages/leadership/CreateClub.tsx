@@ -35,6 +35,7 @@ export default function CreateClub({ onCreated }: Props) {
   // Submission
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [submitted, setSubmitted] = useState(false)
 
   // ── file helpers ──────────────────────────────────────────────────────────
 
@@ -114,56 +115,111 @@ export default function CreateClub({ onCreated }: Props) {
     if (bannerFile) bannerUrl = await uploadImage(bannerFile, `${prefix}/banner`)
     if (logoFile)   logoUrl   = await uploadImage(logoFile,   `${prefix}/logo`)
 
-    const { data: club, error: clubErr } = await supabase
-      .from('clubs')
+    // Insert into club_requests (pending approval) instead of clubs directly
+    const { data: request, error: reqErr } = await supabase
+      .from('club_requests')
       .insert({
+        user_id: user.id,
         name,
         category: category || null,
         description: description || null,
-        president_id: user.id,
-        member_count: 1,
+        tags,
         banner_url: bannerUrl,
         logo_url: logoUrl,
       })
       .select()
       .single()
 
-    if (clubErr || !club) {
-      setError(clubErr?.message ?? 'Failed to create club.')
+    if (reqErr || !request) {
+      setError(reqErr?.message ?? 'Failed to submit request.')
       setLoading(false)
       return
     }
 
-    await supabase.from('club_memberships').insert({
-      club_id: club.id,
-      user_id: user.id,
-      role: 'president',
-    })
+    // Trigger the edge function to email support@clubsynq.org
+    try {
+      await fetch(
+        'https://iclxtjfxxlygagfgxhwg.supabase.co/functions/v1/club-request',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ request_id: request.id }),
+        }
+      )
+    } catch {
+      // Non-fatal — request is saved; email may arrive later
+    }
 
     setLoading(false)
-    onCreated()
+    setSubmitted(true)
   }
 
   // ── render ────────────────────────────────────────────────────────────────
 
+  if (submitted) {
+    return (
+      <>
+        <style>{`
+          @keyframes cc-pop { from { opacity:0; transform:scale(0.7) translateY(10px); } to { opacity:1; transform:scale(1) translateY(0); } }
+          @keyframes cc-fade-up { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:translateY(0); } }
+          @keyframes cc-letter-float { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-6px); } }
+          .cc-pop { animation: cc-pop 0.5s cubic-bezier(0.34,1.56,0.64,1) both; }
+          .cc-fu1 { animation: cc-fade-up 0.45s cubic-bezier(0.22,1,0.36,1) 0.12s both; }
+          .cc-fu2 { animation: cc-fade-up 0.45s cubic-bezier(0.22,1,0.36,1) 0.24s both; }
+        `}</style>
+        <div className="page-content" style={{ maxWidth: 560, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', textAlign: 'center', gap: 24 }}>
+          <div className="cc-pop" style={{ fontSize: 72, lineHeight: 1 }}>📬</div>
+          <div className="cc-fu1">
+            <h2 style={{ fontSize: 28, fontWeight: 900, color: 'var(--text-primary)', marginBottom: 12, letterSpacing: '-0.5px' }}>
+              Request Submitted!
+            </h2>
+            <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.45)', lineHeight: 1.7, marginBottom: 0 }}>
+              Your club application for <strong style={{ color: 'var(--text-primary)' }}>{name}</strong> has been sent to{' '}
+              <span style={{ color: 'var(--accent)' }}>support@clubsynq.org</span> for review.
+              <br /><br />
+              You'll receive an email once it's approved or if any changes are needed. This usually takes 1–2 business days.
+            </p>
+          </div>
+          <div className="cc-fu2" style={{
+            padding: '16px 24px', borderRadius: 16,
+            background: 'rgba(138,21,56,0.1)', border: '1px solid rgba(138,21,56,0.25)',
+            fontSize: 13, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6,
+          }}>
+            💡 You can check the status of your request on this page anytime.
+          </div>
+        </div>
+      </>
+    )
+  }
+
   return (
+    <>
+    <style>{`
+      @keyframes cc-fade-up { from { opacity:0; transform:translateY(22px); } to { opacity:1; transform:translateY(0); } }
+      @keyframes cc-fade-in { from { opacity:0; } to { opacity:1; } }
+      @keyframes cc-slide-card { from { opacity:0; transform:translateY(32px) scale(0.98); } to { opacity:1; transform:translateY(0) scale(1); } }
+      .cc-hdr  { animation: cc-fade-up   0.5s cubic-bezier(0.22,1,0.36,1) 0.05s both; }
+      .cc-sub  { animation: cc-fade-up   0.5s cubic-bezier(0.22,1,0.36,1) 0.14s both; }
+      .cc-card { animation: cc-slide-card 0.55s cubic-bezier(0.22,1,0.36,1) 0.18s both; }
+      .cc-glow { animation: cc-fade-in   0.8s ease 0.1s both; }
+    `}</style>
     <div className="page-content" style={{ maxWidth: 860, position: 'relative', overflowX: 'hidden' }}>
       {/* Background glow */}
-      <div style={{ position: 'fixed', top: -150, right: -120, width: 640, height: 640, borderRadius: '50%', background: 'radial-gradient(circle, rgba(138,21,56,0.07) 0%, transparent 70%)', pointerEvents: 'none' }} />
+      <div className="cc-glow" style={{ position: 'fixed', top: -150, right: -120, width: 640, height: 640, borderRadius: '50%', background: 'radial-gradient(circle, rgba(138,21,56,0.07) 0%, transparent 70%)', pointerEvents: 'none' }} />
 
       {/* Header */}
       <div style={{ marginBottom: 36 }}>
-        <h1 style={{ fontSize: 44, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-1px', lineHeight: 1.15, marginBottom: 12 }}>
+        <h1 className="cc-hdr" style={{ fontSize: 44, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-1px', lineHeight: 1.15, marginBottom: 12 }}>
           Establish Your{' '}
           <em style={{ color: '#ffb2bd', fontStyle: 'italic' }}>Legacy</em>
         </h1>
-        <p style={{ fontSize: 16, color: 'rgba(255,255,255,0.4)', lineHeight: 1.65 }}>
+        <p className="cc-sub" style={{ fontSize: 16, color: 'rgba(255,255,255,0.4)', lineHeight: 1.65 }}>
           Design a space for innovation, community engagement, and transformative leadership at Education City.
         </p>
       </div>
 
       {/* Form card */}
-      <div style={{
+      <div className="cc-card" style={{
         background: 'linear-gradient(135deg, rgba(138,21,56,0.09) 0%, #24181a 100%)',
         border: '1px solid rgba(87,65,68,0.35)',
         borderRadius: 24,
@@ -384,7 +440,7 @@ export default function CreateClub({ onCreated }: Props) {
             gap: 16,
           }}>
             <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)', fontStyle: 'italic', lineHeight: 1.6 }}>
-              Pending 24-hour verification by Student Affairs
+              Your request will be reviewed by ClubSynq support and you'll be notified by email.
             </p>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
               <button
@@ -425,7 +481,7 @@ export default function CreateClub({ onCreated }: Props) {
                   gap: 10,
                 }}
               >
-                {loading ? 'Creating…' : <>Create Club <span style={{ fontSize: 16 }}>🚀</span></>}
+                {loading ? 'Submitting…' : <>Submit for Approval <span style={{ fontSize: 16 }}>🚀</span></>}
               </button>
             </div>
           </div>
@@ -438,6 +494,7 @@ export default function CreateClub({ onCreated }: Props) {
         Powered by Qatar Foundation Student Affairs
       </p>
     </div>
+    </>
   )
 }
 

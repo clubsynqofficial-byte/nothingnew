@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import type { Club } from '../../types'
+import ClubApplicationModal from '../../components/ClubApplicationModal'
 
 const CATEGORIES = ['All', 'Technology', 'Arts & Culture', 'Sports', 'Entrepreneurship', 'Engineering', 'Business']
 
@@ -36,6 +37,8 @@ export default function DiscoveryPage() {
   const [search, setSearch] = useState('')
   const [activeCategory, setActiveCategory] = useState('All')
   const [joiningId, setJoiningId] = useState<string | null>(null)
+  const [applyClub, setApplyClub] = useState<ClubWithMeta | null>(null)
+  const [pendingClubIds, setPendingClubIds] = useState<Set<string>>(new Set())
 
   const fetchClubs = useCallback(async () => {
     setLoading(true)
@@ -51,11 +54,13 @@ export default function DiscoveryPage() {
     if (!clubsData) { setLoading(false); return }
 
     if (user) {
-      const { data: memberships } = await supabase
-        .from('club_memberships')
-        .select('club_id')
-        .eq('user_id', user.id)
+      const [{ data: memberships }, { data: pending }] = await Promise.all([
+        supabase.from('club_memberships').select('club_id').eq('user_id', user.id),
+        supabase.from('club_form_responses').select('club_id').eq('user_id', user.id).eq('status', 'pending'),
+      ])
       const joinedIds = new Set((memberships ?? []).map(m => m.club_id))
+      const pendingIds = new Set((pending ?? []).map(r => r.club_id))
+      setPendingClubIds(pendingIds)
       setClubs(clubsData.map(c => ({ ...c, is_member: joinedIds.has(c.id) })))
     } else {
       setClubs(clubsData)
@@ -67,16 +72,33 @@ export default function DiscoveryPage() {
 
   async function handleJoin(club: ClubWithMeta) {
     if (!user || joiningId) return
-    setJoiningId(club.id)
     if (club.is_member) {
+      setJoiningId(club.id)
       await supabase.from('club_memberships').delete().eq('club_id', club.id).eq('user_id', user.id)
-    } else {
-      await supabase.from('club_memberships').insert({ club_id: club.id, user_id: user.id })
-      await supabase.from('karak_transactions').insert({
-        user_id: user.id, points: 5, reason: `Joined club: ${club.name}`,
-      })
-      await refreshProfile()
+      setJoiningId(null)
+      fetchClubs()
+      return
     }
+    // Check if club has an active application form
+    const { data: formData } = await supabase
+      .from('club_forms')
+      .select('id')
+      .eq('club_id', club.id)
+      .eq('is_active', true)
+      .maybeSingle()
+
+    if (formData) {
+      setApplyClub(club)
+      return
+    }
+
+    // No form — direct join
+    setJoiningId(club.id)
+    await supabase.from('club_memberships').insert({ club_id: club.id, user_id: user.id })
+    await supabase.from('karak_transactions').insert({
+      user_id: user.id, points: 5, reason: `Joined club: ${club.name}`,
+    })
+    await refreshProfile()
     setJoiningId(null)
     fetchClubs()
   }
@@ -361,22 +383,36 @@ export default function DiscoveryPage() {
                 onJoin={() => handleJoin(club)}
                 onOpen={() => navigate(`/clubs/${club.id}`)}
                 joining={joiningId === club.id}
+                isPending={pendingClubIds.has(club.id)}
                 initials={initials}
               />
             ))}
           </div>
         )}
       </div>
+
+      {applyClub && (
+        <ClubApplicationModal
+          clubId={applyClub.id}
+          clubName={applyClub.name}
+          onClose={() => setApplyClub(null)}
+          onSubmitted={() => {
+            setApplyClub(null)
+            setPendingClubIds(prev => new Set([...prev, applyClub.id]))
+          }}
+        />
+      )}
     </>
   )
 }
 
-function ClubCard({ club, index, onJoin, onOpen, joining, initials }: {
+function ClubCard({ club, index, onJoin, onOpen, joining, isPending, initials }: {
   club: ClubWithMeta
   index: number
   onJoin: () => void
   onOpen: () => void
   joining: boolean
+  isPending: boolean
   initials: (n: string) => string
 }) {
   const catColor = CATEGORY_COLORS[club.category ?? ''] ?? 'var(--accent)'
@@ -567,29 +603,33 @@ function ClubCard({ club, index, onJoin, onOpen, joining, initials }: {
       {/* ── Join button ── */}
       <div style={{ padding: '4px 20px 20px' }}>
         <button
-          className={`disc-join${!club.is_member ? ' disc-join-shimmer' : ''}`}
+          className={`disc-join${!club.is_member && !isPending ? ' disc-join-shimmer' : ''}`}
           onClick={e => { e.stopPropagation(); onJoin() }}
-          disabled={joining}
+          disabled={joining || isPending}
           style={{
             width: '100%',
             padding: '11px',
             background: club.is_member
               ? 'transparent'
+              : isPending
+              ? 'rgba(233,193,118,0.08)'
               : 'linear-gradient(135deg, #8a1538 0%, #c0255a 100%)',
             border: club.is_member
               ? '1px solid rgba(34,197,94,0.28)'
+              : isPending
+              ? '1px solid rgba(233,193,118,0.3)'
               : '1px solid transparent',
             borderRadius: 12,
-            color: club.is_member ? '#22c55e' : '#fff',
+            color: club.is_member ? '#22c55e' : isPending ? 'rgba(233,193,118,0.8)' : '#fff',
             fontSize: 13,
             fontWeight: 700,
             letterSpacing: '0.05em',
-            cursor: joining ? 'default' : 'pointer',
+            cursor: joining || isPending ? 'default' : 'pointer',
             opacity: joining ? 0.6 : 1,
-            boxShadow: club.is_member ? 'none' : '0 4px 18px rgba(138,21,56,0.32)',
+            boxShadow: club.is_member || isPending ? 'none' : '0 4px 18px rgba(138,21,56,0.32)',
           }}
         >
-          {joining ? '···' : club.is_member ? '✓  Joined' : 'Join Club'}
+          {joining ? '···' : club.is_member ? '✓  Joined' : isPending ? '⏳  Applied' : 'Join Club'}
         </button>
       </div>
     </div>

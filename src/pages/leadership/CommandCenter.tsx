@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import type { Club, Event } from '../../types'
 import { filterText, validateImage } from '../../lib/contentFilter'
+import ClubFormBuilder from './ClubFormBuilder'
 
 interface Stats {
   memberCount: number
@@ -1208,6 +1209,9 @@ export default function CommandCenter({ club }: Props) {
         </div>,
         document.body
       )}
+
+      {/* Application Form Builder */}
+      <ClubFormBuilder club={club} />
 
       {/* Event Announcement Modal */}
       {evtAnnEvent && (

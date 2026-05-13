@@ -3,755 +3,688 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 
-// ── Types ────────────────────────────────────────────────────────────────────
-
 interface PostRow {
-  id: string
-  user_id: string
-  content: string | null
-  image_url: string | null
-  repost_of: string | null
-  created_at: string
+  id: string; user_id: string; content: string | null
+  image_url: string | null; repost_of: string | null; created_at: string
   profile: { full_name: string | null; avatar_url: string | null } | null
 }
-
 interface FeedPost extends PostRow {
-  likeCount: number
-  commentCount: number
-  repostCount: number
-  isLiked: boolean
-  repostSource: PostRow | null
+  likeCount: number; commentCount: number; repostCount: number
+  isLiked: boolean; repostSource: PostRow | null
 }
-
 interface CommentRow {
-  id: string
-  post_id: string
-  user_id: string
-  content: string
-  created_at: string
+  id: string; post_id: string; user_id: string; content: string; created_at: string
   profile: { full_name: string | null; avatar_url: string | null } | null
 }
 
-// ── SVG Icons ────────────────────────────────────────────────────────────────
-
-const HeartIcon = ({ filled = false }: { filled?: boolean }) => (
-  <svg width="17" height="17" viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'}
-    stroke="currentColor" strokeWidth={filled ? 0 : 1.8} strokeLinecap="round" strokeLinejoin="round">
-    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+// ─── Icons ────────────────────────────────────────────────────────────────────
+const Heart = ({ on }: { on?: boolean }) => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill={on ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+  </svg>
+)
+const Bubble = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+)
+const Repeat = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+    <polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+  </svg>
+)
+const Img = () => (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+    <polyline points="21 15 16 10 5 21"/>
+  </svg>
+)
+const Trash = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2"/>
+  </svg>
+)
+const Dots = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+    <circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/>
   </svg>
 )
 
-const ChatIcon = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
-    stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-  </svg>
-)
-
-const RepeatIcon = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
-    stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="17 1 21 5 17 9" />
-    <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-    <polyline points="7 23 3 19 7 15" />
-    <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-  </svg>
-)
-
-const ImageIcon = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
-    stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-    <circle cx="8.5" cy="8.5" r="1.5" />
-    <polyline points="21 15 16 10 5 21" />
-  </svg>
-)
-
-// ── Main Page ─────────────────────────────────────────────────────────────────
-
+// ─── Page ─────────────────────────────────────────────────────────────────────
 export default function HomePage() {
   const { user, profile } = useAuth()
-  const navigate = useNavigate()
+  const nav = useNavigate()
 
-  const [posts, setPosts] = useState<FeedPost[]>([])
-  const [loading, setLoading] = useState(true)
+  const [posts, setPosts]           = useState<FeedPost[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  const [composeText, setComposeText] = useState('')
-  const [composeImage, setComposeImage] = useState<File | null>(null)
-  const [composePreview, setComposePreview] = useState<string | null>(null)
-  const [posting, setPosting] = useState(false)
-  const [composeError, setComposeError] = useState('')
-  const [composeFocused, setComposeFocused] = useState(false)
-  const composeImgRef = useRef<HTMLInputElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [txt, setTxt]               = useState('')
+  const [img, setImg]               = useState<File | null>(null)
+  const [preview, setPreview]       = useState<string | null>(null)
+  const [posting, setPosting]       = useState(false)
+  const [compErr, setCompErr]       = useState('')
+  const [focused, setFocused]       = useState(false)
+  const imgRef  = useRef<HTMLInputElement>(null)
+  const taRef   = useRef<HTMLTextAreaElement>(null)
 
-  const [openThreadId, setOpenThreadId] = useState<string | null>(null)
-  const [comments, setComments] = useState<Record<string, CommentRow[]>>({})
-  const [commentTexts, setCommentTexts] = useState<Record<string, string>>({})
-  const [postingComment, setPostingComment] = useState<string | null>(null)
-  const [repostingId, setRepostingId] = useState<string | null>(null)
+  const [threadId, setThreadId]     = useState<string | null>(null)
+  const [comments, setComments]     = useState<Record<string, CommentRow[]>>({})
+  const [cTxts, setCTxts]           = useState<Record<string, string>>({})
+  const [postingC, setPostingC]     = useState<string | null>(null)
+  const [reposting, setReposting]   = useState<string | null>(null)
+  const [menuId, setMenuId]         = useState<string | null>(null)
+
+  const h = new Date().getHours()
+  const greeting = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
+  const firstName = profile?.full_name?.split(' ')[0] ?? 'there'
 
   useEffect(() => { fetchFeed() }, [user])
-
   useEffect(() => {
-    const channel = supabase
-      .channel('home-feed-realtime')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts' }, () => fetchFeed())
+    const ch = supabase.channel('hfrt')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts' }, fetchFeed)
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'posts' }, fetchFeed)
       .subscribe()
-    return () => { supabase.removeChannel(channel) }
+    return () => { supabase.removeChannel(ch) }
   }, [])
+  useEffect(() => {
+    if (!menuId) return
+    const h = () => setMenuId(null)
+    window.addEventListener('click', h)
+    return () => window.removeEventListener('click', h)
+  }, [menuId])
 
   async function fetchFeed() {
     setLoading(true)
-    const { data: rawPosts } = await supabase
-      .from('posts')
-      .select('id, user_id, content, image_url, repost_of, created_at, profile:profiles!user_id(full_name, avatar_url)')
-      .order('created_at', { ascending: false })
-      .limit(60)
+    const { data: raw } = await supabase
+      .from('posts').select('id,user_id,content,image_url,repost_of,created_at,profile:profiles!user_id(full_name,avatar_url)')
+      .order('created_at', { ascending: false }).limit(60)
+    if (!raw) { setLoading(false); return }
 
-    if (!rawPosts) { setLoading(false); return }
-
-    const postIds = rawPosts.map(p => p.id)
-    const repostSourceIds = rawPosts.flatMap(p => p.repost_of ? [p.repost_of as string] : [])
-
-    const [likesRes, commentIdsRes, repostIdsRes, sourcesRes] = await Promise.all([
-      postIds.length > 0
-        ? supabase.from('post_likes').select('post_id, user_id').in('post_id', postIds)
-        : Promise.resolve({ data: [] as { post_id: string; user_id: string }[] }),
-      postIds.length > 0
-        ? supabase.from('post_comments').select('post_id').in('post_id', postIds)
-        : Promise.resolve({ data: [] as { post_id: string }[] }),
-      postIds.length > 0
-        ? supabase.from('posts').select('repost_of').in('repost_of', postIds)
-        : Promise.resolve({ data: [] as { repost_of: string | null }[] }),
-      repostSourceIds.length > 0
-        ? supabase.from('posts').select('id, user_id, content, image_url, repost_of, created_at, profile:profiles!user_id(full_name, avatar_url)').in('id', repostSourceIds)
-        : Promise.resolve({ data: [] as PostRow[] }),
+    const ids = raw.map(p => p.id)
+    const rids = raw.flatMap(p => p.repost_of ? [p.repost_of as string] : [])
+    const [lk, cm, rp, src] = await Promise.all([
+      ids.length ? supabase.from('post_likes').select('post_id,user_id').in('post_id', ids) : { data: [] as any[] },
+      ids.length ? supabase.from('post_comments').select('post_id').in('post_id', ids) : { data: [] as any[] },
+      ids.length ? supabase.from('posts').select('repost_of').in('repost_of', ids) : { data: [] as any[] },
+      rids.length ? supabase.from('posts').select('id,user_id,content,image_url,repost_of,created_at,profile:profiles!user_id(full_name,avatar_url)').in('id', rids) : { data: [] as any[] },
     ])
+    const likeMap: Record<string, string[]> = {}
+    for (const l of lk.data ?? []) { if (!likeMap[l.post_id]) likeMap[l.post_id] = []; likeMap[l.post_id].push(l.user_id) }
+    const cmMap: Record<string, number> = {}
+    for (const c of cm.data ?? []) cmMap[c.post_id] = (cmMap[c.post_id] ?? 0) + 1
+    const rpMap: Record<string, number> = {}
+    for (const r of rp.data ?? []) if (r.repost_of) rpMap[r.repost_of] = (rpMap[r.repost_of] ?? 0) + 1
+    const srcMap: Record<string, PostRow> = {}
+    for (const s of (src.data ?? []) as unknown as PostRow[]) srcMap[s.id] = s
 
-    const likesByPost: Record<string, string[]> = {}
-    for (const l of (likesRes.data ?? [])) {
-      if (!likesByPost[l.post_id]) likesByPost[l.post_id] = []
-      likesByPost[l.post_id].push(l.user_id)
-    }
-    const commentCountByPost: Record<string, number> = {}
-    for (const c of (commentIdsRes.data ?? [])) {
-      commentCountByPost[c.post_id] = (commentCountByPost[c.post_id] ?? 0) + 1
-    }
-    const repostCountByPost: Record<string, number> = {}
-    for (const r of (repostIdsRes.data ?? [])) {
-      if (r.repost_of) repostCountByPost[r.repost_of] = (repostCountByPost[r.repost_of] ?? 0) + 1
-    }
-    const sourceById: Record<string, PostRow> = {}
-    for (const s of ((sourcesRes.data ?? []) as unknown as PostRow[])) {
-      sourceById[s.id] = s
-    }
-
-    setPosts(
-      (rawPosts as unknown as PostRow[]).map(p => ({
-        ...p,
-        likeCount: (likesByPost[p.id] ?? []).length,
-        commentCount: commentCountByPost[p.id] ?? 0,
-        repostCount: repostCountByPost[p.id] ?? 0,
-        isLiked: user ? (likesByPost[p.id] ?? []).includes(user.id) : false,
-        repostSource: p.repost_of ? (sourceById[p.repost_of] ?? null) : null,
-      }))
-    )
+    setPosts((raw as unknown as PostRow[]).map(p => ({
+      ...p,
+      likeCount: (likeMap[p.id] ?? []).length,
+      commentCount: cmMap[p.id] ?? 0,
+      repostCount: rpMap[p.id] ?? 0,
+      isLiked: user ? (likeMap[p.id] ?? []).includes(user.id) : false,
+      repostSource: p.repost_of ? (srcMap[p.repost_of] ?? null) : null,
+    })))
     setLoading(false)
   }
 
-  function handleComposeChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    setComposeText(e.target.value)
-    setComposeError('')
-    const ta = e.target
-    ta.style.height = 'auto'
-    ta.style.height = Math.min(ta.scrollHeight, 260) + 'px'
+  function onTaChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    setTxt(e.target.value); setCompErr('')
+    const t = e.target; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 260) + 'px'
   }
-
-  function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    e.target.value = ''
-    if (file.size > 15 * 1024 * 1024) { setComposeError('File must be under 15 MB'); return }
-    setComposeImage(file)
-    const reader = new FileReader()
-    reader.onload = () => setComposePreview(reader.result as string)
-    reader.readAsDataURL(file)
+  function onImgSel(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]; if (!f) return; e.target.value = ''
+    if (f.size > 15e6) { setCompErr('Max 15 MB'); return }
+    setImg(f); const r = new FileReader(); r.onload = () => setPreview(r.result as string); r.readAsDataURL(f)
   }
-
-  async function handlePost() {
-    if (!user || (!composeText.trim() && !composeImage)) return
-    if (composeText.length > 500) { setComposeError('Max 500 characters'); return }
-    setPosting(true)
-    setComposeError('')
-
-    let imageUrl: string | null = null
-    if (composeImage) {
-      const ext = composeImage.name.split('.').pop() ?? 'jpg'
-      const path = `${user.id}/${Date.now()}.${ext}`
-      const { error: upErr } = await supabase.storage.from('post-media').upload(path, composeImage)
-      if (!upErr) {
-        const { data } = supabase.storage.from('post-media').getPublicUrl(path)
-        imageUrl = data.publicUrl
-      }
+  async function doPost() {
+    if (!user || (!txt.trim() && !img)) return
+    if (txt.length > 500) { setCompErr('Max 500 chars'); return }
+    setPosting(true); setCompErr('')
+    let url: string | null = null
+    if (img) {
+      const ext = img.name.split('.').pop() ?? 'jpg'
+      const { error } = await supabase.storage.from('post-media').upload(`${user.id}/${Date.now()}.${ext}`, img)
+      if (!error) { const { data } = supabase.storage.from('post-media').getPublicUrl(`${user.id}/${Date.now()}.${ext}`); url = data.publicUrl }
     }
-
-    await supabase.from('posts').insert({
-      user_id: user.id,
-      content: composeText.trim() || null,
-      image_url: imageUrl,
-    })
-
-    setComposeText('')
-    setComposeImage(null)
-    setComposePreview(null)
-    setComposeFocused(false)
-    if (textareaRef.current) textareaRef.current.style.height = 'auto'
-    setPosting(false)
-    fetchFeed()
+    await supabase.from('posts').insert({ user_id: user.id, content: txt.trim() || null, image_url: url })
+    setTxt(''); setImg(null); setPreview(null); setFocused(false)
+    if (taRef.current) taRef.current.style.height = 'auto'
+    setPosting(false); fetchFeed()
   }
-
-  async function handleLike(postId: string, isLiked: boolean) {
+  async function doLike(pid: string, liked: boolean) {
     if (!user) return
-    setPosts(prev => prev.map(p => p.id === postId
-      ? { ...p, isLiked: !isLiked, likeCount: p.likeCount + (isLiked ? -1 : 1) }
-      : p
-    ))
-    if (isLiked) {
-      await supabase.from('post_likes').delete().eq('post_id', postId).eq('user_id', user.id)
-    } else {
-      await supabase.from('post_likes').insert({ post_id: postId, user_id: user.id })
-    }
+    setPosts(prev => prev.map(p => p.id === pid ? { ...p, isLiked: !liked, likeCount: p.likeCount + (liked ? -1 : 1) } : p))
+    liked ? await supabase.from('post_likes').delete().eq('post_id', pid).eq('user_id', user.id)
+           : await supabase.from('post_likes').insert({ post_id: pid, user_id: user.id })
   }
-
-  async function handleRepost(postId: string) {
-    if (!user || repostingId) return
-    setRepostingId(postId)
-    await supabase.from('posts').insert({ user_id: user.id, content: null, repost_of: postId })
-    setPosts(prev => prev.map(p => p.id === postId ? { ...p, repostCount: p.repostCount + 1 } : p))
-    setRepostingId(null)
-    fetchFeed()
+  async function doRepost(pid: string) {
+    if (!user || reposting) return
+    setReposting(pid)
+    await supabase.from('posts').insert({ user_id: user.id, content: null, repost_of: pid })
+    setPosts(prev => prev.map(p => p.id === pid ? { ...p, repostCount: p.repostCount + 1 } : p))
+    setReposting(null); fetchFeed()
   }
-
-  async function toggleThread(postId: string) {
-    if (openThreadId === postId) { setOpenThreadId(null); return }
-    setOpenThreadId(postId)
-    if (!comments[postId]) await fetchComments(postId)
+  async function doDelete(pid: string) {
+    if (!user || deletingId) return
+    setDeletingId(pid); setMenuId(null)
+    setPosts(prev => prev.filter(p => p.id !== pid))
+    await supabase.from('posts').delete().eq('id', pid).eq('user_id', user.id)
+    setDeletingId(null)
   }
-
-  async function fetchComments(postId: string) {
-    const { data } = await supabase
-      .from('post_comments')
-      .select('id, post_id, user_id, content, created_at, profile:profiles!user_id(full_name, avatar_url)')
-      .eq('post_id', postId)
-      .order('created_at', { ascending: true })
-      .limit(50)
-    setComments(prev => ({ ...prev, [postId]: (data as unknown as CommentRow[]) ?? [] }))
+  async function toggleThread(pid: string) {
+    if (threadId === pid) { setThreadId(null); return }
+    setThreadId(pid); if (!comments[pid]) await loadComments(pid)
   }
-
-  async function handlePostComment(postId: string) {
+  async function loadComments(pid: string) {
+    const { data } = await supabase.from('post_comments')
+      .select('id,post_id,user_id,content,created_at,profile:profiles!user_id(full_name,avatar_url)')
+      .eq('post_id', pid).order('created_at', { ascending: true }).limit(50)
+    setComments(prev => ({ ...prev, [pid]: (data as unknown as CommentRow[]) ?? [] }))
+  }
+  async function doComment(pid: string) {
     if (!user) return
-    const text = (commentTexts[postId] ?? '').trim()
-    if (!text || postingComment) return
-    setPostingComment(postId)
-    await supabase.from('post_comments').insert({ post_id: postId, user_id: user.id, content: text })
-    setCommentTexts(prev => ({ ...prev, [postId]: '' }))
-    setPosts(prev => prev.map(p => p.id === postId ? { ...p, commentCount: p.commentCount + 1 } : p))
-    await fetchComments(postId)
-    setPostingComment(null)
+    const text = (cTxts[pid] ?? '').trim(); if (!text || postingC) return
+    setPostingC(pid)
+    await supabase.from('post_comments').insert({ post_id: pid, user_id: user.id, content: text })
+    setCTxts(prev => ({ ...prev, [pid]: '' }))
+    setPosts(prev => prev.map(p => p.id === pid ? { ...p, commentCount: p.commentCount + 1 } : p))
+    await loadComments(pid); setPostingC(null)
   }
 
-  const canPost = !posting && (!!composeText.trim() || !!composeImage)
+  const canPost = !posting && (!!txt.trim() || !!img)
+  const myPosts = posts.filter(p => p.user_id === user?.id)
+  const myLikes = myPosts.reduce((s, p) => s + p.likeCount, 0)
 
   return (
-    <div className="page-content" style={{ maxWidth: 980, margin: '0 auto', paddingBottom: 64 }}>
+    <>
+    <style>{`
+      @keyframes fadeUp { from { opacity:0; transform:translateY(20px) } to { opacity:1; transform:none } }
+      @keyframes pop { 0%{transform:scale(1)} 40%{transform:scale(1.55)} 70%{transform:scale(0.88)} 100%{transform:scale(1)} }
+      @keyframes shimmer { from{background-position:-200% 0} to{background-position:200% 0} }
+      @keyframes menuIn { from{opacity:0;transform:scale(.9) translateY(-6px)} to{opacity:1;transform:none} }
+      .hgrid { display:grid; grid-template-columns:1fr 300px; gap:22px; align-items:start }
+      @media(max-width:860px){ .hgrid{grid-template-columns:1fr} .sidebar{display:none!important} }
+      .card { background:#231518; border:1px solid rgba(255,255,255,0.08); border-radius:18px; overflow:hidden }
+      .pcard { background:linear-gradient(145deg,#231518,#1e1214); border:1px solid rgba(255,255,255,0.07); border-radius:18px; overflow:hidden; transition:border-color .2s,box-shadow .2s,transform .18s }
+      .pcard:hover { border-color:rgba(255,255,255,0.14); box-shadow:0 8px 36px rgba(0,0,0,.6); transform:translateY(-2px) }
+      .abt { display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:9999px;border:none;background:transparent;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;font-family:inherit;user-select:none }
+      .abt:hover:not(:disabled){transform:scale(1.07)}
+      .dotbtn { display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;border:none;background:transparent;cursor:pointer;color:rgba(255,255,255,.15);transition:all .15s;flex-shrink:0 }
+      .pcard:hover .dotbtn { color:rgba(255,255,255,.45) }
+      .dotbtn:hover { background:rgba(255,255,255,.1)!important;color:#fff!important }
+      .slink { display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:12px;color:var(--text-secondary);font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;border:none;background:transparent;width:100%;text-align:left;font-family:inherit }
+      .slink:hover { background:rgba(138,21,56,.15);color:#fff }
+      @media(max-width:600px){
+        .hero-banner { padding:18px 16px!important; border-radius:18px!important; margin-bottom:14px!important }
+        .hero-title { font-size:20px!important }
+        .hero-stats { display:none!important }
+        .hero-sub { font-size:12px!important }
+        .feed-label { padding-left:0!important }
+        .compose-toolbar { padding-left:18px!important }
+        .pcard-pad { padding:13px 14px 10px!important }
+        .thread-pad { padding:13px 14px 14px!important }
+      }
+    `}</style>
 
-      {/* ── Page header ── */}
-      <div style={{ marginBottom: 28, paddingBottom: 20, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-        <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.5px', marginBottom: 3 }}>
-          Home
-        </h1>
-        <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-          What's happening on campus
-        </p>
-      </div>
+    <div className="page-content" style={{ maxWidth: 1020, margin: '0 auto', paddingBottom: 80 }}>
 
-      {/* ── Compose box ── */}
-      <div style={{
-        background: composeFocused
-          ? 'rgba(255,255,255,0.04)'
-          : 'rgba(255,255,255,0.025)',
-        border: `1px solid ${composeFocused ? 'rgba(138,21,56,0.35)' : 'rgba(255,255,255,0.08)'}`,
-        borderRadius: 20,
-        padding: '18px 20px',
-        marginBottom: 24,
-        transition: 'background 0.2s, border-color 0.2s',
-        boxShadow: composeFocused ? '0 0 0 3px rgba(138,21,56,0.07)' : 'none',
+      {/* ── Hero banner ─────────────────────────────────── */}
+      <div className="hero-banner" style={{
+        borderRadius: 24, marginBottom: 22, padding: '28px 32px',
+        background: 'linear-gradient(135deg, #8a1538 0%, #6b1030 35%, #3d0a1c 70%, #1e0510 100%)',
+        position: 'relative', overflow: 'hidden',
       }}>
-        <div style={{ display: 'flex', gap: 14 }}>
-          {/* Avatar */}
-          <div style={{ flexShrink: 0, paddingTop: 2 }}>
-            <Av
-              url={profile?.avatar_url ?? null}
-              name={profile?.full_name ?? null}
-              size={42}
-              onClick={() => navigate('/profile')}
-              ring
-            />
+        {/* decorative circles */}
+        {[['-40px','-30px',220],['-10px','auto',140,undefined,'-30px'],[undefined,'-10px',90,'30px']].map(([t,r,sz,b,l],i) => (
+          <div key={i} style={{
+            position:'absolute', top: t as any, right: r as any, bottom: b as any, left: l as any,
+            width: sz as number, height: sz as number, borderRadius:'50%',
+            background:'rgba(255,255,255,0.04)', pointerEvents:'none',
+          }}/>
+        ))}
+        <div style={{ position:'absolute', top:0, left:0, right:0, bottom:0, background:'radial-gradient(ellipse at 20% 50%, rgba(192,24,92,.25) 0%, transparent 60%)', pointerEvents:'none' }}/>
+
+        <div style={{ position:'relative', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:16 }}>
+          <div>
+            <div style={{ marginBottom:6 }}>
+              <div className="hero-title" style={{ fontSize:28, fontWeight:900, color:'#fff', letterSpacing:'-0.7px' }}>
+                {greeting}, {firstName}! 👋
+              </div>
+            </div>
+            <div className="hero-sub" style={{ fontSize:13, color:'rgba(255,255,255,.6)', fontWeight:500 }}>
+              {profile?.university?.name ?? 'Your campus'} &nbsp;·&nbsp; {loading ? '…' : `${posts.length} posts`}
+            </div>
           </div>
 
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <textarea
-              ref={textareaRef}
-              value={composeText}
-              onChange={handleComposeChange}
-              onFocus={() => setComposeFocused(true)}
-              onBlur={() => setComposeFocused(false)}
-              onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handlePost() }}
-              placeholder="What's on your mind?"
-              maxLength={500}
-              rows={composeFocused ? 3 : 2}
-              style={{
-                width: '100%',
-                background: 'transparent',
-                border: 'none',
-                outline: 'none',
-                resize: 'none',
-                fontSize: 16,
-                color: 'var(--text-primary)',
-                fontFamily: 'inherit',
-                lineHeight: 1.7,
-                overflow: 'hidden',
-                minHeight: composeFocused ? 72 : 48,
-                transition: 'min-height 0.2s',
-                caretColor: 'var(--accent)',
-              }}
-            />
-
-            {/* Image preview */}
-            {composePreview && (
-              <div style={{
-                position: 'relative', marginTop: 10,
-                borderRadius: 14, overflow: 'hidden',
-                border: '1px solid rgba(255,255,255,0.08)',
-                lineHeight: 0,
+          {/* quick stats */}
+          <div className="hero-stats" style={{ display:'flex', gap:10 }}>
+            {[
+              { label:'My posts', value: loading ? '…' : myPosts.length, color:'#fca5a5' },
+              { label:'Likes earned', value: loading ? '…' : myLikes, color:'#f87171' },
+              { label:'Points', value: profile?.karak_points ?? 0, color:'#fcd34d' },
+            ].map(s => (
+              <div key={s.label} style={{
+                background:'rgba(255,255,255,.1)', backdropFilter:'blur(12px)',
+                border:'1px solid rgba(255,255,255,.15)',
+                borderRadius:14, padding:'10px 16px', textAlign:'center', minWidth:72,
               }}>
-                <img src={composePreview} alt="" style={{ width: '100%', maxHeight: 360, objectFit: 'cover', display: 'block' }} />
-                <button
-                  onClick={() => { setComposeImage(null); setComposePreview(null) }}
-                  style={{
-                    position: 'absolute', top: 10, right: 10,
-                    width: 32, height: 32, borderRadius: '50%',
-                    background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)',
-                    border: '1px solid rgba(255,255,255,0.18)',
-                    color: '#fff', fontSize: 13, cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}
-                >✕</button>
+                <div style={{ fontSize:20, fontWeight:900, color:s.color, letterSpacing:'-0.5px' }}>{s.value}</div>
+                <div style={{ fontSize:10, color:'rgba(255,255,255,.55)', fontWeight:600, marginTop:1 }}>{s.label}</div>
               </div>
-            )}
+            ))}
+          </div>
+        </div>
+      </div>
 
-            {composeError && (
-              <div style={{ fontSize: 12, color: '#f87171', marginTop: 8 }}>{composeError}</div>
-            )}
+      {/* ── Two-column ──────────────────────────────────── */}
+      <div className="hgrid">
 
-            {/* Bottom toolbar */}
-            <div style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              marginTop: 14, paddingTop: 12,
-              borderTop: '1px solid rgba(255,255,255,0.06)',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <input
-                  ref={composeImgRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/gif,image/webp"
-                  style={{ display: 'none' }}
-                  onChange={handleImageSelect}
-                />
-                <ComposeToolBtn
-                  title="Image / GIF"
-                  active={!!composeImage}
-                  onClick={() => composeImgRef.current?.click()}
-                >
-                  <ImageIcon />
-                </ComposeToolBtn>
-                {composeImage && (
-                  <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 600, marginLeft: 4 }}>
-                    {composeImage.name.split('.').pop()?.toUpperCase()}
-                  </span>
-                )}
+        {/* ── Feed column ─ */}
+        <div style={{ minWidth:0 }}>
+
+          {/* Compose card */}
+          <div className="card" style={{
+            marginBottom:16,
+            boxShadow: focused ? '0 0 0 2px rgba(138,21,56,.5),0 4px 24px rgba(0,0,0,.5)' : '0 4px 24px rgba(0,0,0,.35)',
+            transition:'box-shadow .2s',
+          }}>
+            {/* gradient top strip */}
+            <div style={{ height:3, background:'linear-gradient(90deg,#8a1538,#c0185c,#e57c9a,#c0185c,#8a1538)', backgroundSize:'200% 100%' }}/>
+            <div style={{ padding:'16px 18px 0' }}>
+              <div style={{ display:'flex', gap:13, alignItems:'flex-start' }}>
+                <Av url={profile?.avatar_url??null} name={profile?.full_name??null} size={44}
+                  onClick={() => nav('/profile')} ring />
+                <div style={{ flex:1, minWidth:0 }}>
+                  <textarea ref={taRef} value={txt} onChange={onTaChange}
+                    onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+                    onKeyDown={e => { if (e.key==='Enter'&&(e.metaKey||e.ctrlKey)) doPost() }}
+                    placeholder={`What's on your mind, ${firstName}?`}
+                    maxLength={500}
+                    style={{
+                      width:'100%', background:'transparent', border:'none', outline:'none',
+                      resize:'none', fontSize:15.5, color:'var(--text-primary)',
+                      fontFamily:'inherit', lineHeight:1.72, overflow:'hidden',
+                      minHeight: focused ? 72 : 46, paddingTop:4,
+                      transition:'min-height .2s', caretColor:'var(--accent)',
+                    }}/>
+                  {preview && (
+                    <div style={{ position:'relative', marginTop:10, borderRadius:14, overflow:'hidden', border:'1px solid rgba(255,255,255,.08)', lineHeight:0 }}>
+                      <img src={preview} alt="" style={{ width:'100%', maxHeight:300, objectFit:'cover', display:'block' }}/>
+                      <button onClick={() => { setImg(null); setPreview(null) }} style={{
+                        position:'absolute', top:8, right:8, width:28, height:28, borderRadius:'50%',
+                        background:'rgba(0,0,0,.75)', border:'1px solid rgba(255,255,255,.15)',
+                        color:'#fff', fontSize:12, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center',
+                      }}>✕</button>
+                    </div>
+                  )}
+                  {compErr && <div style={{ fontSize:12, color:'#f87171', marginTop:8, padding:'5px 10px', borderRadius:8, background:'rgba(248,113,113,.08)' }}>{compErr}</div>}
+                </div>
               </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                {composeText.length > 380 && (
-                  <span style={{
-                    fontSize: 12, fontWeight: 600, fontVariantNumeric: 'tabular-nums',
-                    color: composeText.length > 480 ? '#f87171' : 'rgba(255,255,255,0.3)',
-                  }}>
-                    {500 - composeText.length}
-                  </span>
-                )}
-                <button
-                  onClick={handlePost}
-                  disabled={!canPost}
-                  style={{
-                    padding: '9px 24px',
-                    borderRadius: 9999,
-                    background: canPost
-                      ? 'var(--accent)'
-                      : 'rgba(87,65,68,0.18)',
-                    border: 'none',
-                    color: canPost ? '#fff' : 'rgba(255,255,255,0.25)',
-                    fontSize: 14,
-                    fontWeight: 700,
-                    letterSpacing: '0.01em',
-                    cursor: canPost ? 'pointer' : 'default',
-                    opacity: posting ? 0.7 : 1,
-                    transition: 'all 0.18s',
-                    boxShadow: canPost ? '0 2px 16px rgba(138,21,56,0.35)' : 'none',
-                  }}
+            </div>
+            {/* toolbar */}
+            <div className="compose-toolbar" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 18px 14px 74px', borderTop:'1px solid rgba(255,255,255,.05)', marginTop:10 }}>
+              <div>
+                <input ref={imgRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" style={{ display:'none' }} onChange={onImgSel}/>
+                <button onClick={() => imgRef.current?.click()} style={{
+                  display:'inline-flex', alignItems:'center', gap:6, padding:'6px 12px', borderRadius:9999,
+                  border:'none', cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:600,
+                  background: img ? 'rgba(138,21,56,.18)' : 'transparent',
+                  color: img ? 'var(--accent)' : 'var(--text-muted)', transition:'all .15s',
+                }}
+                  onMouseEnter={e => { e.currentTarget.style.background='rgba(138,21,56,.12)'; e.currentTarget.style.color='var(--accent)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background=img?'rgba(138,21,56,.18)':'transparent'; e.currentTarget.style.color=img?'var(--accent)':'var(--text-muted)' }}
                 >
-                  {posting ? 'Posting…' : 'Post'}
+                  <Img/>{img ? <span style={{ fontSize:11 }}>{img.name.split('.').pop()?.toUpperCase()}</span> : <span>Photo</span>}
+                </button>
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                {txt.length > 350 && (
+                  <span style={{ fontSize:12, fontWeight:700, color: txt.length>480?'#f87171':'var(--text-muted)' }}>{500-txt.length}</span>
+                )}
+                <button onClick={doPost} disabled={!canPost} style={{
+                  padding:'8px 22px', borderRadius:9999, border:'none', fontFamily:'inherit',
+                  background: canPost ? 'linear-gradient(135deg,#8a1538,#c0185c)' : 'rgba(87,65,68,.25)',
+                  color: canPost ? '#fff' : 'rgba(255,255,255,.2)',
+                  fontSize:14, fontWeight:800, letterSpacing:'.02em',
+                  cursor: canPost ? 'pointer' : 'default', opacity: posting ? .7 : 1,
+                  boxShadow: canPost ? '0 4px 20px rgba(138,21,56,.5)' : 'none',
+                  transition:'all .18s',
+                }}>
+                  {posting ? 'Posting…' : 'Post →'}
                 </button>
               </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* ── Feed ── */}
-      {loading ? (
-        <LoadingSkeleton />
-      ) : posts.length === 0 ? (
-        <div style={{
-          textAlign: 'center', padding: '80px 0',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
-        }}>
-          <div style={{
-            width: 72, height: 72, borderRadius: '50%',
-            background: 'rgba(138,21,56,0.1)',
-            border: '1px solid rgba(138,21,56,0.2)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 30,
-          }}>✨</div>
-          <div>
-            <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
-              Nothing here yet
+          {/* Feed label */}
+          <div className="feed-label" style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12, paddingLeft:2 }}>
+            <div style={{ fontSize:13, fontWeight:800, color:'var(--text-muted)', letterSpacing:'.06em', textTransform:'uppercase' }}>
+              Campus Feed
             </div>
-            <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-              Be the first to post something for your campus!
+            {!loading && (
+              <div style={{ padding:'2px 9px', borderRadius:9999, background:'rgba(138,21,56,.2)', border:'1px solid rgba(138,21,56,.3)', fontSize:11, fontWeight:800, color:'#e57c9a' }}>
+                {posts.length}
+              </div>
+            )}
+          </div>
+
+          {/* Posts */}
+          {loading ? <Skeleton/> : posts.length === 0 ? <Empty/> : (
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              {posts.map((p, i) => (
+                <Card key={p.id} post={p} idx={i}
+                  uid={user?.id??null} myProfile={profile}
+                  threadOpen={threadId===p.id}
+                  comments={comments[p.id]??[]}
+                  cTxt={cTxts[p.id]??''}
+                  postingC={postingC===p.id}
+                  reposting={reposting===p.id}
+                  menuOpen={menuId===p.id}
+                  onMenu={e=>{e.stopPropagation();setMenuId(menuId===p.id?null:p.id)}}
+                  onLike={() => doLike(p.id, p.isLiked)}
+                  onRepost={() => doRepost(p.id)}
+                  onDelete={() => doDelete(p.id)}
+                  onThread={() => toggleThread(p.id)}
+                  onCChange={t => setCTxts(prev=>({...prev,[p.id]:t}))}
+                  onComment={() => doComment(p.id)}
+                  onProfile={uid => nav(`/profile/${uid}`)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── Sidebar ─ */}
+        <div className="sidebar" style={{ display:'flex', flexDirection:'column', gap:14, position:'sticky', top:80 }}>
+
+          {/* Profile card */}
+          <div className="card">
+            {/* Banner */}
+            <div style={{
+              height:72, position:'relative', overflow:'hidden',
+              background:'linear-gradient(135deg,#8a1538 0%,#5c0d26 55%,#2a0611 100%)',
+            }}>
+              <div style={{ position:'absolute',inset:0,background:'radial-gradient(ellipse at 30% 60%,rgba(192,24,92,.45) 0%,transparent 65%)' }}/>
+              {/* dots pattern */}
+              <svg style={{ position:'absolute',inset:0,width:'100%',height:'100%',opacity:.15 }}>
+                {Array.from({length:30},(_,i)=>(
+                  <circle key={i} cx={(i%6)*48+24} cy={Math.floor(i/6)*24+12} r="1.5" fill="white"/>
+                ))}
+              </svg>
+            </div>
+            <div style={{ padding:'0 18px 18px', position:'relative' }}>
+              {/* Avatar overlapping banner */}
+              <div style={{ marginTop:-28, marginBottom:10, display:'inline-block', borderRadius:'50%', border:'3px solid #231518' }}>
+                <Av url={profile?.avatar_url??null} name={profile?.full_name??null} size={54} onClick={()=>nav('/profile')} ring/>
+              </div>
+              <div style={{ marginBottom:14 }}>
+                <div style={{ fontSize:16, fontWeight:900, color:'var(--text-primary)', marginBottom:1 }}>{profile?.full_name??'Your Name'}</div>
+                <div style={{ fontSize:12, color:'var(--text-muted)' }}>{profile?.university?.short_name??profile?.university?.name??'University'}</div>
+                {profile?.role && (
+                  <div style={{
+                    display:'inline-block', marginTop:6, padding:'2px 9px', borderRadius:9999, fontSize:11, fontWeight:700,
+                    textTransform:'capitalize' as const, letterSpacing:'.03em',
+                    background: profile.role==='admin'?'rgba(251,191,36,.15)':profile.role==='club_leader'?'rgba(138,21,56,.2)':'rgba(255,255,255,.06)',
+                    border:`1px solid ${profile.role==='admin'?'rgba(251,191,36,.3)':profile.role==='club_leader'?'rgba(138,21,56,.3)':'rgba(255,255,255,.1)'}`,
+                    color: profile.role==='admin'?'var(--gold)':profile.role==='club_leader'?'#e57c9a':'var(--text-muted)',
+                  }}>{profile.role.replace('_',' ')}</div>
+                )}
+              </div>
+
+              {/* Stat tiles */}
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6, marginBottom:14 }}>
+                {[
+                  { label:'Posts', val: loading?'…':myPosts.length, bg:'rgba(248,113,113,.1)', border:'rgba(248,113,113,.2)', color:'#fca5a5' },
+                  { label:'Likes', val: loading?'…':myLikes, bg:'rgba(229,64,94,.1)', border:'rgba(229,64,94,.2)', color:'#f87171' },
+                  { label:'Points', val: profile?.karak_points??0, bg:'rgba(233,193,118,.1)', border:'rgba(233,193,118,.2)', color:'var(--gold)' },
+                ].map(s=>(
+                  <div key={s.label} style={{ background:s.bg, border:`1px solid ${s.border}`, borderRadius:12, padding:'10px 6px', textAlign:'center' }}>
+                    <div style={{ fontSize:18, fontWeight:900, color:s.color }}>{s.val}</div>
+                    <div style={{ fontSize:10, color:'var(--text-muted)', fontWeight:600, marginTop:1 }}>{s.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              <button onClick={()=>nav('/profile')} style={{
+                width:'100%', padding:'9px', borderRadius:12, fontFamily:'inherit',
+                background:'linear-gradient(135deg,rgba(138,21,56,.2),rgba(138,21,56,.08))',
+                border:'1px solid rgba(138,21,56,.4)', color:'#e57c9a',
+                fontSize:13, fontWeight:700, cursor:'pointer', transition:'all .15s',
+              }}
+                onMouseEnter={e=>e.currentTarget.style.background='rgba(138,21,56,.3)'}
+                onMouseLeave={e=>e.currentTarget.style.background='linear-gradient(135deg,rgba(138,21,56,.2),rgba(138,21,56,.08))'}
+              >View full profile →</button>
             </div>
           </div>
+
+          {/* Explore */}
+          <div className="card" style={{ padding:'14px 12px' }}>
+            <div style={{ fontSize:11, fontWeight:800, color:'var(--text-muted)', letterSpacing:'.08em', textTransform:'uppercase', paddingLeft:4, marginBottom:8 }}>Explore campus</div>
+            {[
+              { icon:'📅', label:'Events', sub:'See what\'s on', path:'/events', color:'rgba(96,165,250,.15)', border:'rgba(96,165,250,.25)', c:'#93c5fd' },
+              { icon:'🏛️', label:'Clubs', sub:'Find your people', path:'/clubs', color:'rgba(167,139,250,.15)', border:'rgba(167,139,250,.25)', c:'#c4b5fd' },
+            ].map(item=>(
+              <button key={item.label} className="slink" onClick={()=>nav(item.path)}>
+                <div style={{ width:34, height:34, borderRadius:10, background:item.color, border:`1px solid ${item.border}`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, flexShrink:0 }}>
+                  {item.icon}
+                </div>
+                <div>
+                  <div style={{ fontSize:13, fontWeight:700, color:'var(--text-primary)' }}>{item.label}</div>
+                  <div style={{ fontSize:11, color:'var(--text-muted)' }}>{item.sub}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* Campus */}
+          {profile?.university && (
+            <div className="card" style={{ padding:'16px 18px', position:'relative', overflow:'hidden' }}>
+              <div style={{ position:'absolute', top:-30, right:-30, width:110, height:110, borderRadius:'50%', background:'radial-gradient(circle,rgba(138,21,56,.12) 0%,transparent 70%)', pointerEvents:'none' }}/>
+              <div style={{ fontSize:11, fontWeight:800, color:'var(--text-muted)', letterSpacing:'.08em', textTransform:'uppercase', marginBottom:10 }}>Your Campus</div>
+              <div style={{ fontSize:14, fontWeight:800, color:'var(--text-primary)', marginBottom:4, lineHeight:1.4 }}>{profile.university.name}</div>
+              {profile.university.location && (
+                <div style={{ fontSize:12, color:'var(--text-muted)' }}>📍 {profile.university.location}</div>
+              )}
+              {profile.bio && (
+                <div style={{ fontSize:12, color:'var(--text-secondary)', marginTop:10, lineHeight:1.6, padding:'10px 12px', borderRadius:10, background:'rgba(255,255,255,.03)', border:'1px solid rgba(255,255,255,.05)' }}>
+                  "{profile.bio}"
+                </div>
+              )}
+            </div>
+          )}
         </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          {posts.map((post, idx) => (
-            <PostCard
-              key={post.id}
-              post={post}
-              currentUserId={user?.id ?? null}
-              isThreadOpen={openThreadId === post.id}
-              comments={comments[post.id] ?? []}
-              commentText={commentTexts[post.id] ?? ''}
-              postingComment={postingComment === post.id}
-              reposting={repostingId === post.id}
-              isLast={idx === posts.length - 1}
-              onLike={() => handleLike(post.id, post.isLiked)}
-              onRepost={() => handleRepost(post.id)}
-              onToggleThread={() => toggleThread(post.id)}
-              onCommentChange={text => setCommentTexts(prev => ({ ...prev, [post.id]: text }))}
-              onPostComment={() => handlePostComment(post.id)}
-              onNavigateProfile={uid => navigate(`/profile/${uid}`)}
-            />
-          ))}
-        </div>
-      )}
+      </div>
     </div>
+    </>
   )
 }
 
-// ── PostCard ─────────────────────────────────────────────────────────────────
-
-function PostCard({
-  post, currentUserId, isThreadOpen, comments, commentText,
-  postingComment, reposting, isLast, onLike, onRepost, onToggleThread,
-  onCommentChange, onPostComment, onNavigateProfile,
+// ─── Post Card ────────────────────────────────────────────────────────────────
+function Card({
+  post, idx, uid, myProfile, threadOpen, comments, cTxt, postingC,
+  reposting, menuOpen, onMenu, onLike, onRepost, onDelete, onThread,
+  onCChange, onComment, onProfile,
 }: {
-  post: FeedPost
-  currentUserId: string | null
-  isThreadOpen: boolean
-  comments: CommentRow[]
-  commentText: string
-  postingComment: boolean
-  reposting: boolean
-  isLast: boolean
-  onLike: () => void
-  onRepost: () => void
-  onToggleThread: () => void
-  onCommentChange: (t: string) => void
-  onPostComment: () => void
-  onNavigateProfile: (uid: string) => void
+  post: FeedPost; idx: number; uid: string | null
+  myProfile: {full_name?:string|null;avatar_url?:string|null}|null
+  threadOpen: boolean; comments: CommentRow[]; cTxt: string
+  postingC: boolean; reposting: boolean; menuOpen: boolean
+  onMenu:(e:React.MouseEvent)=>void
+  onLike:()=>void; onRepost:()=>void; onDelete:()=>void; onThread:()=>void
+  onCChange:(t:string)=>void; onComment:()=>void; onProfile:(uid:string)=>void
 }) {
-  const [hovered, setHovered] = useState(false)
-  const commentInputRef = useRef<HTMLInputElement>(null)
-  const isRepostOnly = !!post.repost_of && !post.content && !post.image_url
+  const cinRef = useRef<HTMLInputElement>(null)
+  const isRO = !!post.repost_of && !post.content && !post.image_url
+  const isOwn = post.user_id === uid
 
+  const dp = isRO ? post.repostSource?.profile : post.profile
+  const dUid = isRO ? (post.repostSource?.user_id ?? post.user_id) : post.user_id
+  const dTime = isRO ? (post.repostSource?.created_at ?? post.created_at) : post.created_at
+  const dContent = isRO ? post.repostSource?.content : post.content
+  const dImg = isRO ? post.repostSource?.image_url : post.image_url
+
+  const [lPop, setLPop] = useState(false)
+  const prevLiked = useRef(post.isLiked)
   useEffect(() => {
-    if (isThreadOpen) setTimeout(() => commentInputRef.current?.focus(), 80)
-  }, [isThreadOpen])
+    if (!prevLiked.current && post.isLiked) { setLPop(true); setTimeout(()=>setLPop(false),380) }
+    prevLiked.current = post.isLiked
+  }, [post.isLiked])
+
+  useEffect(() => { if (threadOpen) setTimeout(()=>cinRef.current?.focus(),80) }, [threadOpen])
 
   return (
-    <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        background: hovered ? 'rgba(255,255,255,0.027)' : 'rgba(255,255,255,0.015)',
-        borderTop: '1px solid rgba(255,255,255,0.06)',
-        borderBottom: isLast ? '1px solid rgba(255,255,255,0.06)' : 'none',
-        transition: 'background 0.15s',
-        cursor: 'default',
-      }}
-    >
-      <div style={{ padding: '18px 20px 14px' }}>
+    <div className="pcard" style={{ animation:`fadeUp .36s cubic-bezier(.22,1,.36,1) both`, animationDelay:`${Math.min(idx,6)*50}ms` }}>
+      <div className="pcard-pad" style={{ padding:'16px 18px 12px' }}>
 
-        {/* Repost attribution */}
-        {isRepostOnly && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            marginBottom: 10, marginLeft: 52,
-            fontSize: 12, color: 'var(--text-muted)', fontWeight: 500,
-          }}>
-            <span style={{ opacity: 0.7 }}><RepeatIcon /></span>
-            <span
-              onClick={() => onNavigateProfile(post.user_id)}
-              style={{ cursor: 'pointer', color: 'var(--text-muted)', transition: 'color 0.15s' }}
-              onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-secondary)')}
-              onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
-            >
-              {post.profile?.full_name ?? 'Someone'} reposted
+        {/* Repost banner */}
+        {isRO && (
+          <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:10, padding:'5px 10px', borderRadius:8, background:'rgba(74,222,128,.07)', border:'1px solid rgba(74,222,128,.15)' }}>
+            <span style={{ color:'#4ade80', opacity:.8, display:'flex' }}><Repeat/></span>
+            <span onClick={()=>onProfile(post.user_id)} style={{ fontSize:12, color:'#4ade80', fontWeight:600, cursor:'pointer', opacity:.85 }}
+              onMouseEnter={e=>e.currentTarget.style.opacity='1'} onMouseLeave={e=>e.currentTarget.style.opacity='.85'}>
+              {post.profile?.full_name??'Someone'} reposted
             </span>
           </div>
         )}
 
-        {/* Header row */}
-        <div style={{ display: 'flex', gap: 14, marginBottom: 12 }}>
-          <div style={{ flexShrink: 0 }}>
-            <Av
-              url={isRepostOnly ? (post.repostSource?.profile?.avatar_url ?? null) : (post.profile?.avatar_url ?? null)}
-              name={isRepostOnly ? (post.repostSource?.profile?.full_name ?? null) : (post.profile?.full_name ?? null)}
-              size={42}
-              onClick={() => onNavigateProfile(isRepostOnly ? (post.repostSource?.user_id ?? post.user_id) : post.user_id)}
-            />
-          </div>
+        {/* Header */}
+        <div style={{ display:'flex', alignItems:'flex-start', gap:12, marginBottom: dContent||dImg ? 11 : 0 }}>
+          <Av url={dp?.avatar_url??null} name={dp?.full_name??null} size={44} onClick={()=>onProfile(dUid)}/>
 
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 1 }}>
-              <span
-                onClick={() => onNavigateProfile(isRepostOnly ? (post.repostSource?.user_id ?? post.user_id) : post.user_id)}
-                style={{
-                  fontSize: 15, fontWeight: 700, color: 'var(--text-primary)',
-                  cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  transition: 'color 0.15s',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.color = 'var(--accent)')}
-                onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-primary)')}
-              >
-                {isRepostOnly
-                  ? (post.repostSource?.profile?.full_name ?? 'User')
-                  : (post.profile?.full_name ?? 'User')
-                }
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:2 }}>
+              <span onClick={()=>onProfile(dUid)} style={{ fontSize:14.5, fontWeight:800, color:'var(--text-primary)', cursor:'pointer', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', transition:'color .15s' }}
+                onMouseEnter={e=>e.currentTarget.style.color='var(--accent)'} onMouseLeave={e=>e.currentTarget.style.color='var(--text-primary)'}>
+                {dp?.full_name??'User'}
               </span>
-              <span style={{
-                fontSize: 12, color: 'var(--text-muted)', flexShrink: 0,
-                fontVariantNumeric: 'tabular-nums', letterSpacing: '0.01em',
-              }}>
-                {relativeTime(isRepostOnly ? (post.repostSource?.created_at ?? post.created_at) : post.created_at)}
-              </span>
+              <span style={{ fontSize:11, color:'var(--text-muted)', flexShrink:0, fontVariantNumeric:'tabular-nums' }}>{reltime(dTime)}</span>
             </div>
-
-            {/* Content */}
-            {(isRepostOnly ? post.repostSource?.content : post.content) && (
-              <p style={{
-                fontSize: 15, color: 'var(--text-primary)', lineHeight: 1.72,
-                margin: '6px 0 0', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-              }}>
-                {isRepostOnly ? post.repostSource?.content : post.content}
-              </p>
+            {dContent && (
+              <p style={{ fontSize:14.5, color:'var(--text-primary)', lineHeight:1.76, margin:0, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{dContent}</p>
             )}
           </div>
+
+          {isOwn && (
+            <div style={{ position:'relative', flexShrink:0 }}>
+              <button className="dotbtn" onClick={onMenu}><Dots/></button>
+              {menuOpen && (
+                <div onClick={e=>e.stopPropagation()} style={{
+                  position:'absolute', top:32, right:0, zIndex:100,
+                  background:'#1a0f11', border:'1px solid rgba(255,255,255,.12)',
+                  borderRadius:14, overflow:'hidden', minWidth:154,
+                  boxShadow:'0 16px 48px rgba(0,0,0,.75)',
+                  animation:'menuIn .15s cubic-bezier(.22,1,.36,1)',
+                }}>
+                  <button onClick={onDelete} style={{ display:'flex',alignItems:'center',gap:9,width:'100%',padding:'11px 16px',border:'none',background:'transparent',cursor:'pointer',color:'#f87171',fontSize:13,fontWeight:700,textAlign:'left',fontFamily:'inherit',transition:'background .1s' }}
+                    onMouseEnter={e=>e.currentTarget.style.background='rgba(248,113,113,.1)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                    <Trash/> Delete post
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Image / GIF — outside the header row, indented to align with content */}
-        {((isRepostOnly ? post.repostSource?.image_url : post.image_url)) && (
-          <div style={{
-            marginLeft: 56, marginBottom: 12,
-            borderRadius: 16, overflow: 'hidden',
-            border: '1px solid rgba(255,255,255,0.07)',
-            lineHeight: 0,
-          }}>
-            <img
-              src={(isRepostOnly ? post.repostSource?.image_url : post.image_url)!}
-              alt=""
-              style={{ width: '100%', maxHeight: 520, objectFit: 'cover', display: 'block' }}
-            />
+        {/* Image */}
+        {dImg && (
+          <div style={{ marginBottom:12, borderRadius:14, overflow:'hidden', border:'1px solid rgba(255,255,255,.06)', lineHeight:0 }}>
+            <img src={dImg} alt="" style={{ width:'100%', maxHeight:460, objectFit:'cover', display:'block' }}/>
           </div>
         )}
 
-        {/* Repost embed (when post has own content AND is a repost) */}
-        {!isRepostOnly && post.repostSource && (
-          <div style={{
-            marginLeft: 56, marginBottom: 12,
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: 14,
-            padding: '14px 16px',
-            background: 'rgba(255,255,255,0.025)',
-            position: 'relative',
-            overflow: 'hidden',
-          }}>
-            <div style={{
-              position: 'absolute', top: 0, left: 0, bottom: 0, width: 3,
-              background: 'rgba(138,21,56,0.5)', borderRadius: '14px 0 0 14px',
-            }} />
-            <div style={{ display: 'flex', gap: 10, marginBottom: post.repostSource.content || post.repostSource.image_url ? 10 : 0 }}>
-              <Av
-                url={post.repostSource.profile?.avatar_url ?? null}
-                name={post.repostSource.profile?.full_name ?? null}
-                size={26}
-                onClick={() => onNavigateProfile(post.repostSource!.user_id)}
-              />
+        {/* Quoted repost */}
+        {!isRO && post.repostSource && (
+          <div style={{ marginBottom:12, border:'1px solid rgba(255,255,255,.09)', borderRadius:14, padding:'12px 14px', background:'rgba(0,0,0,.2)', position:'relative', overflow:'hidden' }}>
+            <div style={{ position:'absolute', top:0, left:0, bottom:0, width:3, background:'linear-gradient(180deg,var(--accent),rgba(138,21,56,.2))' }}/>
+            <div style={{ display:'flex', gap:9, marginBottom:7 }}>
+              <Av url={post.repostSource.profile?.avatar_url??null} name={post.repostSource.profile?.full_name??null} size={24} onClick={()=>onProfile(post.repostSource!.user_id)}/>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
-                  {post.repostSource.profile?.full_name ?? 'User'}
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{relativeTime(post.repostSource.created_at)}</div>
+                <div style={{ fontSize:12, fontWeight:700, color:'var(--text-primary)' }}>{post.repostSource.profile?.full_name??'User'}</div>
+                <div style={{ fontSize:10, color:'var(--text-muted)' }}>{reltime(post.repostSource.created_at)}</div>
               </div>
             </div>
-            {post.repostSource.content && (
-              <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.65, margin: '0 0 8px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                {post.repostSource.content}
-              </p>
-            )}
-            {post.repostSource.image_url && (
-              <div style={{ borderRadius: 10, overflow: 'hidden', lineHeight: 0, marginTop: 6 }}>
-                <img src={post.repostSource.image_url} alt="" style={{ width: '100%', maxHeight: 280, objectFit: 'cover' }} />
-              </div>
-            )}
+            {post.repostSource.content && <p style={{ fontSize:13, color:'var(--text-secondary)', lineHeight:1.65, margin:0, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{post.repostSource.content}</p>}
+            {post.repostSource.image_url && <div style={{ borderRadius:10,overflow:'hidden',lineHeight:0,marginTop:8 }}><img src={post.repostSource.image_url} alt="" style={{ width:'100%',maxHeight:220,objectFit:'cover' }}/></div>}
           </div>
         )}
 
-        {/* Action bar */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginLeft: 54, marginTop: 4 }}>
-          <FeedAction
-            icon={<HeartIcon filled={post.isLiked} />}
-            count={post.likeCount}
-            active={post.isLiked}
-            onClick={onLike}
-            activeColor="#e5405e"
-            hoverColor="rgba(229,64,94,0.1)"
-            label="Like"
-          />
-          <FeedAction
-            icon={<ChatIcon />}
-            count={post.commentCount}
-            active={isThreadOpen}
-            onClick={onToggleThread}
-            activeColor="#60a5fa"
-            hoverColor="rgba(96,165,250,0.1)"
-            label="Reply"
-          />
-          <FeedAction
-            icon={<RepeatIcon />}
-            count={post.repostCount}
-            active={false}
-            onClick={onRepost}
-            activeColor="#4ade80"
-            hoverColor="rgba(74,222,128,0.1)"
-            label="Repost"
-            disabled={reposting || post.user_id === currentUserId}
-          />
+        {/* Actions */}
+        <div style={{ display:'flex', alignItems:'center', gap:2, paddingTop:8, borderTop:'1px solid rgba(255,255,255,.05)' }}>
+          {/* Like */}
+          <button className="abt" onClick={onLike} title="Like" style={{
+            color: post.isLiked ? '#f87171' : 'rgba(248,113,113,.55)',
+            background: post.isLiked ? 'rgba(248,113,113,.12)' : 'transparent',
+          }}
+            onMouseEnter={e=>{e.currentTarget.style.background='rgba(248,113,113,.14)';e.currentTarget.style.color='#f87171'}}
+            onMouseLeave={e=>{e.currentTarget.style.background=post.isLiked?'rgba(248,113,113,.12)':'transparent';e.currentTarget.style.color=post.isLiked?'#f87171':'rgba(248,113,113,.55)'}}>
+            <span style={{ display:'inline-flex', animation:lPop?'pop .38s ease':'none' }}><Heart on={post.isLiked}/></span>
+            {post.likeCount > 0 && <span>{post.likeCount}</span>}
+          </button>
+          {/* Comment */}
+          <button className="abt" onClick={onThread} title="Reply" style={{
+            color: threadOpen ? '#60a5fa' : 'rgba(96,165,250,.55)',
+            background: threadOpen ? 'rgba(96,165,250,.12)' : 'transparent',
+          }}
+            onMouseEnter={e=>{e.currentTarget.style.background='rgba(96,165,250,.14)';e.currentTarget.style.color='#60a5fa'}}
+            onMouseLeave={e=>{e.currentTarget.style.background=threadOpen?'rgba(96,165,250,.12)':'transparent';e.currentTarget.style.color=threadOpen?'#60a5fa':'rgba(96,165,250,.55)'}}>
+            <Bubble/>{post.commentCount > 0 && <span>{post.commentCount}</span>}
+          </button>
+          {/* Repost */}
+          <button className="abt" onClick={onRepost} disabled={reposting||post.user_id===uid} title="Repost" style={{
+            color:'rgba(74,222,128,.5)', background:'transparent',
+            opacity: reposting||post.user_id===uid ? .28 : 1,
+            cursor: reposting||post.user_id===uid ? 'default' : 'pointer',
+          }}
+            onMouseEnter={e=>{ if(!(reposting||post.user_id===uid)){e.currentTarget.style.background='rgba(74,222,128,.12)';e.currentTarget.style.color='#4ade80'} }}
+            onMouseLeave={e=>{ e.currentTarget.style.background='transparent';e.currentTarget.style.color='rgba(74,222,128,.5)' }}>
+            <Repeat/>{post.repostCount > 0 && <span>{post.repostCount}</span>}
+          </button>
         </div>
       </div>
 
-      {/* ── Thread / Replies ── */}
-      {isThreadOpen && (
-        <div style={{
-          borderTop: '1px solid rgba(255,255,255,0.05)',
-          background: 'rgba(0,0,0,0.15)',
-          padding: '16px 20px 20px',
-        }}>
-          {/* Reply input */}
-          <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
-            <div style={{ flexShrink: 0, paddingTop: 2 }}>
-              <Av url={null} name={null} size={34} />
-            </div>
-            <div style={{
-              flex: 1, display: 'flex', alignItems: 'center', gap: 10,
-              background: 'rgba(255,255,255,0.04)',
-              border: '1px solid rgba(255,255,255,0.09)',
-              borderRadius: 9999, padding: '0 6px 0 16px',
-              transition: 'border-color 0.15s',
-            }}>
-              <input
-                ref={commentInputRef}
-                value={commentText}
-                onChange={e => onCommentChange(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onPostComment() } }}
-                placeholder="Write a reply…"
-                maxLength={300}
-                style={{
-                  flex: 1, background: 'transparent', border: 'none', outline: 'none',
-                  fontSize: 14, color: 'var(--text-primary)', fontFamily: 'inherit',
-                  padding: '10px 0',
-                }}
-                onFocus={e => (e.currentTarget.parentElement!.style.borderColor = 'rgba(138,21,56,0.4)')}
-                onBlur={e => (e.currentTarget.parentElement!.style.borderColor = 'rgba(255,255,255,0.09)')}
+      {/* Thread */}
+      {threadOpen && (
+        <div className="thread-pad" style={{ borderTop:'1px solid rgba(255,255,255,.07)', background:'rgba(0,0,0,.2)', padding:'15px 18px 18px' }}>
+          <div style={{ display:'flex', gap:11, marginBottom:14 }}>
+            <Av url={myProfile?.avatar_url??null} name={myProfile?.full_name??null} size={34}/>
+            <div style={{ flex:1, display:'flex', alignItems:'center', gap:8, background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.09)', borderRadius:9999, padding:'0 6px 0 14px', transition:'border-color .15s,box-shadow .15s' }}>
+              <input ref={cinRef} value={cTxt}
+                onChange={e=>onCChange(e.target.value)}
+                onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();onComment()}}}
+                placeholder="Write a reply…" maxLength={300}
+                style={{ flex:1,background:'transparent',border:'none',outline:'none',fontSize:13.5,color:'var(--text-primary)',fontFamily:'inherit',padding:'9px 0' }}
+                onFocus={e=>{const p=e.currentTarget.parentElement!;p.style.borderColor='rgba(138,21,56,.45)';p.style.boxShadow='0 0 0 3px rgba(138,21,56,.08)'}}
+                onBlur={e=>{const p=e.currentTarget.parentElement!;p.style.borderColor='rgba(255,255,255,.09)';p.style.boxShadow='none'}}
               />
-              <button
-                onClick={onPostComment}
-                disabled={postingComment || !commentText.trim()}
-                style={{
-                  padding: '7px 16px', borderRadius: 9999, flexShrink: 0,
-                  background: commentText.trim() ? 'var(--accent)' : 'transparent',
-                  border: 'none',
-                  color: commentText.trim() ? '#fff' : 'var(--text-muted)',
-                  fontSize: 13, fontWeight: 700,
-                  cursor: commentText.trim() ? 'pointer' : 'default',
-                  opacity: postingComment ? 0.6 : 1, transition: 'all 0.15s',
-                }}
-              >
-                {postingComment ? '…' : 'Reply'}
-              </button>
+              <button onClick={onComment} disabled={postingC||!cTxt.trim()} style={{
+                padding:'6px 14px', borderRadius:9999, border:'none', fontFamily:'inherit',
+                background: cTxt.trim() ? 'linear-gradient(135deg,#8a1538,#c0185c)' : 'transparent',
+                color: cTxt.trim() ? '#fff' : 'var(--text-muted)',
+                fontSize:12, fontWeight:700, cursor: cTxt.trim()?'pointer':'default',
+                opacity: postingC?.6:1, transition:'all .15s',
+                boxShadow: cTxt.trim()?'0 2px 10px rgba(138,21,56,.4)':'none',
+              }}>{postingC?'…':'Reply'}</button>
             </div>
           </div>
 
-          {/* Comments list */}
           {comments.length === 0 ? (
-            <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: '8px 0 4px', fontStyle: 'italic' }}>
+            <div style={{ fontSize:13,color:'var(--text-muted)',textAlign:'center',padding:'10px 0',fontStyle:'italic',opacity:.65 }}>
               No replies yet — start the thread.
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {comments.map(c => (
-                <div key={c.id} style={{ display: 'flex', gap: 12 }}>
-                  <div style={{ flexShrink: 0, paddingTop: 2 }}>
-                    <Av url={c.profile?.avatar_url ?? null} name={c.profile?.full_name ?? null} size={34} />
-                  </div>
-                  <div>
-                    <div style={{ marginBottom: 4 }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
-                        {c.profile?.full_name ?? 'User'}
-                      </span>
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>
-                        {relativeTime(c.created_at)}
-                      </span>
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              {comments.map((c,ci) => (
+                <div key={c.id} style={{ display:'flex',gap:10,animation:'fadeUp .28s ease both',animationDelay:`${ci*30}ms` }}>
+                  <Av url={c.profile?.avatar_url??null} name={c.profile?.full_name??null} size={32}/>
+                  <div style={{ flex:1, background:'rgba(255,255,255,.03)', border:'1px solid rgba(255,255,255,.06)', borderRadius:12, padding:'9px 13px' }}>
+                    <div style={{ display:'flex',alignItems:'center',gap:8,marginBottom:3 }}>
+                      <span style={{ fontSize:12,fontWeight:700,color:'var(--text-primary)' }}>{c.profile?.full_name??'User'}</span>
+                      <span style={{ fontSize:10,color:'var(--text-muted)' }}>{reltime(c.created_at)}</span>
                     </div>
-                    <div style={{
-                      fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6,
-                      wordBreak: 'break-word',
-                    }}>
-                      {c.content}
-                    </div>
+                    <div style={{ fontSize:13.5,color:'var(--text-secondary)',lineHeight:1.65,wordBreak:'break-word' }}>{c.content}</div>
                   </div>
                 </div>
               ))}
@@ -763,112 +696,44 @@ function PostCard({
   )
 }
 
-// ── Shared atoms ─────────────────────────────────────────────────────────────
-
-function Av({
-  url, name, size, onClick, ring = false,
-}: {
-  url: string | null; name: string | null; size: number
-  onClick?: () => void; ring?: boolean
+// ─── Avatar ───────────────────────────────────────────────────────────────────
+function Av({ url, name, size, onClick, ring=false }: {
+  url:string|null; name:string|null; size:number; onClick?:()=>void; ring?:boolean
 }) {
-  const initials = (name ?? '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
+  const initials = (name??'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase()
   return (
-    <div
-      onClick={onClick}
-      style={{
-        width: size, height: size, borderRadius: '50%',
-        background: 'var(--accent)', flexShrink: 0,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: Math.floor(size * 0.36), fontWeight: 700, color: '#fff',
-        cursor: onClick ? 'pointer' : 'default',
-        overflow: 'hidden',
-        border: ring ? '2px solid rgba(255,255,255,0.08)' : 'none',
-        transition: onClick ? 'opacity 0.15s' : undefined,
-      }}
-      onMouseEnter={e => { if (onClick) e.currentTarget.style.opacity = '0.85' }}
-      onMouseLeave={e => { if (onClick) e.currentTarget.style.opacity = '1' }}
+    <div onClick={onClick} style={{
+      width:size, height:size, borderRadius:'50%', flexShrink:0,
+      background:'linear-gradient(135deg,#c0185c,#8a1538)',
+      display:'flex', alignItems:'center', justifyContent:'center',
+      fontSize:Math.floor(size*.36), fontWeight:800, color:'#fff',
+      cursor:onClick?'pointer':'default', overflow:'hidden',
+      border:ring?'2.5px solid rgba(138,21,56,.55)':'none',
+      boxShadow:ring?'0 0 0 2px rgba(138,21,56,.18)':'none',
+      transition:onClick?'opacity .15s,transform .15s':undefined,
+      userSelect:'none',
+    }}
+      onMouseEnter={e=>{if(onClick){e.currentTarget.style.opacity='.82';e.currentTarget.style.transform='scale(1.06)'}}}
+      onMouseLeave={e=>{if(onClick){e.currentTarget.style.opacity='1';e.currentTarget.style.transform='scale(1)'}}}
     >
-      {url
-        ? <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        : initials
-      }
+      {url ? <img src={url} alt="" style={{ width:'100%',height:'100%',objectFit:'cover' }}/> : initials}
     </div>
   )
 }
 
-function FeedAction({
-  icon, count, active, onClick, activeColor, hoverColor, label, disabled = false,
-}: {
-  icon: React.ReactNode; count: number; active: boolean; onClick: () => void
-  activeColor: string; hoverColor: string; label: string; disabled?: boolean
-}) {
-  const [hov, setHov] = useState(false)
+// ─── Skeleton / Empty ─────────────────────────────────────────────────────────
+function Skeleton() {
+  const sh = { background:'linear-gradient(90deg,rgba(255,255,255,.04) 25%,rgba(255,255,255,.09) 50%,rgba(255,255,255,.04) 75%)', backgroundSize:'200% 100%', animation:'shimmer 1.5s ease-in-out infinite', borderRadius:10 }
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      title={label}
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: 6,
-        padding: '6px 12px', borderRadius: 9999, border: 'none',
-        background: hov && !disabled ? hoverColor : active ? `${activeColor}14` : 'transparent',
-        color: active ? activeColor : hov && !disabled ? activeColor : 'var(--text-muted)',
-        fontSize: 13, fontWeight: 600, cursor: disabled ? 'default' : 'pointer',
-        transition: 'all 0.15s',
-        opacity: disabled ? 0.35 : 1,
-        userSelect: 'none',
-      }}
-      onMouseEnter={() => !disabled && setHov(true)}
-      onMouseLeave={() => setHov(false)}
-    >
-      {icon}
-      {count > 0 && (
-        <span style={{ fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>{count}</span>
-      )}
-    </button>
-  )
-}
-
-function ComposeToolBtn({
-  title, onClick, active, children,
-}: {
-  title: string; onClick: () => void; active?: boolean; children: React.ReactNode
-}) {
-  const [hov, setHov] = useState(false)
-  return (
-    <button
-      title={title}
-      onClick={onClick}
-      style={{
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        width: 36, height: 36, borderRadius: '50%', border: 'none',
-        background: hov ? 'rgba(138,21,56,0.12)' : active ? 'rgba(138,21,56,0.1)' : 'transparent',
-        color: active ? 'var(--accent)' : hov ? 'var(--accent)' : 'var(--text-muted)',
-        cursor: 'pointer', transition: 'all 0.15s',
-      }}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-    >
-      {children}
-    </button>
-  )
-}
-
-function LoadingSkeleton() {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
-      {[0, 1, 2].map(i => (
-        <div key={i} style={{
-          padding: '18px 20px',
-          borderTop: '1px solid rgba(255,255,255,0.06)',
-          opacity: 1 - i * 0.25,
-        }}>
-          <div style={{ display: 'flex', gap: 14 }}>
-            <div style={{ width: 42, height: 42, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', flexShrink: 0 }} />
-            <div style={{ flex: 1 }}>
-              <div style={{ height: 14, width: '30%', background: 'rgba(255,255,255,0.07)', borderRadius: 7, marginBottom: 10 }} />
-              <div style={{ height: 13, width: '90%', background: 'rgba(255,255,255,0.05)', borderRadius: 7, marginBottom: 7 }} />
-              <div style={{ height: 13, width: '70%', background: 'rgba(255,255,255,0.04)', borderRadius: 7 }} />
+    <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+      {[0,1,2,3].map(i=>(
+        <div key={i} style={{ background:'#231518', border:'1px solid rgba(255,255,255,.07)', borderRadius:18, padding:'16px 18px', opacity:1-i*.18 }}>
+          <div style={{ display:'flex', gap:13 }}>
+            <div style={{ width:44,height:44,borderRadius:'50%',flexShrink:0,...sh,animationDelay:`${i*.1}s` }}/>
+            <div style={{ flex:1 }}>
+              <div style={{ height:13,width:'28%',marginBottom:10,...sh,animationDelay:`${i*.1+.05}s` }}/>
+              <div style={{ height:13,width:'85%',marginBottom:8,...sh,animationDelay:`${i*.1+.1}s` }}/>
+              <div style={{ height:13,width:'60%',...sh,animationDelay:`${i*.1+.15}s` }}/>
             </div>
           </div>
         </div>
@@ -877,15 +742,24 @@ function LoadingSkeleton() {
   )
 }
 
-function relativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
-  const s = Math.floor(diff / 1000)
-  if (s < 60) return `${s}s`
-  const m = Math.floor(s / 60)
-  if (m < 60) return `${m}m`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h`
-  const d = Math.floor(h / 24)
-  if (d < 7) return `${d}d`
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+function Empty() {
+  return (
+    <div style={{ textAlign:'center', padding:'60px 20px', display:'flex', flexDirection:'column', alignItems:'center', gap:18 }}>
+      <div style={{ width:80,height:80,borderRadius:'50%',background:'linear-gradient(135deg,rgba(138,21,56,.25),rgba(138,21,56,.05))',border:'1px solid rgba(138,21,56,.25)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:34,boxShadow:'0 0 40px rgba(138,21,56,.15)' }}>✨</div>
+      <div>
+        <div style={{ fontSize:18,fontWeight:800,color:'var(--text-primary)',marginBottom:8 }}>Nothing here yet</div>
+        <div style={{ fontSize:13,color:'var(--text-muted)',lineHeight:1.6,maxWidth:260 }}>Be the first to post something for your campus!</div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Util ─────────────────────────────────────────────────────────────────────
+function reltime(iso: string): string {
+  const d = Date.now()-new Date(iso).getTime(), s=Math.floor(d/1000)
+  if(s<60) return `${s}s`; const m=Math.floor(s/60)
+  if(m<60) return `${m}m`; const h=Math.floor(m/60)
+  if(h<24) return `${h}h`; const dy=Math.floor(h/24)
+  if(dy<7) return `${dy}d`
+  return new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric'})
 }
