@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import AppLayout from './components/layout/AppLayout'
 import LandingPage from './pages/landing/LandingPage'
@@ -13,6 +13,7 @@ import ClubsPage from './pages/clubs/ClubsPage'
 import ClubProfilePage from './pages/clubs/ClubProfilePage'
 import AttendPage from './pages/attend/AttendPage'
 import ProfilePage from './pages/profile/ProfilePage'
+import PositionsPage from './pages/positions/PositionsPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
@@ -64,6 +65,11 @@ function LoadingScreen() {
   )
 }
 
+function ProfilePageWithKey() {
+  const { userId } = useParams<{ userId: string }>()
+  return <ProfilePage key={userId} />
+}
+
 function AppRoutes() {
   return (
     <Routes>
@@ -78,8 +84,9 @@ function AppRoutes() {
       <Route path="/clubs" element={<ProtectedRoute><ClubsPage /></ProtectedRoute>} />
       <Route path="/clubs/:clubId" element={<ProtectedRoute><ClubProfilePage /></ProtectedRoute>} />
       <Route path="/attend/:eventId" element={<ProtectedRouteRaw><AttendPage /></ProtectedRouteRaw>} />
-      <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
-      <Route path="/profile/:userId" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+      <Route path="/positions" element={<ProtectedRoute><PositionsPage /></ProtectedRoute>} />
+      <Route path="/profile" element={<ProtectedRoute><ProfilePage key="own" /></ProtectedRoute>} />
+      <Route path="/profile/:userId" element={<ProtectedRoute><ProfilePageWithKey /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/home" replace />} />
     </Routes>
   )

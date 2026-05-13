@@ -80,8 +80,18 @@ export default function ClubsPage() {
 
   return (
     <div className="page-content" style={{ maxWidth: 1100 }}>
+      <style>{`
+        @keyframes cl-up { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes cl-shimmer { from { background-position:-700px 0; } to { background-position:700px 0; } }
+        .cl-0 { animation: cl-up 0.5s cubic-bezier(0.22,1,0.36,1) both; }
+        .cl-1 { animation: cl-up 0.5s cubic-bezier(0.22,1,0.36,1) 0.08s both; }
+        .cl-shimmer { background: linear-gradient(90deg, rgba(41,28,30,0.6) 25%, rgba(72,46,54,0.85) 50%, rgba(41,28,30,0.6) 75%); background-size:700px 100%; animation:cl-shimmer 1.4s ease-in-out infinite; }
+        .club-card { transition: border-color 0.2s, box-shadow 0.22s, transform 0.22s !important; }
+        .club-card:hover { border-color: rgba(138,21,56,0.5) !important; box-shadow: 0 10px 36px rgba(0,0,0,0.38) !important; transform: translateY(-4px) !important; }
+      `}</style>
+
       {/* Header */}
-      <div style={{ marginBottom: 32 }}>
+      <div className="cl-0" style={{ marginBottom: 32 }}>
         <h1 style={{ fontSize: 38, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.5px', marginBottom: 8 }}>
           My Clubs
         </h1>
@@ -91,17 +101,28 @@ export default function ClubsPage() {
       </div>
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '80px 0', color: 'var(--text-muted)' }}>
-          <div style={{
-            width: 32, height: 32, border: '3px solid rgba(87,65,68,0.3)',
-            borderTopColor: 'var(--accent)', borderRadius: '50%',
-            animation: 'spinClubs 0.8s linear infinite', margin: '0 auto 16px',
-          }} />
-          <style>{`@keyframes spinClubs { to { transform: rotate(360deg); } }`}</style>
-          Loading your clubs…
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 24 }}>
+          {[0,1,2,3].map(i => (
+            <div key={i} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, overflow: 'hidden', animationDelay: `${i * 0.06}s` }}>
+              <div className="cl-shimmer" style={{ height: 130, borderRadius: 0 }} />
+              <div style={{ padding: '0 20px' }}>
+                <div className="cl-shimmer" style={{ width: 52, height: 52, borderRadius: 13, marginTop: -26, marginBottom: 12 }} />
+                <div className="cl-shimmer" style={{ width: '70%', height: 17, borderRadius: 7, marginBottom: 8 }} />
+                <div className="cl-shimmer" style={{ width: '90%', height: 13, borderRadius: 6, marginBottom: 5 }} />
+                <div className="cl-shimmer" style={{ width: '75%', height: 13, borderRadius: 6, marginBottom: 16 }} />
+                <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+                  <div className="cl-shimmer" style={{ width: 72, height: 22, borderRadius: 6 }} />
+                  <div className="cl-shimmer" style={{ width: 90, height: 22, borderRadius: 6 }} />
+                </div>
+              </div>
+              <div style={{ padding: '0 20px 20px' }}>
+                <div className="cl-shimmer" style={{ height: 36, borderRadius: 10 }} />
+              </div>
+            </div>
+          ))}
         </div>
       ) : memberships.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '80px 0' }}>
+        <div className="cl-1" style={{ textAlign: 'center', padding: '80px 0' }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>🏛️</div>
           <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>
             You haven't joined any clubs yet
@@ -127,7 +148,7 @@ export default function ClubsPage() {
         </div>
       ) : (
         <>
-          <p style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 24 }}>
+          <p className="cl-1" style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 24 }}>
             {memberships.length} club{memberships.length !== 1 ? 's' : ''}
           </p>
           <div style={{
@@ -135,10 +156,11 @@ export default function ClubsPage() {
             gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
             gap: 24,
           }}>
-            {memberships.map((m) => (
+            {memberships.map((m, i) => (
               <ClubCard
                 key={m.id}
                 membership={m}
+                index={i}
                 onLeave={() => handleLeave(m)}
                 leaving={leavingId === m.id}
                 initials={initials}
@@ -158,12 +180,14 @@ function ClubCard({
   leaving,
   initials,
   onClick,
+  index = 0,
 }: {
   membership: MembershipRow
   onLeave: () => void
   leaving: boolean
   initials: (n: string) => string
   onClick: () => void
+  index?: number
 }) {
   const { club, role } = membership
   const catColor = CATEGORY_COLORS[club.category ?? ''] ?? 'var(--accent)'
@@ -174,6 +198,7 @@ function ClubCard({
 
   return (
     <div
+      className="club-card"
       onClick={onClick}
       style={{
         background: 'rgba(255,255,255,0.04)',
@@ -182,8 +207,8 @@ function ClubCard({
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        transition: 'border-color 0.2s',
         cursor: 'pointer',
+        animation: `cl-up 0.48s cubic-bezier(0.22,1,0.36,1) ${index * 0.065}s both`,
       }}
     >
       {/* Banner */}

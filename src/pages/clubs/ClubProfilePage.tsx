@@ -274,8 +274,18 @@ export default function ClubProfilePage() {
       <style>{`
         @keyframes livePulse{0%,100%{opacity:1}50%{opacity:0.4}}
         @keyframes spinCP{to{transform:rotate(360deg)}}
-        .ev-card:hover{border-color:rgba(138,21,56,0.4)!important}
-        .mem-card:hover{border-color:rgba(138,21,56,0.3)!important}
+        @keyframes cp-up{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes cp-pop{from{opacity:0;transform:translateY(10px) scale(0.99)}to{opacity:1;transform:translateY(0) scale(1)}}
+        @keyframes cp-fade{from{opacity:0}to{opacity:1}}
+        .cp-banner{animation:cp-fade 0.5s ease both}
+        .cp-0{animation:cp-up 0.5s cubic-bezier(0.22,1,0.36,1) 0.1s both}
+        .cp-1{animation:cp-up 0.5s cubic-bezier(0.22,1,0.36,1) 0.18s both}
+        .cp-2{animation:cp-up 0.5s cubic-bezier(0.22,1,0.36,1) 0.26s both}
+        .cp-panel{animation:cp-pop 0.28s cubic-bezier(0.22,1,0.36,1) both}
+        .ev-card{transition:border-color 0.2s,box-shadow 0.2s,transform 0.2s!important}
+        .ev-card:hover{border-color:rgba(138,21,56,0.4)!important;transform:translateY(-1px);box-shadow:0 5px 20px rgba(0,0,0,0.25)!important}
+        .mem-card{transition:border-color 0.2s,background 0.2s!important}
+        .mem-card:hover{border-color:rgba(138,21,56,0.3)!important;background:rgba(255,255,255,0.05)!important}
         .cal-day:hover{background:rgba(255,255,255,0.06)!important;cursor:pointer}
         .thread-row:hover{border-color:rgba(138,21,56,0.3)!important}
         .cal-layout{display:grid;grid-template-columns:1fr 300px;gap:24px;align-items:start}
@@ -288,7 +298,7 @@ export default function ClubProfilePage() {
       </div>
 
       {/* ── Banner ── */}
-      <div style={{ position: 'relative', height: 240, margin: '16px 28px 0', borderRadius: 20, overflow: 'hidden' }}>
+      <div className="cp-banner" style={{ position: 'relative', height: 240, margin: '16px 28px 0', borderRadius: 20, overflow: 'hidden' }}>
         {club.banner_url
           ? <img src={club.banner_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
           : <div style={{ width: '100%', height: '100%', background: `linear-gradient(135deg, var(--bg-card) 0%, var(--bg-muted) 60%, ${catColor}28 100%)` }}/>
@@ -336,15 +346,16 @@ export default function ClubProfilePage() {
       <div style={{ padding: '0 28px 52px' }}>
 
         {/* ── Stats row ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 20 }}>
+        <div className="cp-0" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 20 }}>
           {[
             { label: 'Members',  value: club.member_count },
             { label: 'Events',   value: events.length },
             { label: 'Threads',  value: threads.length },
-          ].map(({ label, value }) => (
+          ].map(({ label, value }, i) => (
             <div key={label} style={{
               background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
               borderRadius: 12, padding: '14px 18px', textAlign: 'center',
+              animation: `cp-up 0.45s cubic-bezier(0.22,1,0.36,1) ${0.1 + i * 0.07}s both`,
             }}>
               <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>{value}</div>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginTop: 4, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{label}</div>
@@ -354,14 +365,14 @@ export default function ClubProfilePage() {
 
         {/* ── About ── */}
         {club.description && (
-          <div style={{ marginTop: 16, padding: '16px 20px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14 }}>
+          <div className="cp-1" style={{ marginTop: 16, padding: '16px 20px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14 }}>
             <SectionLabel>About</SectionLabel>
             <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.7, margin: 0 }}>{club.description}</p>
           </div>
         )}
 
         {/* ── Tabs ── */}
-        <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid rgba(87,65,68,0.3)', marginTop: 28 }}>
+        <div className="cp-2" style={{ display: 'flex', gap: 0, borderBottom: '1px solid rgba(87,65,68,0.3)', marginTop: 28 }}>
           {([
             { key: 'events'    as Tab, label: 'Events',      badge: events.length },
             { key: 'calendar'  as Tab, label: 'Calendar',    badge: null },
@@ -393,7 +404,7 @@ export default function ClubProfilePage() {
 
           {/* ══════════════ EVENTS ══════════════ */}
           {tab === 'events' && (
-            <div>
+            <div className="cp-panel">
               {liveEvents.length > 0 && (
                 <div style={{
                   marginBottom: 20, background: 'rgba(255,180,171,0.07)',
@@ -434,10 +445,11 @@ export default function ClubProfilePage() {
                   sub={eventFilter === 'upcoming' ? 'Check back soon.' : eventFilter === 'live' ? 'Nothing right now.' : 'No history yet.'} />
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {shownEvents.map(ev => (
+                  {shownEvents.map((ev, i) => (
                     <EventCard
                       key={ev.id}
                       event={ev}
+                      index={i}
                       onAttend={() => handleAttend(ev)}
                       attending={attendingId === ev.id}
                       onViewAnn={ev.is_live && ev.is_attending ? () => handleViewEventAnn(ev) : undefined}
@@ -450,7 +462,7 @@ export default function ClubProfilePage() {
 
           {/* ══════════════ CALENDAR ══════════════ */}
           {tab === 'calendar' && (
-            <CalendarSection events={events} />
+            <div className="cp-panel"><CalendarSection events={events} /></div>
           )}
 
           {/* ══════════════ COMMUNITY ══════════════ */}
@@ -464,7 +476,7 @@ export default function ClubProfilePage() {
             const noResults = term && !filteredPresident && filteredOfficers.length === 0 && filteredAssigned.length === 0 && filteredRegular.length === 0
 
             return (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+              <div className="cp-panel" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
                 {/* Search bar */}
                 <div style={{ position: 'relative' }}>
@@ -488,9 +500,9 @@ export default function ClubProfilePage() {
                   <section>
                     <SectionLabel>Leadership Team</SectionLabel>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {filteredPresident && <MemberCard member={filteredPresident} highlight />}
-                      {filteredOfficers.map(m => <MemberCard key={m.id} member={m} />)}
-                      {filteredAssigned.map(m => <MemberCard key={m.id} member={m} />)}
+                      {filteredPresident && <MemberCard member={filteredPresident} highlight index={0} />}
+                      {filteredOfficers.map((m, i) => <MemberCard key={m.id} member={m} index={filteredPresident ? i + 1 : i} />)}
+                      {filteredAssigned.map((m, i) => <MemberCard key={m.id} member={m} index={(filteredPresident ? 1 : 0) + filteredOfficers.length + i} />)}
                     </div>
                   </section>
                 )}
@@ -500,7 +512,7 @@ export default function ClubProfilePage() {
                   <section>
                     <SectionLabel>Members · {filteredRegular.length}</SectionLabel>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
-                      {filteredRegular.map(m => <MemberCard key={m.id} member={m} />)}
+                      {filteredRegular.map((m, i) => <MemberCard key={m.id} member={m} index={i} />)}
                     </div>
                   </section>
                 )}
@@ -517,23 +529,23 @@ export default function ClubProfilePage() {
 
           {/* ══════════════ ANNOUNCEMENTS ══════════════ */}
           {tab === 'announcements' && (
-            <AnnouncementsSection
+            <div className="cp-panel"><AnnouncementsSection
               clubId={clubId!}
               clubName={club?.name ?? ''}
               announcements={announcements}
               members={members}
               canPost={canPost}
               onRefresh={fetchAll}
-            />
+            /></div>
           )}
 
           {/* ══════════════ THREADS ══════════════ */}
           {tab === 'threads' && (
-            <ThreadsSection
+            <div className="cp-panel"><ThreadsSection
               clubId={clubId!}
               threads={threads}
               onRefresh={fetchAll}
-            />
+            /></div>
           )}
 
         </div>
@@ -554,14 +566,15 @@ export default function ClubProfilePage() {
 
 // ─────────────────────────────── EventCard ──────────
 
-function EventCard({ event, onAttend, attending, onViewAnn }: { event: EventRow; onAttend: () => void; attending: boolean; onViewAnn?: () => void }) {
+function EventCard({ event, onAttend, attending, onViewAnn, index = 0 }: { event: EventRow; onAttend: () => void; attending: boolean; onViewAnn?: () => void; index?: number }) {
   const full = event.max_attendees !== null && event.attendee_count >= event.max_attendees && !event.is_attending
   return (
     <div className="ev-card" style={{
       background: event.is_live ? 'rgba(255,180,171,0.05)' : 'rgba(255,255,255,0.04)',
       border: event.is_live ? '1px solid rgba(255,180,171,0.18)' : '1px solid rgba(255,255,255,0.07)',
       borderRadius: 14, padding: '16px 20px',
-      display: 'flex', gap: 16, alignItems: 'flex-start', transition: 'border-color 0.2s',
+      display: 'flex', gap: 16, alignItems: 'flex-start',
+      animation: `cp-up 0.4s cubic-bezier(0.22,1,0.36,1) ${index * 0.055}s both`,
     }}>
       {/* Date block */}
       <div style={{
@@ -642,7 +655,7 @@ function EventCard({ event, onAttend, attending, onViewAnn }: { event: EventRow;
 
 // ──────────────────────────────── MemberCard ────────
 
-function MemberCard({ member, highlight }: { member: MemberRow; highlight?: boolean }) {
+function MemberCard({ member, highlight, index = 0 }: { member: MemberRow; highlight?: boolean; index?: number }) {
   const rs = ROLE_STYLES[member.role] ?? ROLE_STYLES.member
   const p = member.profile
   const hasCustom   = !!member.custom_role
@@ -658,7 +671,8 @@ function MemberCard({ member, highlight }: { member: MemberRow; highlight?: bool
       background: highlight ? 'rgba(233,193,118,0.04)' : 'rgba(255,255,255,0.03)',
       border: highlight ? '1px solid rgba(233,193,118,0.18)' : '1px solid rgba(255,255,255,0.07)',
       borderRadius: 12, padding: '13px 16px',
-      display: 'flex', alignItems: 'center', gap: 12, transition: 'border-color 0.2s',
+      display: 'flex', alignItems: 'center', gap: 12,
+      animation: `cp-up 0.4s cubic-bezier(0.22,1,0.36,1) ${index * 0.045}s both`,
     }}>
       <Avatar name={p?.full_name} size={highlight ? 44 : 38} />
 
@@ -949,7 +963,7 @@ function AnnouncementsSection({
         <EmptyState icon="📢" title="No announcements yet" sub={canPost ? 'Post an update for your club members.' : 'Club leadership hasn\'t posted anything yet.'} />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {announcements.map(ann => {
+          {announcements.map((ann, i) => {
             const rs = getRoleStyle(ann.user_id)
             const roleLabel = getRoleLabel(ann.user_id)
             return (
@@ -958,6 +972,7 @@ function AnnouncementsSection({
                 border: '1px solid rgba(255,255,255,0.07)',
                 borderLeft: `3px solid ${rs.color}`,
                 borderRadius: 14, padding: '18px 20px',
+                animation: `cp-up 0.4s cubic-bezier(0.22,1,0.36,1) ${i * 0.05}s both`,
               }}>
                 {/* Author row */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
@@ -1183,7 +1198,7 @@ function ThreadsSection({ clubId, threads, onRefresh }: { clubId: string; thread
         <EmptyState icon="💬" title="No threads yet" sub="Start a conversation for this club." />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {threads.map(thread => {
+          {threads.map((thread, i) => {
             const isOpen = expanded === thread.id
             const threadReplies = replies[thread.id] ?? []
             return (
@@ -1191,6 +1206,7 @@ function ThreadsSection({ clubId, threads, onRefresh }: { clubId: string; thread
                 background: isOpen ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.03)',
                 border: isOpen ? '1px solid rgba(138,21,56,0.3)' : '1px solid rgba(255,255,255,0.07)',
                 borderRadius: 14, overflow: 'hidden', transition: 'border-color 0.2s',
+                animation: `cp-up 0.4s cubic-bezier(0.22,1,0.36,1) ${i * 0.05}s both`,
               }}>
                 {/* Thread header — click to expand */}
                 <div

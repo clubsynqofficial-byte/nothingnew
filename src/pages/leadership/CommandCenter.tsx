@@ -6,6 +6,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import type { Club, Event } from '../../types'
 import { filterText, validateImage } from '../../lib/contentFilter'
 import ClubFormBuilder from './ClubFormBuilder'
+import ClubPositions from './ClubPositions'
 
 interface Stats {
   memberCount: number
@@ -391,6 +392,8 @@ export default function CommandCenter({ club }: Props) {
     setActionLoading(null)
   }
 
+  const [activeTab, setActiveTab] = useState<'events'|'team'|'announcements'|'positions'|'settings'>('events')
+
   const avgAttendees = stats.eventCount > 0 ? (stats.totalAttendees / stats.eventCount).toFixed(1) : '—'
   const liveCount = events.filter(e => e.is_live).length
 
@@ -416,98 +419,51 @@ export default function CommandCenter({ club }: Props) {
     </div>
   )
 
+  const TABS = [
+    { key: 'events',        label: 'Events',        badge: events.length },
+    { key: 'team',          label: 'Team',           badge: teamMembers.length },
+    { key: 'announcements', label: 'Announcements',  badge: announcements.length },
+    { key: 'positions',     label: 'Positions',      badge: null },
+    { key: 'settings',      label: 'Settings',       badge: null },
+  ] as const
+
   return (
     <div className="page-content" style={{ maxWidth: 1100 }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 32, flexWrap: 'wrap', gap: 16 }}>
+      <style>{`
+        @keyframes cc-pop { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+        .cc-panel { animation: cc-pop 0.25s cubic-bezier(0.22,1,0.36,1) both; }
+        .cc-tab { font-family:inherit; cursor:pointer; transition:all 0.18s; border:none; }
+        .cc-tab:hover { color:var(--text-primary) !important; }
+      `}</style>
+
+      {/* ── Header ── */}
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:28, flexWrap:'wrap', gap:16 }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-            <h1 style={{ fontSize: 30, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:6 }}>
+            <h1 style={{ fontSize:30, fontWeight:700, color:'var(--text-primary)', letterSpacing:'-0.3px' }}>
               {club.name}
             </h1>
             {club.is_verified && (
-              <span style={{
-                background: 'rgba(233,193,118,0.15)',
-                border: '1px solid rgba(233,193,118,0.4)',
-                borderRadius: 9999,
-                padding: '3px 10px',
-                fontSize: 11,
-                fontWeight: 700,
-                color: 'var(--gold)',
-                letterSpacing: '0.05em',
-              }}>
+              <span style={{ background:'rgba(233,193,118,0.15)', border:'1px solid rgba(233,193,118,0.4)', borderRadius:9999, padding:'3px 10px', fontSize:11, fontWeight:700, color:'var(--gold)', letterSpacing:'0.05em' }}>
                 ✓ VERIFIED
               </span>
             )}
           </div>
-          <p style={{ fontSize: 14, color: 'var(--text-muted)' }}>
-            Manage your organization's legacy, reach, and standing.
-          </p>
+          <p style={{ fontSize:14, color:'var(--text-muted)' }}>Manage your organization's legacy, reach, and standing.</p>
         </div>
         <button
-          onClick={() => setShowEventForm(v => !v)}
-          style={{
-            background: 'var(--accent)',
-            border: 'none',
-            borderRadius: 10,
-            padding: '11px 22px',
-            color: '#fff',
-            fontSize: 14,
-            fontWeight: 700,
-            cursor: 'pointer',
-            boxShadow: '0 0 20px rgba(138,21,56,0.3)',
-          }}
+          onClick={() => { setActiveTab('events'); setShowEventForm(v => !v) }}
+          style={{ background:'var(--accent)', border:'none', borderRadius:10, padding:'11px 22px', color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer', boxShadow:'0 0 20px rgba(138,21,56,0.3)', fontFamily:'inherit' }}
         >
           {showEventForm ? '✕ Cancel' : '+ Create Event'}
         </button>
       </div>
 
-      {/* Event creation form */}
-      {showEventForm && (
-        <div style={{
-          background: 'rgba(41,28,30,0.6)',
-          border: '1px solid rgba(138,21,56,0.3)',
-          borderRadius: 16,
-          padding: '28px 28px',
-          marginBottom: 28,
-        }}>
-          <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 20 }}>New Event</h3>
-          <form onSubmit={handleCreateEvent}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-              <FormField label="Event Title">
-                <input required value={evTitle} onChange={e => setEvTitle(e.target.value)} placeholder="Event name" style={fi} />
-              </FormField>
-              <FormField label="Category">
-                <input value={evCategory} onChange={e => setEvCategory(e.target.value)} placeholder="e.g. Workshop, Social" style={fi} />
-              </FormField>
-              <FormField label="Location">
-                <input value={evLocation} onChange={e => setEvLocation(e.target.value)} placeholder="Venue or link" style={fi} />
-              </FormField>
-              <FormField label="Start Time">
-                <input type="datetime-local" value={evStart} onChange={e => setEvStart(e.target.value)} style={fi} />
-              </FormField>
-              <FormField label="Karak Points Reward">
-                <input type="number" min="0" value={evPoints} onChange={e => setEvPoints(e.target.value)} style={fi} />
-              </FormField>
-            </div>
-            <FormField label="Description">
-              <textarea value={evDesc} onChange={e => setEvDesc(e.target.value)} placeholder="What's happening?" rows={3} style={{ ...fi, resize: 'vertical' }} />
-            </FormField>
-            {eventError && <p style={{ color: '#ff6b6b', fontSize: 12, margin: '8px 0' }}>{eventError}</p>}
-            <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
-              <button type="submit" disabled={creatingEvent} style={{ background: 'var(--accent)', border: 'none', borderRadius: 10, padding: '10px 28px', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: creatingEvent ? 0.7 : 1 }}>
-                {creatingEvent ? 'Creating…' : 'Create Event'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Stats — 6 cards, 3-col × 2-row */}
+      {/* ── Stats (untouched) ── */}
       {loadingStats ? (
-        <div style={{ color: 'var(--text-muted)', marginBottom: 28 }}>Loading stats…</div>
+        <div style={{ color:'var(--text-muted)', marginBottom:28 }}>Loading stats…</div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 24 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:14, marginBottom:24 }}>
           {statCard('Members', stats.memberCount, 'Total enrolled')}
           {statCard('Events', stats.eventCount, 'All time')}
           {statCard('Total Attendees', stats.totalAttendees, 'Across all events')}
@@ -517,714 +473,319 @@ export default function CommandCenter({ club }: Props) {
         </div>
       )}
 
-      {/* Live events banner */}
+      {/* ── Live banner ── */}
       {liveCount > 0 && (
-        <div style={{
-          background: 'rgba(255,180,171,0.07)',
-          border: '1px solid rgba(255,180,171,0.22)',
-          borderRadius: 11,
-          padding: '11px 18px',
-          marginBottom: 22,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-        }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--live-red)', letterSpacing: '0.1em' }}>● LIVE</span>
-          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+        <div style={{ background:'rgba(255,180,171,0.07)', border:'1px solid rgba(255,180,171,0.22)', borderRadius:11, padding:'11px 18px', marginBottom:18, display:'flex', alignItems:'center', gap:10 }}>
+          <span style={{ fontSize:11, fontWeight:700, color:'var(--live-red)', letterSpacing:'0.1em' }}>● LIVE</span>
+          <span style={{ fontSize:13, color:'var(--text-secondary)' }}>
             {liveCount} event{liveCount !== 1 ? 's' : ''} currently live — members can check in now
           </span>
         </div>
       )}
 
-      {/* ── Manage Team ── */}
-      <div style={{
-        background: 'rgba(255,255,255,0.03)',
-        border: '1px solid rgba(255,255,255,0.07)',
-        borderRadius: 16,
-        padding: 24,
-        marginBottom: 22,
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
-          <div>
-            <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 3 }}>Manage Team</h2>
-            <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Search, add members and assign their roles</p>
-          </div>
-          <span style={{
-            background: 'rgba(14,165,233,0.12)', border: '1px solid rgba(14,165,233,0.3)',
-            borderRadius: 9999, padding: '3px 10px', fontSize: 10, fontWeight: 700,
-            color: '#38bdf8', letterSpacing: '0.06em', flexShrink: 0,
+      {/* ── Tab bar ── */}
+      <div style={{ display:'flex', gap:3, background:'rgba(0,0,0,0.2)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:14, padding:4, marginBottom:20 }}>
+        {TABS.map(t => (
+          <button key={t.key} className="cc-tab" onClick={() => setActiveTab(t.key)} style={{
+            flex:1, padding:'9px 10px', borderRadius:11, fontSize:13,
+            fontWeight: activeTab === t.key ? 700 : 500,
+            color: activeTab === t.key ? '#fff' : 'var(--text-muted)',
+            background: activeTab === t.key ? 'rgba(138,21,56,0.22)' : 'transparent',
+            border: activeTab === t.key ? '1px solid rgba(138,21,56,0.32)' : '1px solid transparent',
+            display:'flex', alignItems:'center', justifyContent:'center', gap:6,
           }}>
-            {stats.memberCount} MEMBER{stats.memberCount !== 1 ? 'S' : ''}
-          </span>
-        </div>
-
-        {/* Search bar */}
-        <div style={{ position: 'relative', marginBottom: 20 }}>
-          <span style={{
-            position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
-            fontSize: 14, color: 'var(--text-muted)', pointerEvents: 'none',
-          }}>🔍</span>
-          <input
-            value={memberSearch}
-            onChange={e => setMemberSearch(e.target.value)}
-            placeholder="Search by name or email to find and add members…"
-            style={{ ...fi, paddingLeft: 36, fontSize: 13 }}
-          />
-          {memberSearch && (
-            <button
-              onClick={() => { setMemberSearch(''); setSearchProfiles([]) }}
-              style={{
-                position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
-                background: 'transparent', border: 'none', color: 'var(--text-muted)',
-                cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '2px 4px',
-              }}
-            >✕</button>
-          )}
-        </div>
-
-        {/* Search results (when searching) */}
-        {memberSearch.trim() && (
-          <div style={{ marginBottom: teamMembers.length > 0 ? 20 : 0 }}>
-            <div style={{
-              fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)',
-              textTransform: 'uppercase', marginBottom: 10,
-            }}>
-              {searchLoading ? 'Searching…' : `${searchProfiles.length} result${searchProfiles.length !== 1 ? 's' : ''}`}
-            </div>
-            {!searchLoading && searchProfiles.length === 0 && (
-              <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: '12px 0', textAlign: 'center' }}>
-                No users found matching "{memberSearch}"
-              </div>
+            {t.label}
+            {t.badge !== null && (
+              <span style={{
+                fontSize:11, fontWeight:700, padding:'1px 7px', borderRadius:99, minWidth:18,
+                background: activeTab === t.key ? 'rgba(138,21,56,0.35)' : 'rgba(255,255,255,0.07)',
+                color: activeTab === t.key ? '#f08' : 'var(--text-muted)',
+                transition:'all 0.18s',
+              }}>{t.badge}</span>
             )}
-            {searchProfiles.map(p => {
-              const existing = teamMembers.find(m => m.user_id === p.id)
-              const isLoading = actionLoading === (existing?.id ?? p.id)
-              const isPresident = p.id === club.president_id
-              return existing ? (
-                <ExistingMemberRow
-                  key={p.id}
-                  profile={p}
-                  membership={existing}
-                  isLoading={isLoading}
-                  onRoleChange={handleRoleChange}
-                  onRemove={handleRemoveMember}
-                />
-              ) : isPresident ? (
-                <div key={p.id} style={{
-                  display: 'flex', alignItems: 'center', gap: 12,
-                  padding: '10px 14px', borderRadius: 10, marginBottom: 6,
-                  background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
-                }}>
-                  <TeamAvatar name={p.full_name} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{p.full_name ?? 'Unknown'}</div>
-                    {p.school && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{p.school}</div>}
-                  </div>
-                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', padding: '3px 10px', borderRadius: 9999, background: 'rgba(233,193,118,0.15)', color: 'var(--gold)', flexShrink: 0 }}>PRESIDENT</span>
+          </button>
+        ))}
+      </div>
+
+      {/* ── Events tab ── */}
+      {activeTab === 'events' && (
+        <div key="events" className="cc-panel">
+          {/* Create event form */}
+          {showEventForm && (
+            <div style={{ background:'rgba(41,28,30,0.6)', border:'1px solid rgba(138,21,56,0.3)', borderRadius:16, padding:'24px 24px', marginBottom:20 }}>
+              <h3 style={{ fontSize:16, fontWeight:700, color:'var(--text-primary)', marginBottom:20 }}>New Event</h3>
+              <form onSubmit={handleCreateEvent}>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:16 }}>
+                  <FormField label="Event Title"><input required value={evTitle} onChange={e => setEvTitle(e.target.value)} placeholder="Event name" style={fi} /></FormField>
+                  <FormField label="Category"><input value={evCategory} onChange={e => setEvCategory(e.target.value)} placeholder="e.g. Workshop, Social" style={fi} /></FormField>
+                  <FormField label="Location"><input value={evLocation} onChange={e => setEvLocation(e.target.value)} placeholder="Venue or link" style={fi} /></FormField>
+                  <FormField label="Start Time"><input type="datetime-local" value={evStart} onChange={e => setEvStart(e.target.value)} style={fi} /></FormField>
+                  <FormField label="Karak Points Reward"><input type="number" min="0" value={evPoints} onChange={e => setEvPoints(e.target.value)} style={fi} /></FormField>
                 </div>
-              ) : (
-                <NewMemberRow
-                  key={p.id}
-                  profile={p}
-                  isLoading={isLoading}
-                  onAdd={handleAddMember}
-                />
-              )
-            })}
-          </div>
-        )}
+                <FormField label="Description">
+                  <textarea value={evDesc} onChange={e => setEvDesc(e.target.value)} placeholder="What's happening?" rows={3} style={{ ...fi, resize:'vertical' }} />
+                </FormField>
+                {eventError && <p style={{ color:'#ff6b6b', fontSize:12, margin:'8px 0' }}>{eventError}</p>}
+                <div style={{ marginTop:16, display:'flex', justifyContent:'flex-end' }}>
+                  <button type="submit" disabled={creatingEvent} style={{ background:'var(--accent)', border:'none', borderRadius:10, padding:'10px 28px', color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer', opacity:creatingEvent?0.7:1, fontFamily:'inherit' }}>
+                    {creatingEvent ? 'Creating…' : 'Create Event'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
 
-        {/* Current members list */}
-        {teamMembers.length === 0 && !memberSearch.trim() ? (
-          <div style={{ textAlign: 'center', padding: '28px 0', color: 'var(--text-muted)', fontSize: 13 }}>
-            No members yet — search above to add your first team member.
-          </div>
-        ) : teamMembers.length > 0 && (
-          <>
-            {!memberSearch.trim() && (
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 10 }}>
-                Current Team
-              </div>
-            )}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {teamMembers.map(m => {
-                if (m.role === 'president') {
+          {/* Events list */}
+          <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:16, padding:24 }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:18 }}>
+              <h2 style={{ fontSize:16, fontWeight:700, color:'var(--text-primary)' }}>All Events</h2>
+              <span style={{ fontSize:11, color:'var(--text-muted)' }}>{events.length} total</span>
+            </div>
+            {events.length === 0 ? (
+              <p style={{ color:'var(--text-muted)', fontSize:13 }}>No events yet. Hit "+ Create Event" to add your first one.</p>
+            ) : (
+              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                {events.map(ev => {
+                  const isCompleted = !ev.is_live && !!ev.start_time && new Date(ev.start_time) < new Date()
                   return (
-                    <div key={m.id} style={{
-                      display: 'flex', alignItems: 'center', gap: 12,
-                      padding: '10px 14px', borderRadius: 10,
-                      background: 'rgba(233,193,118,0.04)', border: '1px solid rgba(233,193,118,0.14)',
-                    }}>
-                      <TeamAvatar name={m.profile?.full_name} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{m.profile?.full_name ?? 'Unknown'}</div>
-                        {m.profile?.school && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{m.profile.school}</div>}
+                    <div key={ev.id} style={{ background:'rgba(255,255,255,0.03)', border:`1px solid ${isCompleted?'rgba(138,21,56,0.2)':'rgba(255,255,255,0.06)'}`, borderRadius:10, padding:'12px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:4 }}>
+                          <div style={{ fontSize:14, fontWeight:600, color:'var(--text-primary)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{ev.title}</div>
+                          {isCompleted && <span style={{ fontSize:9, fontWeight:700, letterSpacing:'0.08em', padding:'2px 7px', borderRadius:9999, flexShrink:0, background:'rgba(34,197,94,0.1)', border:'1px solid rgba(34,197,94,0.25)', color:'#4ade80' }}>COMPLETED</span>}
+                        </div>
+                        <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                          <span style={{ fontSize:11, color:'var(--text-muted)' }}>{ev.location ?? 'No location'} · {ev.karak_points_reward} pts</span>
+                          <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:9999, background:'rgba(14,165,233,0.1)', border:'1px solid rgba(14,165,233,0.25)', color:'#38bdf8' }}>
+                            👥 {ev.attendee_count} checked in
+                          </span>
+                        </div>
                       </div>
-                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', padding: '3px 10px', borderRadius: 9999, background: 'rgba(233,193,118,0.15)', color: 'var(--gold)', flexShrink: 0 }}>PRESIDENT</span>
+                      <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
+                        <button onClick={() => setQrEvent(ev)} style={{ padding:'4px 11px', borderRadius:9999, border:'1px solid rgba(14,165,233,0.35)', background:'rgba(14,165,233,0.08)', color:'#38bdf8', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>QR</button>
+                        {isCompleted && <button onClick={() => setCertEvent(ev)} style={{ padding:'4px 11px', borderRadius:9999, border:'1px solid rgba(233,193,118,0.35)', background:'rgba(233,193,118,0.08)', color:'var(--gold)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>🎓 Send Certs</button>}
+                        {ev.is_live && <button onClick={() => handleOpenEventAnn(ev)} style={{ padding:'4px 11px', borderRadius:9999, border:'1px solid rgba(255,180,171,0.35)', background:'rgba(255,180,171,0.08)', color:'var(--live-red)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>📢 Announce</button>}
+                        <button onClick={() => toggleLive(ev)} style={{ padding:'4px 12px', borderRadius:9999, border:ev.is_live?'1px solid rgba(255,180,171,0.4)':'1px solid rgba(87,65,68,0.3)', background:ev.is_live?'rgba(255,180,171,0.1)':'transparent', color:ev.is_live?'var(--live-red)':'var(--text-muted)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
+                          {ev.is_live ? '● LIVE' : 'Go Live'}
+                        </button>
+                      </div>
                     </div>
                   )
-                }
-                return (
-                  <ExistingMemberRow
-                    key={m.id}
-                    profile={{ id: m.user_id, full_name: m.profile?.full_name ?? null, school: m.profile?.school ?? null, email: m.profile?.email ?? null }}
-                    membership={m}
-                    isLoading={actionLoading === m.id}
-                    onRoleChange={handleRoleChange}
-                    onRemove={handleRemoveMember}
-                  />
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Team tab ── */}
+      {activeTab === 'team' && (
+        <div key="team" className="cc-panel" style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:16, padding:24 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:18 }}>
+            <div>
+              <h2 style={{ fontSize:16, fontWeight:700, color:'var(--text-primary)', marginBottom:3 }}>Manage Team</h2>
+              <p style={{ fontSize:12, color:'var(--text-muted)' }}>Search, add members and assign their roles</p>
+            </div>
+            <span style={{ background:'rgba(14,165,233,0.12)', border:'1px solid rgba(14,165,233,0.3)', borderRadius:9999, padding:'3px 10px', fontSize:10, fontWeight:700, color:'#38bdf8', letterSpacing:'0.06em', flexShrink:0 }}>
+              {stats.memberCount} MEMBER{stats.memberCount !== 1 ? 'S' : ''}
+            </span>
+          </div>
+          <div style={{ position:'relative', marginBottom:20 }}>
+            <span style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', fontSize:14, color:'var(--text-muted)', pointerEvents:'none' }}>🔍</span>
+            <input value={memberSearch} onChange={e => setMemberSearch(e.target.value)} placeholder="Search by name or email to find and add members…" style={{ ...fi, paddingLeft:36, fontSize:13 }} />
+            {memberSearch && <button onClick={() => { setMemberSearch(''); setSearchProfiles([]) }} style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:'transparent', border:'none', color:'var(--text-muted)', cursor:'pointer', fontSize:16, lineHeight:1, padding:'2px 4px' }}>✕</button>}
+          </div>
+          {memberSearch.trim() && (
+            <div style={{ marginBottom: teamMembers.length > 0 ? 20 : 0 }}>
+              <div style={{ fontSize:10, fontWeight:700, letterSpacing:'0.1em', color:'var(--text-muted)', textTransform:'uppercase', marginBottom:10 }}>
+                {searchLoading ? 'Searching…' : `${searchProfiles.length} result${searchProfiles.length !== 1 ? 's' : ''}`}
+              </div>
+              {!searchLoading && searchProfiles.length === 0 && (
+                <div style={{ fontSize:13, color:'var(--text-muted)', padding:'12px 0', textAlign:'center' }}>No users found matching "{memberSearch}"</div>
+              )}
+              {searchProfiles.map(p => {
+                const existing = teamMembers.find(m => m.user_id === p.id)
+                const isLoading = actionLoading === (existing?.id ?? p.id)
+                const isPresident = p.id === club.president_id
+                return existing ? (
+                  <ExistingMemberRow key={p.id} profile={p} membership={existing} isLoading={isLoading} onRoleChange={handleRoleChange} onRemove={handleRemoveMember} />
+                ) : isPresident ? (
+                  <div key={p.id} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 14px', borderRadius:10, marginBottom:6, background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.06)' }}>
+                    <TeamAvatar name={p.full_name} />
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:13, fontWeight:600, color:'var(--text-primary)' }}>{p.full_name ?? 'Unknown'}</div>
+                      {p.school && <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:1 }}>{p.school}</div>}
+                    </div>
+                    <span style={{ fontSize:10, fontWeight:700, letterSpacing:'0.06em', padding:'3px 10px', borderRadius:9999, background:'rgba(233,193,118,0.15)', color:'var(--gold)', flexShrink:0 }}>PRESIDENT</span>
+                  </div>
+                ) : (
+                  <NewMemberRow key={p.id} profile={p} isLoading={isLoading} onAdd={handleAddMember} />
                 )
               })}
             </div>
-          </>
-        )}
-      </div>
-
-      {/* Announcements — full-width */}
-      <div style={{
-        background: 'rgba(255,255,255,0.03)',
-        border: '1px solid rgba(255,255,255,0.07)',
-        borderRadius: 16,
-        padding: 24,
-        marginBottom: 22,
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
-          <div>
-            <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 3 }}>Announcements</h2>
-            <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Broadcast updates to all club members</p>
-          </div>
-          <span style={{
-            background: 'rgba(233,193,118,0.12)',
-            border: '1px solid rgba(233,193,118,0.3)',
-            borderRadius: 9999,
-            padding: '3px 10px',
-            fontSize: 10,
-            fontWeight: 700,
-            color: 'var(--gold)',
-            letterSpacing: '0.06em',
-            flexShrink: 0,
-          }}>
-            PRESIDENT
-          </span>
+          )}
+          {teamMembers.length === 0 && !memberSearch.trim() ? (
+            <div style={{ textAlign:'center', padding:'28px 0', color:'var(--text-muted)', fontSize:13 }}>No members yet — search above to add your first team member.</div>
+          ) : teamMembers.length > 0 && (
+            <>
+              {!memberSearch.trim() && <div style={{ fontSize:10, fontWeight:700, letterSpacing:'0.1em', color:'var(--text-muted)', textTransform:'uppercase', marginBottom:10 }}>Current Team</div>}
+              <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                {teamMembers.map(m => {
+                  if (m.role === 'president') return (
+                    <div key={m.id} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 14px', borderRadius:10, background:'rgba(233,193,118,0.04)', border:'1px solid rgba(233,193,118,0.14)' }}>
+                      <TeamAvatar name={m.profile?.full_name} />
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:13, fontWeight:600, color:'var(--text-primary)' }}>{m.profile?.full_name ?? 'Unknown'}</div>
+                        {m.profile?.school && <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:1 }}>{m.profile.school}</div>}
+                      </div>
+                      <span style={{ fontSize:10, fontWeight:700, letterSpacing:'0.06em', padding:'3px 10px', borderRadius:9999, background:'rgba(233,193,118,0.15)', color:'var(--gold)', flexShrink:0 }}>PRESIDENT</span>
+                    </div>
+                  )
+                  return <ExistingMemberRow key={m.id} profile={{ id:m.user_id, full_name:m.profile?.full_name??null, school:m.profile?.school??null, email:m.profile?.email??null }} membership={m} isLoading={actionLoading===m.id} onRoleChange={handleRoleChange} onRemove={handleRemoveMember} />
+                })}
+              </div>
+            </>
+          )}
         </div>
+      )}
 
-        {/* Compose */}
-        <div style={{
-          background: 'rgba(41,28,30,0.5)',
-          border: '1px solid rgba(138,21,56,0.2)',
-          borderRadius: 12,
-          padding: 16,
-          marginBottom: 20,
-        }}>
-          <textarea
-            value={annContent}
-            onChange={e => setAnnContent(e.target.value)}
-            placeholder="Share an update, reminder, or important news with your members…"
-            rows={3}
-            maxLength={600}
-            style={{
-              ...fi,
-              resize: 'vertical',
-              marginBottom: 10,
-              lineHeight: 1.65,
-              background: 'rgba(255,255,255,0.04)',
-              border: '1px solid rgba(255,255,255,0.07)',
-            }}
-          />
-
-          {/* Image preview */}
-          {annImagePreview && (
-            <div style={{
-              position: 'relative', marginBottom: 10,
-              borderRadius: 10, overflow: 'hidden',
-              background: 'rgba(0,0,0,0.45)',
-              border: '1px solid rgba(255,255,255,0.09)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              minHeight: 80,
-            }}>
-              <img
-                src={annImagePreview}
-                alt="preview"
-                style={{
-                  maxWidth: '100%', maxHeight: 260,
-                  width: 'auto', height: 'auto',
-                  display: 'block', objectFit: 'contain',
-                }}
-              />
-              <button
-                onClick={clearAnnImage}
-                style={{
-                  position: 'absolute', top: 8, right: 8,
-                  width: 28, height: 28, borderRadius: '50%',
-                  background: 'rgba(0,0,0,0.7)', border: '1px solid rgba(255,255,255,0.2)',
-                  color: '#fff', fontSize: 14, cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  lineHeight: 1,
-                }}
-              >✕</button>
+      {/* ── Announcements tab ── */}
+      {activeTab === 'announcements' && (
+        <div key="announcements" className="cc-panel" style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:16, padding:24 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:18 }}>
+            <div>
+              <h2 style={{ fontSize:16, fontWeight:700, color:'var(--text-primary)', marginBottom:3 }}>Announcements</h2>
+              <p style={{ fontSize:12, color:'var(--text-muted)' }}>Broadcast updates to all club members</p>
+            </div>
+            <span style={{ background:'rgba(233,193,118,0.12)', border:'1px solid rgba(233,193,118,0.3)', borderRadius:9999, padding:'3px 10px', fontSize:10, fontWeight:700, color:'var(--gold)', letterSpacing:'0.06em', flexShrink:0 }}>PRESIDENT</span>
+          </div>
+          <div style={{ background:'rgba(41,28,30,0.5)', border:'1px solid rgba(138,21,56,0.2)', borderRadius:12, padding:16, marginBottom:20 }}>
+            <textarea value={annContent} onChange={e => setAnnContent(e.target.value)} placeholder="Share an update, reminder, or important news with your members…" rows={3} maxLength={600} style={{ ...fi, resize:'vertical', marginBottom:10, lineHeight:1.65, background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.07)' }} />
+            {annImagePreview && (
+              <div style={{ position:'relative', marginBottom:10, borderRadius:10, overflow:'hidden', background:'rgba(0,0,0,0.45)', border:'1px solid rgba(255,255,255,0.09)', display:'flex', alignItems:'center', justifyContent:'center', minHeight:80 }}>
+                <img src={annImagePreview} alt="preview" style={{ maxWidth:'100%', maxHeight:260, width:'auto', height:'auto', display:'block', objectFit:'contain' }} />
+                <button onClick={clearAnnImage} style={{ position:'absolute', top:8, right:8, width:28, height:28, borderRadius:'50%', background:'rgba(0,0,0,0.7)', border:'1px solid rgba(255,255,255,0.2)', color:'#fff', fontSize:14, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1, fontFamily:'inherit' }}>✕</button>
+              </div>
+            )}
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:10 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <input ref={annImgRef} type="file" accept="image/*" style={{ display:'none' }} onChange={handleAnnImageSelect} />
+                <button onClick={() => annImgRef.current?.click()} title="Attach image" style={{ padding:'6px 12px', borderRadius:7, background:annImageFile?'rgba(138,21,56,0.2)':'rgba(255,255,255,0.05)', border:annImageFile?'1px solid rgba(138,21,56,0.4)':'1px solid rgba(255,255,255,0.1)', color:annImageFile?'var(--accent)':'var(--text-muted)', fontSize:13, cursor:'pointer', transition:'all 0.15s', display:'flex', alignItems:'center', gap:5, fontFamily:'inherit' }}>
+                  🖼 {annImageFile ? 'Image added' : 'Add image'}
+                </button>
+                <span style={{ fontSize:11, color:'var(--text-muted)' }}>{annContent.length} / 600</span>
+              </div>
+              {annError && <div style={{ fontSize:12, color:'#f87171', background:'rgba(248,113,113,0.08)', border:'1px solid rgba(248,113,113,0.2)', borderRadius:8, padding:'8px 12px' }}>{annError}</div>}
+              <button onClick={handlePostAnnouncement} disabled={postingAnn||(!annContent.trim()&&!annImageFile)} style={{ background:(annContent.trim()||annImageFile)?'var(--accent)':'rgba(87,65,68,0.18)', border:'none', borderRadius:9, padding:'9px 22px', color:(annContent.trim()||annImageFile)?'#fff':'var(--text-muted)', fontSize:13, fontWeight:700, cursor:(annContent.trim()||annImageFile)?'pointer':'default', transition:'all 0.15s', opacity:postingAnn?0.7:1, fontFamily:'inherit' }}>
+                {postingAnn ? 'Posting…' : 'Post Announcement'}
+              </button>
+            </div>
+          </div>
+          {announcements.length === 0 ? (
+            <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'16px 0' }}>No announcements yet — post one to keep your members in the loop.</p>
+          ) : (
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              {announcements.map(ann => {
+                const isAdmin = ann.profile?.role === 'admin'
+                const rs = isAdmin ? { color:'#818cf8', bg:'rgba(99,102,241,0.13)', label:'Admin' } : { color:'var(--gold)', bg:'rgba(233,193,118,0.12)', label:'President' }
+                return (
+                  <div key={ann.id} style={{ background:'rgba(255,255,255,0.025)', borderLeft:`3px solid ${rs.color}`, borderRadius:'0 10px 10px 0', padding:'13px 16px' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, flexWrap:'wrap' }}>
+                      <span style={{ background:rs.bg, borderRadius:9999, padding:'2px 8px', fontSize:10, fontWeight:700, color:rs.color, letterSpacing:'0.06em' }}>{rs.label.toUpperCase()}</span>
+                      <span style={{ fontSize:13, fontWeight:600, color:'var(--text-secondary)' }}>{ann.profile?.full_name ?? 'Unknown'}</span>
+                      <span style={{ fontSize:11, color:'var(--text-muted)', marginLeft:'auto' }}>{new Date(ann.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}</span>
+                    </div>
+                    {ann.content && <p style={{ fontSize:14, color:'var(--text-primary)', lineHeight:1.65, margin:0, whiteSpace:'pre-wrap' }}>{ann.content}</p>}
+                    {ann.image_url && (
+                      <div onClick={() => setLightboxSrc(ann.image_url!)} style={{ position:'relative', marginTop:ann.content?12:0, marginLeft:-16, marginRight:-16, marginBottom:-13, borderRadius:'0 0 9px 0', overflow:'hidden', cursor:'pointer', lineHeight:0 }}>
+                        <img src={ann.image_url} alt="" style={{ maxWidth:'100%', height:'auto', display:'block', margin:'0 auto' }} />
+                        <div style={{ position:'absolute', bottom:10, right:10, background:'rgba(0,0,0,0.55)', backdropFilter:'blur(6px)', border:'1px solid rgba(255,255,255,0.18)', borderRadius:8, padding:'5px 10px', display:'flex', alignItems:'center', gap:5, fontSize:11, fontWeight:600, color:'#fff', pointerEvents:'none' }}>
+                          <span style={{ fontSize:13 }}>⛶</span> View full
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
+        </div>
+      )}
 
-          {/* Toolbar + post button */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                ref={annImgRef}
-                type="file"
-                accept="image/*"
-                style={{ display: 'none' }}
-                onChange={handleAnnImageSelect}
-              />
-              <button
-                onClick={() => annImgRef.current?.click()}
-                title="Attach image"
-                style={{
-                  padding: '6px 12px', borderRadius: 7,
-                  background: annImageFile ? 'rgba(138,21,56,0.2)' : 'rgba(255,255,255,0.05)',
-                  border: annImageFile ? '1px solid rgba(138,21,56,0.4)' : '1px solid rgba(255,255,255,0.1)',
-                  color: annImageFile ? 'var(--accent)' : 'var(--text-muted)',
-                  fontSize: 13, cursor: 'pointer', transition: 'all 0.15s',
-                  display: 'flex', alignItems: 'center', gap: 5,
-                }}
-              >
-                🖼 {annImageFile ? 'Image added' : 'Add image'}
-              </button>
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{annContent.length} / 600</span>
+      {/* ── Positions tab ── */}
+      {activeTab === 'positions' && (
+        <div key="positions" className="cc-panel">
+          <ClubPositions club={club} />
+        </div>
+      )}
+
+      {/* ── Settings tab ── */}
+      {activeTab === 'settings' && (
+        <div key="settings" className="cc-panel">
+          {/* Club Appearance */}
+          <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:16, padding:24, marginBottom:20 }}>
+            <div style={{ marginBottom:20 }}>
+              <h2 style={{ fontSize:16, fontWeight:700, color:'var(--text-primary)', marginBottom:3 }}>Club Appearance</h2>
+              <p style={{ fontSize:12, color:'var(--text-muted)' }}>Upload a logo and banner image for your club's public profile</p>
             </div>
-            {annError && <div style={{ fontSize: 12, color: '#f87171', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 8, padding: '8px 12px', marginBottom: 8 }}>{annError}</div>}
-            <button
-              onClick={handlePostAnnouncement}
-              disabled={postingAnn || (!annContent.trim() && !annImageFile)}
-              style={{
-                background: (annContent.trim() || annImageFile) ? 'var(--accent)' : 'rgba(87,65,68,0.18)',
-                border: 'none',
-                borderRadius: 9,
-                padding: '9px 22px',
-                color: (annContent.trim() || annImageFile) ? '#fff' : 'var(--text-muted)',
-                fontSize: 13,
-                fontWeight: 700,
-                cursor: (annContent.trim() || annImageFile) ? 'pointer' : 'default',
-                transition: 'all 0.15s',
-                opacity: postingAnn ? 0.7 : 1,
-              }}
-            >
-              {postingAnn ? 'Posting…' : 'Post Announcement'}
-            </button>
-          </div>
-        </div>
-
-        {/* Feed */}
-        {announcements.length === 0 ? (
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>
-            No announcements yet — post one to keep your members in the loop.
-          </p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {announcements.map(ann => {
-              const isAdmin = ann.profile?.role === 'admin'
-              const roleStyle = isAdmin
-                ? { color: '#818cf8', bg: 'rgba(99,102,241,0.13)', label: 'Admin' }
-                : { color: 'var(--gold)', bg: 'rgba(233,193,118,0.12)', label: 'President' }
-
-              return (
-                <div key={ann.id} style={{
-                  background: 'rgba(255,255,255,0.025)',
-                  borderLeft: `3px solid ${roleStyle.color}`,
-                  borderRadius: '0 10px 10px 0',
-                  padding: '13px 16px',
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-                    <span style={{
-                      background: roleStyle.bg,
-                      borderRadius: 9999,
-                      padding: '2px 8px',
-                      fontSize: 10,
-                      fontWeight: 700,
-                      color: roleStyle.color,
-                      letterSpacing: '0.06em',
-                    }}>
-                      {roleStyle.label.toUpperCase()}
-                    </span>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>
-                      {ann.profile?.full_name ?? 'Unknown'}
-                    </span>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>
-                      {new Date(ann.created_at).toLocaleDateString('en-US', {
-                        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-                      })}
-                    </span>
-                  </div>
-                  {ann.content && (
-                    <p style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.65, margin: 0, whiteSpace: 'pre-wrap' }}>
-                      {ann.content}
-                    </p>
-                  )}
-                  {ann.image_url && (
-                    <div
-                      onClick={() => setLightboxSrc(ann.image_url!)}
-                      style={{
-                        position: 'relative',
-                        marginTop: ann.content ? 12 : 0,
-                        marginLeft: -16, marginRight: -16,
-                        marginBottom: -13,
-                        borderRadius: '0 0 9px 0',
-                        overflow: 'hidden',
-                        cursor: 'pointer',
-                        lineHeight: 0,
-                      }}
-                    >
-                      <img
-                        src={ann.image_url}
-                        alt=""
-                        style={{ maxWidth: '100%', height: 'auto', display: 'block', margin: '0 auto' }}
-                      />
-                      <div style={{
-                        position: 'absolute', bottom: 10, right: 10,
-                        background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)',
-                        border: '1px solid rgba(255,255,255,0.18)',
-                        borderRadius: 8, padding: '5px 10px',
-                        display: 'flex', alignItems: 'center', gap: 5,
-                        fontSize: 11, fontWeight: 600, color: '#fff',
-                        pointerEvents: 'none',
-                      }}>
-                        <span style={{ fontSize: 13 }}>⛶</span> View full
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Club Appearance */}
-      <div style={{
-        background: 'rgba(255,255,255,0.03)',
-        border: '1px solid rgba(255,255,255,0.07)',
-        borderRadius: 16,
-        padding: 24,
-        marginBottom: 22,
-      }}>
-        <div style={{ marginBottom: 20 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 3 }}>Club Appearance</h2>
-          <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Upload a logo and banner image for your club's public profile</p>
-        </div>
-
-        {/* Banner */}
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>
-            Banner Image
-          </div>
-          <div
-            onClick={() => !uploadingBanner && bannerRef.current?.click()}
-            style={{
-              width: '100%', height: 140,
-              borderRadius: 12,
-              border: `2px dashed ${bannerPreview ? 'rgba(138,21,56,0.4)' : 'rgba(255,255,255,0.12)'}`,
-              background: bannerPreview ? 'transparent' : 'rgba(255,255,255,0.02)',
-              cursor: uploadingBanner ? 'default' : 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              overflow: 'hidden', position: 'relative',
-              transition: 'border-color 0.15s',
-            }}
-            onMouseEnter={e => { if (!uploadingBanner) e.currentTarget.style.borderColor = 'rgba(138,21,56,0.7)' }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = bannerPreview ? 'rgba(138,21,56,0.4)' : 'rgba(255,255,255,0.12)' }}
-          >
-            {bannerPreview ? (
-              <>
-                <img src={bannerPreview} alt="banner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                <div style={{
-                  position: 'absolute', inset: 0,
-                  background: 'rgba(0,0,0,0.5)', opacity: 0,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 13, fontWeight: 700, color: '#fff', transition: 'opacity 0.15s',
-                }}
-                  onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                  onMouseLeave={e => (e.currentTarget.style.opacity = '0')}
+            <div style={{ marginBottom:20 }}>
+              <div style={{ fontSize:11, fontWeight:600, color:'var(--text-muted)', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:8 }}>Banner Image</div>
+              <div onClick={() => !uploadingBanner && bannerRef.current?.click()} style={{ width:'100%', height:140, borderRadius:12, border:`2px dashed ${bannerPreview?'rgba(138,21,56,0.4)':'rgba(255,255,255,0.12)'}`, background:bannerPreview?'transparent':'rgba(255,255,255,0.02)', cursor:uploadingBanner?'default':'pointer', display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden', position:'relative', transition:'border-color 0.15s' }}
+                onMouseEnter={e => { if (!uploadingBanner) e.currentTarget.style.borderColor='rgba(138,21,56,0.7)' }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor=bannerPreview?'rgba(138,21,56,0.4)':'rgba(255,255,255,0.12)' }}
+              >
+                {bannerPreview ? (
+                  <><img src={bannerPreview} alt="banner" style={{ width:'100%', height:'100%', objectFit:'cover' }} /><div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.5)', opacity:0, display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, color:'#fff', transition:'opacity 0.15s' }} onMouseEnter={e => (e.currentTarget.style.opacity='1')} onMouseLeave={e => (e.currentTarget.style.opacity='0')}>{uploadingBanner?'Uploading…':'Change Banner'}</div></>
+                ) : uploadingBanner ? <div style={{ fontSize:13, color:'var(--text-muted)' }}>Uploading…</div>
+                : <div style={{ textAlign:'center', color:'var(--text-muted)' }}><div style={{ fontSize:28, marginBottom:8 }}>🖼</div><div style={{ fontSize:13, fontWeight:600, marginBottom:4 }}>Click to upload banner</div><div style={{ fontSize:11 }}>Recommended: 1200 × 400 · Max 10 MB</div></div>}
+              </div>
+              <input ref={bannerRef} type="file" accept="image/*" style={{ display:'none' }} onChange={handleBannerChange} />
+            </div>
+            <div style={{ marginBottom:appearanceMsg?16:0 }}>
+              <div style={{ fontSize:11, fontWeight:600, color:'var(--text-muted)', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:8 }}>Club Logo</div>
+              <div style={{ display:'flex', alignItems:'center', gap:18 }}>
+                <div onClick={() => !uploadingLogo && logoRef.current?.click()} style={{ width:88, height:88, borderRadius:16, flexShrink:0, border:`2px dashed ${logoPreview?'rgba(138,21,56,0.4)':'rgba(255,255,255,0.12)'}`, background:logoPreview?'transparent':'rgba(255,255,255,0.02)', cursor:uploadingLogo?'default':'pointer', display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden', position:'relative', transition:'border-color 0.15s' }}
+                  onMouseEnter={e => { if (!uploadingLogo) e.currentTarget.style.borderColor='rgba(138,21,56,0.7)' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor=logoPreview?'rgba(138,21,56,0.4)':'rgba(255,255,255,0.12)' }}
                 >
-                  {uploadingBanner ? 'Uploading…' : 'Change Banner'}
+                  {logoPreview ? (<><img src={logoPreview} alt="logo" style={{ width:'100%', height:'100%', objectFit:'cover' }} /><div style={{ position:'absolute', inset:0, borderRadius:14, background:'rgba(0,0,0,0.55)', opacity:0, display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:700, color:'#fff', transition:'opacity 0.15s' }} onMouseEnter={e => (e.currentTarget.style.opacity='1')} onMouseLeave={e => (e.currentTarget.style.opacity='0')}>{uploadingLogo?'…':'Change'}</div></>)
+                  : uploadingLogo ? <div style={{ fontSize:11, color:'var(--text-muted)' }}>…</div>
+                  : <div style={{ textAlign:'center', color:'var(--text-muted)', padding:6 }}><div style={{ fontSize:20, marginBottom:4 }}>+</div><div style={{ fontSize:10, lineHeight:1.3 }}>Logo</div></div>}
                 </div>
-              </>
-            ) : uploadingBanner ? (
-              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Uploading…</div>
-            ) : (
-              <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-                <div style={{ fontSize: 28, marginBottom: 8 }}>🖼</div>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Click to upload banner</div>
-                <div style={{ fontSize: 11 }}>Recommended: 1200 × 400 · Max 10 MB</div>
+                <input ref={logoRef} type="file" accept="image/*" style={{ display:'none' }} onChange={handleLogoChange} />
+                <div>
+                  <div style={{ fontSize:13, fontWeight:600, color:'var(--text-primary)', marginBottom:4 }}>{club.name}</div>
+                  <div style={{ fontSize:12, color:'var(--text-muted)', marginBottom:10 }}>Square image · PNG or JPG · Max 5 MB</div>
+                  <button onClick={() => !uploadingLogo && logoRef.current?.click()} disabled={uploadingLogo} style={{ padding:'6px 16px', borderRadius:8, background:'rgba(138,21,56,0.15)', border:'1px solid rgba(138,21,56,0.3)', color:'var(--accent)', fontSize:12, fontWeight:700, cursor:uploadingLogo?'default':'pointer', opacity:uploadingLogo?0.6:1, fontFamily:'inherit' }}>
+                    {uploadingLogo?'Uploading…':logoPreview?'Change Logo':'Upload Logo'}
+                  </button>
+                </div>
+              </div>
+            </div>
+            {appearanceMsg && (
+              <div style={{ marginTop:12, padding:'9px 14px', borderRadius:9, background:appearanceMsg.startsWith('Upload failed')||appearanceMsg.startsWith('Please')||appearanceMsg.includes('must be')?'rgba(255,107,107,0.08)':'rgba(34,197,94,0.08)', border:appearanceMsg.startsWith('Upload failed')||appearanceMsg.startsWith('Please')||appearanceMsg.includes('must be')?'1px solid rgba(255,107,107,0.25)':'1px solid rgba(34,197,94,0.25)', fontSize:13, fontWeight:600, color:appearanceMsg.startsWith('Upload failed')||appearanceMsg.startsWith('Please')||appearanceMsg.includes('must be')?'#ff6b6b':'#4ade80' }}>
+                {appearanceMsg}
               </div>
             )}
           </div>
-          <input ref={bannerRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleBannerChange} />
+
+          {/* Application Form Builder */}
+          <ClubFormBuilder club={club} />
         </div>
-
-        {/* Logo */}
-        <div style={{ marginBottom: appearanceMsg ? 16 : 0 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>
-            Club Logo
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
-            <div
-              onClick={() => !uploadingLogo && logoRef.current?.click()}
-              style={{
-                width: 88, height: 88, borderRadius: 16, flexShrink: 0,
-                border: `2px dashed ${logoPreview ? 'rgba(138,21,56,0.4)' : 'rgba(255,255,255,0.12)'}`,
-                background: logoPreview ? 'transparent' : 'rgba(255,255,255,0.02)',
-                cursor: uploadingLogo ? 'default' : 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                overflow: 'hidden', position: 'relative', transition: 'border-color 0.15s',
-              }}
-              onMouseEnter={e => { if (!uploadingLogo) e.currentTarget.style.borderColor = 'rgba(138,21,56,0.7)' }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = logoPreview ? 'rgba(138,21,56,0.4)' : 'rgba(255,255,255,0.12)' }}
-            >
-              {logoPreview ? (
-                <>
-                  <img src={logoPreview} alt="logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  <div style={{
-                    position: 'absolute', inset: 0, borderRadius: 14,
-                    background: 'rgba(0,0,0,0.55)', opacity: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 11, fontWeight: 700, color: '#fff', transition: 'opacity 0.15s',
-                  }}
-                    onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                    onMouseLeave={e => (e.currentTarget.style.opacity = '0')}
-                  >
-                    {uploadingLogo ? '…' : 'Change'}
-                  </div>
-                </>
-              ) : uploadingLogo ? (
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>…</div>
-              ) : (
-                <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 6 }}>
-                  <div style={{ fontSize: 20, marginBottom: 4 }}>+</div>
-                  <div style={{ fontSize: 10, lineHeight: 1.3 }}>Logo</div>
-                </div>
-              )}
-            </div>
-            <input ref={logoRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleLogoChange} />
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
-                {club.name}
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
-                Square image · PNG or JPG · Max 5 MB
-              </div>
-              <button
-                onClick={() => !uploadingLogo && logoRef.current?.click()}
-                disabled={uploadingLogo}
-                style={{
-                  padding: '6px 16px', borderRadius: 8,
-                  background: 'rgba(138,21,56,0.15)', border: '1px solid rgba(138,21,56,0.3)',
-                  color: 'var(--accent)', fontSize: 12, fontWeight: 700,
-                  cursor: uploadingLogo ? 'default' : 'pointer', opacity: uploadingLogo ? 0.6 : 1,
-                }}
-              >
-                {uploadingLogo ? 'Uploading…' : logoPreview ? 'Change Logo' : 'Upload Logo'}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Status message */}
-        {appearanceMsg && (
-          <div style={{
-            marginTop: 12, padding: '9px 14px', borderRadius: 9,
-            background: appearanceMsg.startsWith('Upload failed') || appearanceMsg.startsWith('Please') || appearanceMsg.includes('must be')
-              ? 'rgba(255,107,107,0.08)' : 'rgba(34,197,94,0.08)',
-            border: appearanceMsg.startsWith('Upload failed') || appearanceMsg.startsWith('Please') || appearanceMsg.includes('must be')
-              ? '1px solid rgba(255,107,107,0.25)' : '1px solid rgba(34,197,94,0.25)',
-            fontSize: 13, fontWeight: 600,
-            color: appearanceMsg.startsWith('Upload failed') || appearanceMsg.startsWith('Please') || appearanceMsg.includes('must be')
-              ? '#ff6b6b' : '#4ade80',
-          }}>
-            {appearanceMsg}
-          </div>
-        )}
-      </div>
-
-      {/* Events */}
-      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 24 }}>
-        <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 18 }}>Events</h2>
-        {events.length === 0 ? (
-          <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No events yet. Create your first one!</p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {events.map(ev => {
-              const isCompleted = !ev.is_live && !!ev.start_time && new Date(ev.start_time) < new Date()
-              return (
-                <div key={ev.id} style={{
-                  background: 'rgba(255,255,255,0.03)',
-                  border: `1px solid ${isCompleted ? 'rgba(138,21,56,0.2)' : 'rgba(255,255,255,0.06)'}`,
-                  borderRadius: 10,
-                  padding: '12px 16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 12,
-                }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {ev.title}
-                      </div>
-                      {isCompleted && (
-                        <span style={{
-                          fontSize: 9, fontWeight: 700, letterSpacing: '0.08em',
-                          padding: '2px 7px', borderRadius: 9999, flexShrink: 0,
-                          background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)',
-                          color: '#4ade80',
-                        }}>COMPLETED</span>
-                      )}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                        {ev.location ?? 'No location'} · {ev.karak_points_reward} pts
-                      </span>
-                      <span style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 4,
-                        fontSize: 11, fontWeight: 700,
-                        padding: '2px 8px', borderRadius: 9999,
-                        background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.25)',
-                        color: '#38bdf8',
-                      }}>
-                        👥 {ev.attendee_count} checked in
-                      </span>
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                    <button
-                      onClick={() => setQrEvent(ev)}
-                      style={{
-                        padding: '4px 11px', borderRadius: 9999,
-                        border: '1px solid rgba(14,165,233,0.35)',
-                        background: 'rgba(14,165,233,0.08)',
-                        color: '#38bdf8', fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                      }}
-                    >
-                      QR
-                    </button>
-                    {isCompleted && (
-                      <button
-                        onClick={() => setCertEvent(ev)}
-                        style={{
-                          padding: '4px 11px', borderRadius: 9999,
-                          border: '1px solid rgba(233,193,118,0.35)',
-                          background: 'rgba(233,193,118,0.08)',
-                          color: 'var(--gold)', fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                        }}
-                      >
-                        🎓 Send Certs
-                      </button>
-                    )}
-                    {ev.is_live && (
-                      <button
-                        onClick={() => handleOpenEventAnn(ev)}
-                        style={{
-                          padding: '4px 11px', borderRadius: 9999,
-                          border: '1px solid rgba(255,180,171,0.35)',
-                          background: 'rgba(255,180,171,0.08)',
-                          color: 'var(--live-red)', fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                        }}
-                      >
-                        📢 Announce
-                      </button>
-                    )}
-                    <button
-                      onClick={() => toggleLive(ev)}
-                      style={{
-                        padding: '4px 12px', borderRadius: 9999,
-                        border: ev.is_live ? '1px solid rgba(255,180,171,0.4)' : '1px solid rgba(87,65,68,0.3)',
-                        background: ev.is_live ? 'rgba(255,180,171,0.1)' : 'transparent',
-                        color: ev.is_live ? 'var(--live-red)' : 'var(--text-muted)',
-                        fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                      }}
-                    >
-                      {ev.is_live ? '● LIVE' : 'Go Live'}
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Banner Crop Modal */}
-      {bannerCropFile && (
-        <BannerCropModal
-          file={bannerCropFile}
-          onSave={handleBannerCropSave}
-          onClose={() => setBannerCropFile(null)}
-        />
       )}
 
-      {/* QR Modal */}
-      {qrEvent && (
-        <QRModal event={qrEvent} onClose={() => setQrEvent(null)} />
-      )}
-
-      {/* Certificate Modal */}
-      {certEvent && (
-        <CertificateModal
-          event={certEvent}
-          club={club}
-          members={teamMembers}
-          onClose={() => setCertEvent(null)}
-        />
-      )}
-
-      {/* Image lightbox */}
+      {/* ── Modals (always rendered) ── */}
+      {bannerCropFile && <BannerCropModal file={bannerCropFile} onSave={handleBannerCropSave} onClose={() => setBannerCropFile(null)} />}
+      {qrEvent && <QRModal event={qrEvent} onClose={() => setQrEvent(null)} />}
+      {certEvent && <CertificateModal event={certEvent} club={club} members={teamMembers} onClose={() => setCertEvent(null)} />}
       {lightboxSrc && createPortal(
-        <div
-          onClick={() => setLightboxSrc(null)}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 9999,
-            background: 'rgba(0,0,0,0.93)', backdropFilter: 'blur(18px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: 20, cursor: 'zoom-out',
-          }}
-        >
-          <img
-            src={lightboxSrc}
-            alt=""
-            onClick={e => e.stopPropagation()}
-            style={{
-              maxWidth: '92vw', maxHeight: '88vh',
-              objectFit: 'contain', borderRadius: 14,
-              boxShadow: '0 32px 80px rgba(0,0,0,0.7)',
-              cursor: 'default',
-            }}
-          />
-          <button
-            onClick={() => setLightboxSrc(null)}
-            style={{
-              position: 'absolute', top: 18, right: 18,
-              width: 38, height: 38, borderRadius: '50%',
-              background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)',
-              color: '#fff', fontSize: 18, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-          >✕</button>
+        <div onClick={() => setLightboxSrc(null)} style={{ position:'fixed', inset:0, zIndex:9999, background:'rgba(0,0,0,0.93)', backdropFilter:'blur(18px)', display:'flex', alignItems:'center', justifyContent:'center', padding:20, cursor:'zoom-out' }}>
+          <img src={lightboxSrc} alt="" onClick={e => e.stopPropagation()} style={{ maxWidth:'92vw', maxHeight:'88vh', objectFit:'contain', borderRadius:14, boxShadow:'0 32px 80px rgba(0,0,0,0.7)', cursor:'default' }} />
+          <button onClick={() => setLightboxSrc(null)} style={{ position:'absolute', top:18, right:18, width:38, height:38, borderRadius:'50%', background:'rgba(255,255,255,0.1)', border:'1px solid rgba(255,255,255,0.2)', color:'#fff', fontSize:18, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit' }}>✕</button>
         </div>,
         document.body
       )}
-
-      {/* Application Form Builder */}
-      <ClubFormBuilder club={club} />
-
-      {/* Event Announcement Modal */}
-      {evtAnnEvent && (
-        <EventAnnouncementModal
-          event={evtAnnEvent}
-          announcements={evtAnnouncements}
-          content={evtAnnContent}
-          posting={postingEvtAnn}
-          onContentChange={setEvtAnnContent}
-          onPost={handlePostEventAnn}
-          onClose={() => setEvtAnnEvent(null)}
-        />
-      )}
+      {evtAnnEvent && <EventAnnouncementModal event={evtAnnEvent} announcements={evtAnnouncements} content={evtAnnContent} posting={postingEvtAnn} onContentChange={setEvtAnnContent} onPost={handlePostEventAnn} onClose={() => setEvtAnnEvent(null)} />}
     </div>
   )
 }

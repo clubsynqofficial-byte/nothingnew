@@ -1,46 +1,35 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { filterText } from '../../lib/contentFilter'
-
-// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface ClubMem {
   club_id: string
   role: string
   club: { name: string; logo_url: string | null; category: string | null } | null
 }
-
 interface Listing {
-  id: string
-  title: string
-  skill_offered: string
-  skill_wanted: string
-  category: string | null
-  is_active: boolean
-  created_at: string
+  id: string; title: string; skill_offered: string; skill_wanted: string
+  category: string | null; is_active: boolean; created_at: string
 }
-
 interface Review {
-  id: string
-  rating: number
-  comment: string | null
-  created_at: string
+  id: string; rating: number; comment: string | null; created_at: string
   reviewer: { full_name: string | null } | null
 }
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-const CATEGORY_COLORS: Record<string, string> = {
-  Technology: '#0ea5e9', 'Arts & Culture': '#a855f7', Sports: '#e9c176',
-  Entrepreneurship: '#f97316', Engineering: '#22c55e', Business: '#ec4899',
-  Tech: '#0ea5e9', Design: '#a855f7', Languages: '#22c55e',
-  Marketing: '#f97316', Finance: '#e9c176', Other: '#6b7280',
+interface ViewedProfile {
+  id: string; full_name: string | null; avatar_url: string | null
+  bio: string | null; skills: string[]; karak_points: number
+  role: string; university: { name: string } | null
 }
 
-function catColor(cat: string | null) {
-  return CATEGORY_COLORS[cat ?? ''] ?? '#6b7280'
+const CAT_COLORS: Record<string, string> = {
+  Technology:'#0ea5e9','Arts & Culture':'#a855f7',Sports:'#e9c176',
+  Entrepreneurship:'#f97316',Engineering:'#22c55e',Business:'#ec4899',
+  Tech:'#0ea5e9',Design:'#a855f7',Languages:'#22c55e',
+  Marketing:'#f97316',Finance:'#e9c176',Other:'#6b7280',
 }
+const catColor = (c: string | null) => CAT_COLORS[c ?? ''] ?? '#6b7280'
 
 function timeAgo(iso: string) {
   const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
@@ -54,100 +43,143 @@ function timeAgo(iso: string) {
 function Stars({ rating, size = 14 }: { rating: number; size?: number }) {
   return (
     <span style={{ fontSize: size, letterSpacing: 1 }}>
-      {[1, 2, 3, 4, 5].map(i => (
-        <span key={i} style={{ color: i <= rating ? '#e9c176' : 'rgba(255,255,255,0.15)' }}>★</span>
+      {[1,2,3,4,5].map(i => (
+        <span key={i} style={{ color: i <= rating ? '#e9c176' : 'rgba(255,255,255,0.12)' }}>★</span>
       ))}
     </span>
   )
 }
 
 const inputSt: React.CSSProperties = {
-  width: '100%', background: 'rgba(41,28,30,0.7)', border: '1px solid rgba(87,65,68,0.3)',
-  borderRadius: 10, padding: '10px 14px', color: 'var(--text-primary)',
-  fontSize: 14, outline: 'none', fontFamily: 'inherit',
+  width:'100%', background:'rgba(22,12,16,0.85)', border:'1px solid rgba(87,65,68,0.35)',
+  borderRadius:11, padding:'11px 15px', color:'var(--text-primary)',
+  fontSize:14, outline:'none', fontFamily:'inherit',
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+const CSS = `
+  @keyframes pf-up {
+    from { opacity:0; transform:translateY(22px); }
+    to   { opacity:1; transform:translateY(0); }
+  }
+  @keyframes pf-in  { from { opacity:0; } to { opacity:1; } }
+  @keyframes pf-pop {
+    from { opacity:0; transform:scale(0.96) translateY(12px); }
+    to   { opacity:1; transform:scale(1)    translateY(0); }
+  }
+  @keyframes pf-spin    { to { transform:rotate(360deg); } }
+  @keyframes pf-shimmer {
+    from { background-position:-700px 0; }
+    to   { background-position: 700px 0; }
+  }
+  @keyframes pf-glow {
+    0%,100% { opacity:.7; } 50% { opacity:1; }
+  }
+
+  .pf-0  { animation: pf-up 0.5s cubic-bezier(0.22,1,0.36,1) both; }
+  .pf-1  { animation: pf-up 0.5s cubic-bezier(0.22,1,0.36,1) 0.07s both; }
+  .pf-2  { animation: pf-up 0.5s cubic-bezier(0.22,1,0.36,1) 0.14s both; }
+
+  .pf-shimmer {
+    background: linear-gradient(90deg,
+      rgba(45,28,34,0.6) 25%, rgba(72,46,54,0.8) 50%, rgba(45,28,34,0.6) 75%);
+    background-size:700px 100%;
+    animation:pf-shimmer 1.4s ease-in-out infinite;
+  }
+
+  .pf-panel  { animation: pf-pop 0.28s cubic-bezier(0.22,1,0.36,1) both; }
+
+  .pf-stat   { transition: transform 0.2s, border-color 0.2s, background 0.2s, box-shadow 0.2s; cursor:pointer; }
+  .pf-stat:hover { transform:translateY(-3px); }
+
+  .pf-club   { transition: transform 0.2s, box-shadow 0.2s; }
+  .pf-club:hover { transform:translateY(-3px); box-shadow:0 10px 28px rgba(0,0,0,0.35) !important; }
+
+  .pf-card   { transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s; }
+  .pf-card:hover { transform:translateY(-2px); box-shadow:0 8px 24px rgba(0,0,0,0.3) !important; border-color:rgba(138,21,56,0.3) !important; }
+
+  .pf-review { transition: transform 0.2s, border-color 0.2s; }
+  .pf-review:hover { transform:translateY(-2px); border-color:rgba(87,65,68,0.38) !important; }
+
+  .pf-av-wrap { position:relative; }
+  .pf-av-ov   { opacity:0; transition:opacity 0.2s; }
+  .pf-av-wrap:hover .pf-av-ov { opacity:1 !important; }
+
+  .pf-btn  { font-family:inherit; cursor:pointer; transition:all 0.15s; }
+  .pf-back { font-family:inherit; cursor:pointer; transition:all 0.18s; }
+  .pf-back:hover { transform:translateX(-2px); color:#fff !important; border-color:rgba(255,255,255,0.28) !important; background:rgba(0,0,0,0.35) !important; }
+
+  .pf-tog  { font-family:inherit; cursor:pointer; transition:all 0.15s; }
+  .pf-tog:hover { opacity:0.8; }
+
+  .pf-tab  { font-family:inherit; cursor:pointer; transition:all 0.18s; border:none; }
+  .pf-tab:hover { color:var(--text-primary) !important; }
+
+  input:focus, textarea:focus { border-color:rgba(138,21,56,0.55) !important; outline:none; }
+`
 
 export default function ProfilePage() {
+  const { userId: paramUserId } = useParams<{ userId: string }>()
+  const navigate = useNavigate()
   const { user, profile, refreshProfile, signOut } = useAuth()
 
-  const [clubs, setClubs] = useState<ClubMem[]>([])
-  const [listings, setListings] = useState<Listing[]>([])
-  const [reviews, setReviews] = useState<Review[]>([])
+  const isOwnProfile = !paramUserId || paramUserId === user?.id
+
+  const [clubs, setClubs]                     = useState<ClubMem[]>([])
+  const [listings, setListings]               = useState<Listing[]>([])
+  const [reviews, setReviews]                 = useState<Review[]>([])
   const [completedTrades, setCompletedTrades] = useState(0)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading]                 = useState(true)
+  const [viewedProfile, setViewedProfile]     = useState<ViewedProfile | null>(null)
+  const [notFound, setNotFound]               = useState(false)
 
-  // Edit state
-  const [editing, setEditing] = useState(false)
-  const [editName, setEditName] = useState('')
-  const [editBio, setEditBio] = useState('')
+  const [editing, setEditing]         = useState(false)
+  const [editName, setEditName]       = useState('')
+  const [editBio, setEditBio]         = useState('')
   const [editSkillsRaw, setEditSkillsRaw] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [editError, setEditError] = useState('')
+  const [saving, setSaving]           = useState(false)
+  const [editError, setEditError]     = useState('')
 
-  // Avatar upload
   const avatarInputRef = useRef<HTMLInputElement>(null)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
-  const [avatarError, setAvatarError] = useState('')
+  const [avatarError, setAvatarError]         = useState('')
 
-  // Active listing toggle
   const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [tab, setTab] = useState<'clubs' | 'listings' | 'reviews'>('clubs')
 
-  const fetchAll = useCallback(async () => {
-    if (!user) return
+  const fetchAll = useCallback(async (targetId: string) => {
     setLoading(true)
-
-    const [clubsRes, listingsRes, reviewsRes, asRequester, myListingsRes] = await Promise.all([
-      supabase
-        .from('club_memberships')
-        .select('club_id, role, club:clubs(name, logo_url, category)')
-        .eq('user_id', user.id),
-      supabase
-        .from('skill_listings')
-        .select('id, title, skill_offered, skill_wanted, category, is_active, created_at')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false }),
-      supabase
-        .from('skill_trade_reviews')
-        .select('id, rating, comment, created_at, reviewer:profiles!reviewer_id(full_name)')
-        .eq('reviewee_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(20),
-      // Trades where user was the requester
-      supabase
-        .from('skill_requests')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'completed')
-        .eq('requester_id', user.id),
-      // My listing IDs so we can count trades where user was the listing owner
-      supabase
-        .from('skill_listings')
-        .select('id')
-        .eq('user_id', user.id),
+    const [clubsRes, listingsRes, reviewsRes, asRequester, targetListingsRes] = await Promise.all([
+      supabase.from('club_memberships').select('club_id, role, club:clubs(name, logo_url, category)').eq('user_id', targetId),
+      supabase.from('skill_listings').select('id, title, skill_offered, skill_wanted, category, is_active, created_at').eq('user_id', targetId).order('created_at', { ascending: false }),
+      supabase.from('skill_trade_reviews').select('id, rating, comment, created_at, reviewer:profiles!reviewer_id(full_name)').eq('reviewee_id', targetId).order('created_at', { ascending: false }).limit(20),
+      supabase.from('skill_requests').select('id', { count: 'exact', head: true }).eq('status', 'completed').eq('requester_id', targetId),
+      supabase.from('skill_listings').select('id').eq('user_id', targetId),
     ])
-
     setClubs((clubsRes.data as unknown as ClubMem[]) ?? [])
     setListings((listingsRes.data as Listing[]) ?? [])
     setReviews((reviewsRes.data as unknown as Review[]) ?? [])
-
-    // Count trades where user was the listing owner (other side of the trade)
-    const myListingIds = (myListingsRes.data ?? []).map(l => l.id)
-    let asOwnerCount = 0
-    if (myListingIds.length > 0) {
-      const { count } = await supabase
-        .from('skill_requests')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'completed')
-        .in('listing_id', myListingIds)
-      asOwnerCount = count ?? 0
+    const ids = (targetListingsRes.data ?? []).map(l => l.id)
+    let ownerCount = 0
+    if (ids.length > 0) {
+      const { count } = await supabase.from('skill_requests').select('id', { count: 'exact', head: true }).eq('status', 'completed').in('listing_id', ids)
+      ownerCount = count ?? 0
     }
-
-    setCompletedTrades((asRequester.count ?? 0) + asOwnerCount)
+    setCompletedTrades((asRequester.count ?? 0) + ownerCount)
     setLoading(false)
-  }, [user])
+  }, [])
 
-  useEffect(() => { fetchAll() }, [fetchAll])
+  useEffect(() => {
+    if (isOwnProfile) {
+      if (user) fetchAll(user.id)
+    } else if (paramUserId) {
+      supabase.from('profiles').select('id, full_name, avatar_url, bio, skills, karak_points, role, university:universities(name)').eq('id', paramUserId).maybeSingle()
+        .then(({ data }) => {
+          if (!data) { setNotFound(true); setLoading(false); return }
+          setViewedProfile(data as unknown as ViewedProfile)
+          fetchAll(paramUserId)
+        })
+    }
+  }, [user, paramUserId, isOwnProfile, fetchAll])
 
   function openEdit() {
     setEditName(profile?.full_name ?? '')
@@ -163,13 +195,9 @@ export default function ProfilePage() {
     if (!name) { setEditError('Name is required.'); return }
     const check = filterText(name, editBio, editSkillsRaw)
     if (!check.ok) { setEditError(check.reason!); return }
-
     setSaving(true)
     const skills = editSkillsRaw.split(',').map(s => s.trim()).filter(Boolean)
-    await supabase
-      .from('profiles')
-      .update({ full_name: name, bio: editBio.trim() || null, skills })
-      .eq('id', user.id)
+    await supabase.from('profiles').update({ full_name: name, bio: editBio.trim() || null, skills }).eq('id', user.id)
     await refreshProfile()
     setSaving(false)
     setEditing(false)
@@ -178,29 +206,17 @@ export default function ProfilePage() {
   async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file || !user) return
-    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
-      setAvatarError('Only JPEG, PNG, WebP, or GIF images are allowed.')
-      return
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      setAvatarError('Image must be under 5 MB.')
-      return
-    }
-    setAvatarError('')
-    setUploadingAvatar(true)
+    if (!['image/jpeg','image/png','image/webp','image/gif'].includes(file.type)) { setAvatarError('Only JPEG, PNG, WebP, or GIF allowed.'); return }
+    if (file.size > 5 * 1024 * 1024) { setAvatarError('Image must be under 5 MB.'); return }
+    setAvatarError(''); setUploadingAvatar(true)
     const ext = file.name.split('.').pop()
     const path = `${user.id}/avatar.${ext}`
-    const { error: upErr } = await supabase.storage
-      .from('avatars')
-      .upload(path, file, { upsert: true, contentType: file.type })
+    const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { upsert: true, contentType: file.type })
     if (upErr) { setAvatarError('Upload failed. Please try again.'); setUploadingAvatar(false); return }
     const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path)
-    // Bust cache by appending a timestamp
-    const bustedUrl = `${publicUrl}?t=${Date.now()}`
-    await supabase.from('profiles').update({ avatar_url: bustedUrl }).eq('id', user.id)
+    await supabase.from('profiles').update({ avatar_url: `${publicUrl}?t=${Date.now()}` }).eq('id', user.id)
     await refreshProfile()
     setUploadingAvatar(false)
-    // Reset input so same file can be re-selected
     if (avatarInputRef.current) avatarInputRef.current.value = ''
   }
 
@@ -212,358 +228,456 @@ export default function ProfilePage() {
   }
 
   const avgRating = reviews.length
-    ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1)
-    : null
+    ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : null
+  const initials = (n: string | null) => (n ?? '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
+  const dp = isOwnProfile ? profile : viewedProfile
 
-  const initials = (name: string | null) =>
-    (name ?? '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
-
+  // ── Loading skeleton ──────────────────────────────────────────────────────────
   if (loading) return (
-    <div className="page-content" style={{ maxWidth: 860, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300 }}>
-      <div style={{ color: 'var(--text-muted)', fontSize: 14 }}>Loading profile…</div>
+    <div className="page-content" style={{ maxWidth: 860 }}>
+      <style>{CSS}</style>
+      <div style={{ background:'rgba(27,16,18,0.7)', border:'1px solid rgba(87,65,68,0.2)', borderRadius:22, overflow:'hidden', marginBottom:18, boxShadow:'0 4px 40px rgba(0,0,0,0.3)' }}>
+        <div className="pf-shimmer" style={{ height:118, borderRadius:0 }} />
+        <div style={{ padding:'0 28px 28px', marginTop:-44 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:20 }}>
+            <div className="pf-shimmer" style={{ width:88, height:88, borderRadius:22, border:'4px solid rgba(18,10,14,0.95)' }} />
+            <div style={{ display:'flex', gap:10 }}>
+              <div className="pf-shimmer" style={{ width:130, height:40, borderRadius:99 }} />
+              <div className="pf-shimmer" style={{ width:95, height:40, borderRadius:11 }} />
+            </div>
+          </div>
+          <div className="pf-shimmer" style={{ width:210, height:27, borderRadius:8, marginBottom:10 }} />
+          <div className="pf-shimmer" style={{ width:145, height:14, borderRadius:6, marginBottom:16 }} />
+          <div className="pf-shimmer" style={{ width:'72%', height:14, borderRadius:6, marginBottom:8 }} />
+          <div className="pf-shimmer" style={{ width:'55%', height:14, borderRadius:6, marginBottom:24 }} />
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10 }}>
+            {[0,1,2,3].map(i => <div key={i} className="pf-shimmer" style={{ height:80, borderRadius:14 }} />)}
+          </div>
+        </div>
+      </div>
+      <div className="pf-shimmer" style={{ height:50, borderRadius:14, marginBottom:14 }} />
+      {[0,1,2].map(i => <div key={i} className="pf-shimmer" style={{ height:74, borderRadius:14, marginBottom:10 }} />)}
     </div>
   )
 
+  // ── Not found ─────────────────────────────────────────────────────────────────
+  if (notFound) return (
+    <div className="page-content" style={{ maxWidth:860, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'60vh', textAlign:'center', gap:14 }}>
+      <style>{CSS}</style>
+      <div className="pf-0" style={{ fontSize:54, opacity:0.4 }}>👤</div>
+      <h2 className="pf-1" style={{ fontSize:22, fontWeight:800, color:'var(--text-primary)' }}>Profile not found</h2>
+      <p className="pf-1" style={{ fontSize:14, color:'var(--text-muted)' }}>This user doesn't exist or their profile is unavailable.</p>
+      <button className="pf-btn pf-2" onClick={() => navigate(-1)}
+        style={{ padding:'10px 26px', background:'var(--accent)', border:'none', borderRadius:11, color:'#fff', fontSize:14, fontWeight:700 }}
+        onMouseEnter={e => e.currentTarget.style.background='#b01d4d'}
+        onMouseLeave={e => e.currentTarget.style.background='var(--accent)'}
+      >Go back</button>
+    </div>
+  )
+
+  // ── Main ──────────────────────────────────────────────────────────────────────
   return (
     <div className="page-content" style={{ maxWidth: 860 }}>
-      <style>{`
-        @keyframes profFadeUp {
-          from { opacity: 0; transform: translateY(16px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes profSpin { to { transform: rotate(360deg); } }
-        .prof-section { animation: profFadeUp 0.4s ease both; }
-        .prof-toggle:hover { opacity: 0.85; }
-        .prof-listing-card { transition: border-color 0.2s, background 0.2s; }
-        .prof-listing-card:hover { border-color: rgba(138,21,56,0.35) !important; background: rgba(41,28,30,0.7) !important; }
-        .prof-avatar-overlay {
-          position: absolute; inset: 0; border-radius: 22px;
-          background: rgba(0,0,0,0.55); display: flex;
-          align-items: center; justify-content: center;
-          opacity: 0; transition: opacity 0.18s;
-        }
-        .prof-avatar:hover .prof-avatar-overlay { opacity: 1; }
-      `}</style>
+      <style>{CSS}</style>
 
-      {/* ── Profile Header ── */}
-      <div className="prof-section" style={{ background: 'rgba(41,28,30,0.45)', border: '1px solid rgba(87,65,68,0.2)', borderRadius: 20, padding: '32px', marginBottom: 20, position: 'relative', overflow: 'hidden' }}>
-        {/* Ambient glow */}
-        <div style={{ position: 'absolute', top: -60, right: -60, width: 300, height: 300, borderRadius: '50%', background: 'radial-gradient(circle, rgba(138,21,56,0.12) 0%, transparent 70%)', pointerEvents: 'none' }} />
+      {/* ── Header card ── */}
+      <div className="pf-0" style={{
+        background:'rgba(22,13,17,0.75)', border:'1px solid rgba(87,65,68,0.22)',
+        borderRadius:22, marginBottom:16, overflow:'hidden',
+        backdropFilter:'blur(16px)', boxShadow:'0 4px 48px rgba(0,0,0,0.35)',
+      }}>
 
-        {!editing ? (
-          <div style={{ position: 'relative', display: 'flex', gap: 24, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-            {/* Avatar — click to upload */}
-            <div style={{ position: 'relative', flexShrink: 0 }}>
-              <div
-                onClick={() => avatarInputRef.current?.click()}
-                title="Change profile picture"
-                style={{
-                  width: 80, height: 80, borderRadius: 22, flexShrink: 0,
-                  background: 'linear-gradient(135deg, var(--accent) 0%, #c0255a 100%)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 28, fontWeight: 900, color: '#fff',
-                  boxShadow: '0 8px 28px rgba(138,21,56,0.4)',
-                  cursor: 'pointer', overflow: 'hidden', position: 'relative',
-                }}
-                className="prof-avatar"
-              >
-                {profile?.avatar_url
-                  ? <img src={profile.avatar_url} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  : initials(profile?.full_name ?? null)
-                }
-                {/* Hover overlay */}
-                <div className="prof-avatar-overlay">
-                  {uploadingAvatar
-                    ? <div style={{ width: 20, height: 20, border: '2px solid rgba(255,255,255,0.5)', borderTopColor: '#fff', borderRadius: '50%', animation: 'profSpin 0.7s linear infinite' }} />
-                    : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                  }
-                </div>
-              </div>
-              <input
-                ref={avatarInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/gif"
-                style={{ display: 'none' }}
-                onChange={handleAvatarChange}
-              />
-              {avatarError && (
-                <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 6, width: 200, fontSize: 11, color: '#f87171', background: 'rgba(27,16,18,0.97)', border: '1px solid rgba(248,113,113,0.25)', borderRadius: 8, padding: '6px 10px', zIndex: 10, lineHeight: 1.4 }}>
-                  {avatarError}
-                </div>
-              )}
+        {/* Banner */}
+        <div style={{
+          height:118, position:'relative', overflow:'hidden',
+          background:'linear-gradient(135deg, rgba(155,22,65,0.65) 0%, rgba(95,12,42,0.5) 45%, rgba(22,8,16,0.3) 100%)',
+        }}>
+          <div style={{ position:'absolute', top:-55, right:-55, width:240, height:240, borderRadius:'50%', background:'rgba(138,21,56,0.15)', pointerEvents:'none' }} />
+          <div style={{ position:'absolute', top:10, left:'40%', width:260, height:80, background:'radial-gradient(ellipse, rgba(255,255,255,0.04) 0%, transparent 70%)', pointerEvents:'none' }} />
+          <div style={{ position:'absolute', bottom:-35, left:100, width:150, height:150, borderRadius:'50%', background:'rgba(200,40,100,0.07)', pointerEvents:'none' }} />
+
+          {/* Back button — other user */}
+          {!isOwnProfile && (
+            <button className="pf-back" onClick={() => navigate(-1)} style={{
+              position:'absolute', top:14, left:16, zIndex:2,
+              background:'rgba(0,0,0,0.45)', backdropFilter:'blur(10px)',
+              border:'1px solid rgba(255,255,255,0.15)', borderRadius:10,
+              padding:'7px 15px', color:'rgba(255,255,255,0.72)', fontSize:13,
+              display:'flex', alignItems:'center', gap:6,
+            }}>← Back</button>
+          )}
+
+          {/* Action buttons — own profile, pinned top-right of banner */}
+          {isOwnProfile && (
+            <div style={{ position:'absolute', top:14, right:16, zIndex:2, display:'flex', gap:8 }}>
+              <button className="pf-btn" onClick={openEdit}
+                style={{ padding:'7px 16px', background:'rgba(0,0,0,0.4)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:10, color:'rgba(255,255,255,0.8)', fontSize:13, fontWeight:600 }}
+                onMouseEnter={e => { e.currentTarget.style.background='rgba(138,21,56,0.55)'; e.currentTarget.style.borderColor='rgba(138,21,56,0.6)'; e.currentTarget.style.color='#fff'; }}
+                onMouseLeave={e => { e.currentTarget.style.background='rgba(0,0,0,0.4)'; e.currentTarget.style.borderColor='rgba(255,255,255,0.15)'; e.currentTarget.style.color='rgba(255,255,255,0.8)'; }}
+              >Edit Profile</button>
+              <button className="pf-btn" onClick={signOut}
+                style={{ padding:'7px 16px', background:'rgba(0,0,0,0.4)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,0.12)', borderRadius:10, color:'rgba(255,255,255,0.6)', fontSize:13, fontWeight:600 }}
+                onMouseEnter={e => { e.currentTarget.style.background='rgba(248,113,113,0.2)'; e.currentTarget.style.borderColor='rgba(248,113,113,0.4)'; e.currentTarget.style.color='#f87171'; }}
+                onMouseLeave={e => { e.currentTarget.style.background='rgba(0,0,0,0.4)'; e.currentTarget.style.borderColor='rgba(255,255,255,0.12)'; e.currentTarget.style.color='rgba(255,255,255,0.6)'; }}
+              >Sign Out</button>
             </div>
+          )}
+        </div>
 
-            {/* Info */}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, flexWrap: 'wrap' }}>
-                <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.5px', lineHeight: 1.2 }}>
-                  {profile?.full_name ?? 'Student'}
-                </h1>
-                <RoleBadge role={profile?.role ?? 'student'} />
+        {/* Body */}
+        <div style={{ padding:'0 28px 28px', marginTop:-44 }}>
+          {!editing ? (
+            <>
+              {/* Avatar */}
+              <div style={{ marginBottom:16, position:'relative', display:'inline-block' }}>
+                <div
+                  onClick={() => isOwnProfile && avatarInputRef.current?.click()}
+                  title={isOwnProfile ? 'Change photo' : undefined}
+                  className={isOwnProfile ? 'pf-av-wrap' : ''}
+                  style={{
+                    width:88, height:88, borderRadius:22,
+                    background:'linear-gradient(135deg, var(--accent) 0%, #c0255a 100%)',
+                    display:'flex', alignItems:'center', justifyContent:'center',
+                    fontSize:30, fontWeight:900, color:'#fff',
+                    border:'4px solid rgba(16,9,13,0.97)',
+                    overflow:'hidden', position:'relative',
+                    boxShadow:'0 0 0 1.5px rgba(138,21,56,0.45), 0 14px 40px rgba(0,0,0,0.6)',
+                    cursor: isOwnProfile ? 'pointer' : 'default',
+                  }}
+                >
+                  {dp?.avatar_url
+                    ? <img src={dp.avatar_url} alt="avatar" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                    : initials(dp?.full_name ?? null)
+                  }
+                  {isOwnProfile && (
+                    <div className="pf-av-ov" style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.62)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      {uploadingAvatar
+                        ? <div style={{ width:22, height:22, border:'2.5px solid rgba(255,255,255,0.35)', borderTopColor:'#fff', borderRadius:'50%', animation:'pf-spin 0.7s linear infinite' }} />
+                        : <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                      }
+                    </div>
+                  )}
+                </div>
+                {isOwnProfile && <input ref={avatarInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" style={{ display:'none' }} onChange={handleAvatarChange} />}
+                {avatarError && (
+                  <div style={{ position:'absolute', top:'calc(100% + 8px)', left:0, width:215, fontSize:11, color:'#f87171', background:'rgba(16,8,12,0.97)', border:'1px solid rgba(248,113,113,0.22)', borderRadius:9, padding:'7px 11px', zIndex:20, lineHeight:1.5 }}>
+                    {avatarError}
+                  </div>
+                )}
               </div>
 
-              {profile?.university && (
-                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 10 }}>
-                  {profile.university.name}
+              {/* Name + badge */}
+              <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:4, flexWrap:'wrap' }}>
+                <h1 style={{ fontSize:26, fontWeight:900, color:'var(--text-primary)', letterSpacing:'-0.6px', lineHeight:1.15 }}>
+                  {dp?.full_name ?? 'Student'}
+                </h1>
+                <RoleBadge role={dp?.role ?? 'student'} />
+              </div>
+
+              {/* Karak Points — inline below name */}
+              <div style={{ display:'inline-flex', alignItems:'center', gap:7, background:'rgba(233,193,118,0.07)', border:'1px solid rgba(233,193,118,0.17)', borderRadius:99, padding:'5px 14px', marginBottom:10 }}>
+                <span style={{ fontSize:12, color:'rgba(233,193,118,0.7)' }}>✦</span>
+                <span style={{ fontSize:15, fontWeight:900, color:'var(--gold)', letterSpacing:'-0.3px' }}>
+                  {(dp?.karak_points ?? 0).toLocaleString()}
+                </span>
+                <span style={{ fontSize:10, fontWeight:700, color:'rgba(233,193,118,0.45)', letterSpacing:'0.08em', textTransform:'uppercase' }}>Karak Pts</span>
+              </div>
+
+              {dp?.university && (
+                <div style={{ fontSize:13, color:'var(--text-muted)', marginBottom:12, display:'flex', alignItems:'center', gap:5 }}>
+                  <span style={{ fontSize:11, opacity:0.6 }}>📍</span>{dp.university.name}
                 </div>
               )}
 
-              {profile?.bio && (
-                <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.7, maxWidth: 520, marginBottom: 14 }}>
-                  {profile.bio}
+              {dp?.bio && (
+                <p style={{ fontSize:14, color:'var(--text-secondary)', lineHeight:1.78, maxWidth:560, marginBottom:14 }}>
+                  {dp.bio}
                 </p>
               )}
 
-              {/* Skills */}
-              {profile?.skills && profile.skills.length > 0 && (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
-                  {profile.skills.map(s => (
-                    <span key={s} style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 7, background: 'rgba(138,21,56,0.12)', color: 'var(--accent)', border: '1px solid rgba(138,21,56,0.25)' }}>
-                      {s}
-                    </span>
+              {dp?.skills && dp.skills.length > 0 && (
+                <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:22 }}>
+                  {dp.skills.map((s, i) => (
+                    <span key={s} style={{
+                      fontSize:11, fontWeight:700, padding:'4px 12px', borderRadius:99,
+                      background:'rgba(138,21,56,0.1)', color:'var(--accent)',
+                      border:'1px solid rgba(138,21,56,0.22)',
+                      animation:`pf-up 0.35s cubic-bezier(0.22,1,0.36,1) ${0.04*i}s both`,
+                    }}>{s}</span>
                   ))}
                 </div>
               )}
 
-              {!profile?.bio && (!profile?.skills || profile.skills.length === 0) && (
-                <div style={{ fontSize: 13, color: 'var(--text-muted)', fontStyle: 'italic' }}>No bio yet — add one to introduce yourself.</div>
+              {!dp?.bio && (!dp?.skills || dp.skills.length === 0) && (
+                <div style={{ fontSize:13, color:'var(--text-muted)', fontStyle:'italic', marginBottom:22 }}>
+                  {isOwnProfile ? 'No bio yet — add one to introduce yourself.' : "This user hasn't added a bio yet."}
+                </div>
               )}
-            </div>
 
-            {/* Karak Points + Edit */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 12, flexShrink: 0 }}>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 28, fontWeight: 900, color: 'var(--gold)', letterSpacing: '-1px', lineHeight: 1 }}>
-                  {(profile?.karak_points ?? 0).toLocaleString()}
-                </div>
-                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(233,193,118,0.6)', textTransform: 'uppercase' }}>
-                  Karak Points
-                </div>
+              {/* Stats grid */}
+              <div style={{ borderTop:'1px solid rgba(255,255,255,0.055)', paddingTop:20, display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10 }}>
+                {([
+                  { label:'Clubs Joined',    value:clubs.length,                           color:'#0ea5e9', icon:'🏛️', t:'clubs'    },
+                  { label:'Active Listings', value:listings.filter(l=>l.is_active).length, color:'#a855f7', icon:'⚡', t:'listings' },
+                  { label:'Trades Done',     value:completedTrades,                         color:'#22c55e', icon:'🤝', t:'reviews'  },
+                  { label:'Avg Rating',      value:avgRating ? `★ ${avgRating}` : '—',    color:'#e9c176', icon:'⭐', t:'reviews'  },
+                ] as const).map(s => {
+                  const on = tab === s.t
+                  return (
+                    <div key={s.label} className="pf-stat" onClick={() => setTab(s.t)} style={{
+                      background: on ? `${s.color}13` : 'rgba(0,0,0,0.22)',
+                      border: `1px solid ${on ? `${s.color}42` : 'rgba(255,255,255,0.055)'}`,
+                      borderRadius:14, padding:'15px 10px', textAlign:'center',
+                      boxShadow: on ? `0 0 22px ${s.color}1a` : 'none',
+                    }}>
+                      <div style={{ fontSize:20, marginBottom:5, lineHeight:1 }}>{s.icon}</div>
+                      <div style={{ fontSize:19, fontWeight:900, color: on ? s.color : 'var(--text-primary)', letterSpacing:'-0.4px', marginBottom:3, transition:'color 0.2s' }}>
+                        {s.value}
+                      </div>
+                      <div style={{ fontSize:10, color:'var(--text-muted)', fontWeight:600, letterSpacing:'0.03em', lineHeight:1.3 }}>
+                        {s.label}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
-              <button
-                onClick={openEdit}
-                style={{ padding: '8px 18px', background: 'transparent', border: '1px solid rgba(87,65,68,0.35)', borderRadius: 9, color: 'var(--text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s' }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(138,21,56,0.5)'; e.currentTarget.style.color = 'var(--text-primary)' }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(87,65,68,0.35)'; e.currentTarget.style.color = 'var(--text-muted)' }}
-              >
+            </>
+          ) : (
+            /* Edit form */
+            <div style={{ animation:'pf-in 0.22s ease both' }}>
+              <div style={{ fontSize:11, fontWeight:800, color:'var(--accent)', letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:20 }}>
                 Edit Profile
-              </button>
-              <button
-                onClick={signOut}
-                style={{ padding: '8px 18px', background: 'transparent', border: '1px solid rgba(87,65,68,0.25)', borderRadius: 9, color: 'var(--text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s' }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(248,113,113,0.4)'; e.currentTarget.style.color = '#f87171' }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(87,65,68,0.25)'; e.currentTarget.style.color = 'var(--text-muted)' }}
-              >
-                Sign Out
-              </button>
-            </div>
-          </div>
-        ) : (
-          /* ── Edit Form ── */
-          <div style={{ position: 'relative' }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 20 }}>
-              Edit Profile
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Full Name</label>
-                <input value={editName} onChange={e => setEditName(e.target.value)} placeholder="Your name" style={inputSt} />
               </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Bio</label>
-                <textarea value={editBio} onChange={e => setEditBio(e.target.value)} placeholder="Tell people who you are and what you're about…" rows={3} maxLength={300} style={{ ...inputSt, resize: 'vertical', lineHeight: 1.65 }} />
-                <div style={{ textAlign: 'right', fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{editBio.length} / 300</div>
+              <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+                <div>
+                  <label style={{ display:'block', fontSize:11, fontWeight:700, color:'var(--text-muted)', marginBottom:7, letterSpacing:'0.07em', textTransform:'uppercase' }}>Full Name</label>
+                  <input value={editName} onChange={e => setEditName(e.target.value)} placeholder="Your name" style={inputSt} />
+                </div>
+                <div>
+                  <label style={{ display:'block', fontSize:11, fontWeight:700, color:'var(--text-muted)', marginBottom:7, letterSpacing:'0.07em', textTransform:'uppercase' }}>Bio</label>
+                  <textarea value={editBio} onChange={e => setEditBio(e.target.value)} placeholder="Tell people who you are and what you're about…" rows={3} maxLength={300} style={{ ...inputSt, resize:'vertical', lineHeight:1.65 }} />
+                  <div style={{ textAlign:'right', fontSize:11, color:'var(--text-muted)', marginTop:4 }}>{editBio.length} / 300</div>
+                </div>
+                <div>
+                  <label style={{ display:'block', fontSize:11, fontWeight:700, color:'var(--text-muted)', marginBottom:7, letterSpacing:'0.07em', textTransform:'uppercase' }}>
+                    Skills <span style={{ fontWeight:400, textTransform:'none', letterSpacing:0 }}>(comma-separated)</span>
+                  </label>
+                  <input value={editSkillsRaw} onChange={e => setEditSkillsRaw(e.target.value)} placeholder="e.g. React, Figma, Python, Marketing" style={inputSt} />
+                </div>
               </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Skills <span style={{ fontWeight: 400, textTransform: 'none' }}>(comma-separated)</span></label>
-                <input value={editSkillsRaw} onChange={e => setEditSkillsRaw(e.target.value)} placeholder="e.g. React, Figma, Python, Marketing" style={inputSt} />
+              {editError && (
+                <div style={{ fontSize:12, color:'#f87171', background:'rgba(248,113,113,0.07)', border:'1px solid rgba(248,113,113,0.2)', borderRadius:9, padding:'9px 13px', marginTop:14 }}>
+                  {editError}
+                </div>
+              )}
+              <div style={{ display:'flex', gap:10, marginTop:22 }}>
+                <button className="pf-btn" onClick={() => setEditing(false)}
+                  style={{ flex:1, padding:'11px', background:'transparent', border:'1px solid rgba(87,65,68,0.3)', borderRadius:11, color:'var(--text-muted)', fontSize:14 }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor='rgba(87,65,68,0.6)'}
+                  onMouseLeave={e => e.currentTarget.style.borderColor='rgba(87,65,68,0.3)'}
+                >Cancel</button>
+                <button className="pf-btn" onClick={saveEdit} disabled={saving}
+                  style={{ flex:2, padding:'11px', background:saving?'rgba(138,21,56,0.45)':'var(--accent)', border:'none', borderRadius:11, color:'#fff', fontSize:14, fontWeight:700, opacity:saving?0.75:1 }}
+                  onMouseEnter={e => { if (!saving) e.currentTarget.style.background='#b01d4d' }}
+                  onMouseLeave={e => { if (!saving) e.currentTarget.style.background='var(--accent)' }}
+                >{saving ? 'Saving…' : 'Save Changes'}</button>
               </div>
             </div>
-            {editError && (
-              <div style={{ fontSize: 12, color: '#f87171', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 8, padding: '8px 12px', marginTop: 14 }}>
-                {editError}
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-              <button onClick={() => setEditing(false)} style={{ flex: 1, padding: '10px', background: 'transparent', border: '1px solid rgba(87,65,68,0.3)', borderRadius: 10, color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer' }}>
-                Cancel
-              </button>
-              <button onClick={saveEdit} disabled={saving} style={{ flex: 2, padding: '10px', background: saving ? 'rgba(138,21,56,0.4)' : 'var(--accent)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 14, fontWeight: 700, cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1, transition: 'background 0.15s' }}>
-                {saving ? 'Saving…' : 'Save Changes'}
-              </button>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* ── Stats Row ── */}
-      <div className="prof-section" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 28, animationDelay: '0.05s' }}>
-        {[
-          { label: 'Clubs Joined',      value: clubs.length,                                          color: '#0ea5e9' },
-          { label: 'Active Listings',   value: listings.filter(l => l.is_active).length,              color: '#a855f7' },
-          { label: 'Trades Completed',  value: completedTrades,                                        color: '#22c55e' },
-          { label: 'Avg Rating',        value: avgRating ? `★ ${avgRating}` : '—',                   color: '#e9c176' },
-        ].map(s => (
-          <div key={s.label} style={{ background: 'rgba(41,28,30,0.45)', border: '1px solid rgba(87,65,68,0.18)', borderRadius: 14, padding: '16px 18px', textAlign: 'center' }}>
-            <div style={{ fontSize: 22, fontWeight: 900, color: s.color, letterSpacing: '-0.5px', marginBottom: 4 }}>
-              {s.value}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.04em' }}>
-              {s.label}
-            </div>
-          </div>
+      {/* ── Tab bar ── */}
+      <div className="pf-1" style={{
+        display:'flex', gap:3, background:'rgba(0,0,0,0.22)',
+        border:'1px solid rgba(255,255,255,0.055)', borderRadius:15, padding:4, marginBottom:14,
+      }}>
+        {([
+          { key:'clubs',    label:'Clubs Joined',     count:clubs.length },
+          { key:'listings', label:'Skill Listings',   count:listings.length },
+          { key:'reviews',  label:'Reviews Received', count:reviews.length },
+        ] as const).map(t => (
+          <button key={t.key} className="pf-tab" onClick={() => setTab(t.key)} style={{
+            flex:1, padding:'9px 10px', borderRadius:12, fontSize:13,
+            fontWeight: tab === t.key ? 700 : 500,
+            color: tab === t.key ? '#fff' : 'var(--text-muted)',
+            background: tab === t.key ? 'rgba(138,21,56,0.22)' : 'transparent',
+            border: tab === t.key ? '1px solid rgba(138,21,56,0.32)' : '1px solid transparent',
+            display:'flex', alignItems:'center', justifyContent:'center', gap:7,
+          }}>
+            {t.label}
+            <span style={{
+              fontSize:11, fontWeight:700, padding:'1px 7px', borderRadius:99, minWidth:20,
+              background: tab === t.key ? 'rgba(138,21,56,0.35)' : 'rgba(255,255,255,0.06)',
+              color: tab === t.key ? '#f08' : 'var(--text-muted)',
+              transition:'all 0.18s',
+            }}>{t.count}</span>
+          </button>
         ))}
       </div>
 
-      {/* ── Clubs ── */}
-      {clubs.length > 0 && (
-        <div className="prof-section" style={{ marginBottom: 28, animationDelay: '0.1s' }}>
-          <SectionHeader title="Clubs" count={clubs.length} />
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
-            {clubs.map(m => {
-              const color = catColor(m.club?.category ?? null)
-              return (
-                <div key={m.club_id} style={{ background: 'rgba(41,28,30,0.45)', border: '1px solid rgba(87,65,68,0.18)', borderRadius: 12, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 10, background: m.club?.logo_url ? 'var(--bg-muted)' : `${color}18`, border: `1px solid ${color}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color, flexShrink: 0, overflow: 'hidden' }}>
-                    {m.club?.logo_url
-                      ? <img src={m.club.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      : (m.club?.name ?? '?')[0].toUpperCase()}
-                  </div>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.club?.name ?? '—'}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'capitalize' }}>{m.role}</div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
+      {/* ── Tab panel (key forces remount → animation plays) ── */}
+      <div key={tab} className="pf-panel" style={{ marginBottom:36 }}>
 
-      {/* ── Skill Listings ── */}
-      <div className="prof-section" style={{ marginBottom: 28, animationDelay: '0.15s' }}>
-        <SectionHeader title="Skill Listings" count={listings.length} />
-        {listings.length === 0 ? (
-          <EmptyCard icon="⚡" text="No skill listings yet. Head to Skill Souq to post one." />
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {listings.map(l => {
-              const color = catColor(l.category)
-              return (
-                <div key={l.id} className="prof-listing-card" style={{ background: 'rgba(41,28,30,0.4)', border: '1px solid rgba(87,65,68,0.18)', borderRadius: 14, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
-                  {/* Active indicator */}
-                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: l.is_active ? '#22c55e' : 'rgba(255,255,255,0.15)', flexShrink: 0, boxShadow: l.is_active ? '0 0 8px rgba(34,197,94,0.6)' : 'none' }} />
-
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {l.title}
+        {/* Clubs */}
+        {tab === 'clubs' && (
+          clubs.length === 0
+            ? <EmptyCard icon="🏛️" text="No clubs joined yet." />
+            : (
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(210px, 1fr))', gap:10 }}>
+                {clubs.map((m, i) => {
+                  const c = catColor(m.club?.category ?? null)
+                  return (
+                    <div key={m.club_id} className="pf-club" style={{
+                      background:'rgba(22,13,17,0.7)', borderRadius:14, padding:'16px',
+                      display:'flex', alignItems:'center', gap:13,
+                      border:`1px solid rgba(87,65,68,0.18)`,
+                      borderLeft:`3px solid ${c}70`,
+                      boxShadow:'0 2px 14px rgba(0,0,0,0.22)',
+                      animation:`pf-up 0.38s cubic-bezier(0.22,1,0.36,1) ${0.045*i}s both`,
+                    }}>
+                      <div style={{ width:40, height:40, borderRadius:12, background:m.club?.logo_url?'var(--bg-muted)':`${c}18`, border:`1px solid ${c}38`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, color:c, flexShrink:0, overflow:'hidden' }}>
+                        {m.club?.logo_url
+                          ? <img src={m.club.logo_url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                          : (m.club?.name ?? '?')[0].toUpperCase()}
+                      </div>
+                      <div style={{ minWidth:0 }}>
+                        <div style={{ fontSize:13, fontWeight:700, color:'var(--text-primary)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', marginBottom:2 }}>
+                          {m.club?.name ?? '—'}
+                        </div>
+                        <div style={{ fontSize:11, color:'var(--text-muted)', textTransform:'capitalize' }}>{m.role}</div>
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: '#4ade80', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 6, padding: '2px 8px' }}>
-                        Offers: {l.skill_offered}
-                      </span>
-                      <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>⇄</span>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', background: 'rgba(138,21,56,0.1)', border: '1px solid rgba(138,21,56,0.2)', borderRadius: 6, padding: '2px 8px' }}>
-                        Wants: {l.skill_wanted}
-                      </span>
-                      {l.category && (
-                        <span style={{ fontSize: 10, fontWeight: 700, color, background: `${color}12`, border: `1px solid ${color}25`, borderRadius: 6, padding: '2px 8px' }}>
-                          {l.category}
+                  )
+                })}
+              </div>
+            )
+        )}
+
+        {/* Listings */}
+        {tab === 'listings' && (
+          listings.length === 0
+            ? <EmptyCard icon="⚡" text="No skill listings yet. Head to Skill Souq to post one." />
+            : (
+              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                {listings.map((l, i) => {
+                  const c = catColor(l.category)
+                  return (
+                    <div key={l.id} className="pf-card" style={{
+                      background:'rgba(22,13,17,0.7)', border:'1px solid rgba(87,65,68,0.18)',
+                      borderRadius:14, padding:'17px 20px', display:'flex', alignItems:'center', gap:16,
+                      boxShadow:'0 2px 14px rgba(0,0,0,0.2)',
+                      animation:`pf-up 0.38s cubic-bezier(0.22,1,0.36,1) ${0.045*i}s both`,
+                    }}>
+                      <div style={{ width:9, height:9, borderRadius:'50%', background:l.is_active?'#22c55e':'rgba(255,255,255,0.14)', flexShrink:0, boxShadow:l.is_active?'0 0 9px rgba(34,197,94,0.75)':'none', transition:'all 0.25s' }} />
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:14, fontWeight:700, color:'var(--text-primary)', marginBottom:7, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                          {l.title}
+                        </div>
+                        <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
+                          <span style={{ fontSize:11, fontWeight:700, color:'#4ade80', background:'rgba(34,197,94,0.1)', border:'1px solid rgba(34,197,94,0.2)', borderRadius:7, padding:'2px 9px' }}>
+                            {l.skill_offered}
+                          </span>
+                          <span style={{ color:'var(--text-muted)', fontSize:14 }}>⇄</span>
+                          <span style={{ fontSize:11, fontWeight:700, color:'var(--text-secondary)', background:'rgba(138,21,56,0.1)', border:'1px solid rgba(138,21,56,0.2)', borderRadius:7, padding:'2px 9px' }}>
+                            {l.skill_wanted}
+                          </span>
+                          {l.category && (
+                            <span style={{ fontSize:10, fontWeight:700, color:c, background:`${c}12`, border:`1px solid ${c}28`, borderRadius:6, padding:'2px 8px' }}>
+                              {l.category}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {isOwnProfile ? (
+                        <button className="pf-tog" onClick={() => toggleListing(l.id, l.is_active)} disabled={togglingId===l.id}
+                          style={{ padding:'6px 14px', borderRadius:9, background:l.is_active?'rgba(34,197,94,0.1)':'rgba(255,255,255,0.04)', border:`1px solid ${l.is_active?'rgba(34,197,94,0.28)':'rgba(87,65,68,0.28)'}`, color:l.is_active?'#4ade80':'var(--text-muted)', fontSize:12, fontWeight:700, flexShrink:0 }}>
+                          {togglingId===l.id ? '…' : l.is_active ? 'Active' : 'Paused'}
+                        </button>
+                      ) : (
+                        <span style={{ fontSize:11, fontWeight:700, padding:'4px 11px', borderRadius:9, background:l.is_active?'rgba(34,197,94,0.1)':'rgba(255,255,255,0.04)', border:`1px solid ${l.is_active?'rgba(34,197,94,0.28)':'rgba(87,65,68,0.28)'}`, color:l.is_active?'#4ade80':'var(--text-muted)', flexShrink:0 }}>
+                          {l.is_active ? 'Active' : 'Paused'}
                         </span>
                       )}
                     </div>
-                  </div>
-
-                  {/* Toggle active */}
-                  <button
-                    className="prof-toggle"
-                    onClick={() => toggleListing(l.id, l.is_active)}
-                    disabled={togglingId === l.id}
-                    style={{ padding: '6px 14px', borderRadius: 8, background: l.is_active ? 'rgba(34,197,94,0.1)' : 'rgba(255,255,255,0.04)', border: `1px solid ${l.is_active ? 'rgba(34,197,94,0.28)' : 'rgba(87,65,68,0.3)'}`, color: l.is_active ? '#4ade80' : 'var(--text-muted)', fontSize: 12, fontWeight: 700, cursor: 'pointer', flexShrink: 0, transition: 'all 0.15s' }}
-                  >
-                    {togglingId === l.id ? '…' : l.is_active ? 'Active' : 'Paused'}
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* ── Reviews Received ── */}
-      <div className="prof-section" style={{ marginBottom: 28, animationDelay: '0.2s' }}>
-        <SectionHeader
-          title="Reviews Received"
-          count={reviews.length}
-          badge={avgRating ? `★ ${avgRating} avg` : undefined}
-        />
-        {reviews.length === 0 ? (
-          <EmptyCard icon="★" text="No reviews yet. Complete a skill trade to start earning them." />
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {reviews.map(r => (
-              <div key={r.id} style={{ background: 'rgba(41,28,30,0.4)', border: '1px solid rgba(87,65,68,0.18)', borderRadius: 14, padding: '16px 20px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: r.comment ? 10 : 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 30, height: 30, borderRadius: 9, background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: '#fff', flexShrink: 0 }}>
-                      {(r.reviewer?.full_name ?? '?')[0]?.toUpperCase()}
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
-                        {r.reviewer?.full_name ?? 'Anonymous'}
-                      </div>
-                      <Stars rating={r.rating} size={13} />
-                    </div>
-                  </div>
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{timeAgo(r.created_at)}</span>
-                </div>
-                {r.comment && (
-                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.65, marginLeft: 40 }}>
-                    "{r.comment}"
-                  </p>
-                )}
+                  )
+                })}
               </div>
-            ))}
-          </div>
+            )
+        )}
+
+        {/* Reviews */}
+        {tab === 'reviews' && (
+          reviews.length === 0
+            ? <EmptyCard icon="★" text="No reviews yet. Complete a skill trade to start earning them." />
+            : (
+              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                {avgRating && (
+                  <div style={{ display:'flex', alignItems:'center', gap:10, padding:'13px 18px', background:'rgba(233,193,118,0.055)', border:'1px solid rgba(233,193,118,0.14)', borderRadius:13, marginBottom:2 }}>
+                    <Stars rating={Math.round(parseFloat(avgRating))} size={15} />
+                    <span style={{ fontSize:17, fontWeight:900, color:'var(--gold)', letterSpacing:'-0.3px' }}>{avgRating}</span>
+                    <span style={{ fontSize:12, color:'var(--text-muted)' }}>avg · {reviews.length} review{reviews.length !== 1 ? 's' : ''}</span>
+                  </div>
+                )}
+                {reviews.map((r, i) => (
+                  <div key={r.id} className="pf-review" style={{
+                    background:'rgba(22,13,17,0.7)', border:'1px solid rgba(87,65,68,0.18)',
+                    borderRadius:14, padding:'18px 20px',
+                    animation:`pf-up 0.38s cubic-bezier(0.22,1,0.36,1) ${0.045*i}s both`,
+                  }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom: r.comment ? 13 : 0 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:11 }}>
+                        <div style={{ width:34, height:34, borderRadius:10, background:'var(--accent)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:800, color:'#fff', flexShrink:0 }}>
+                          {(r.reviewer?.full_name ?? '?')[0]?.toUpperCase()}
+                        </div>
+                        <div>
+                          <div style={{ fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:3 }}>
+                            {r.reviewer?.full_name ?? 'Anonymous'}
+                          </div>
+                          <Stars rating={r.rating} size={12} />
+                        </div>
+                      </div>
+                      <span style={{ fontSize:11, color:'var(--text-muted)' }}>{timeAgo(r.created_at)}</span>
+                    </div>
+                    {r.comment && (
+                      <div style={{ marginLeft:45, position:'relative', paddingLeft:10 }}>
+                        <div style={{ position:'absolute', left:-2, top:-4, fontSize:28, color:'rgba(255,255,255,0.06)', lineHeight:1, fontFamily:'Georgia, serif' }}>"</div>
+                        <p style={{ fontSize:13, color:'var(--text-secondary)', lineHeight:1.72, fontStyle:'italic' }}>
+                          {r.comment}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )
         )}
       </div>
     </div>
   )
 }
 
-// ── Small Components ──────────────────────────────────────────────────────────
+// ── Small components ──────────────────────────────────────────────────────────
 
 function RoleBadge({ role }: { role: string }) {
   const map: Record<string, { label: string; color: string; bg: string }> = {
-    admin:        { label: 'Admin',          color: '#f97316', bg: 'rgba(249,115,22,0.12)'  },
-    club_leader:  { label: 'Club Leader',    color: '#e9c176', bg: 'rgba(233,193,118,0.12)' },
-    student:      { label: 'Student',        color: '#6b7280', bg: 'rgba(107,114,128,0.1)'  },
+    admin:       { label:'Admin',       color:'#f97316', bg:'rgba(249,115,22,0.12)' },
+    club_leader: { label:'Club Leader', color:'#e9c176', bg:'rgba(233,193,118,0.12)' },
+    student:     { label:'Student',     color:'#6b7280', bg:'rgba(107,114,128,0.1)' },
   }
-  const style = map[role] ?? map.student
+  const s = map[role] ?? map.student
   return (
-    <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', padding: '3px 9px', borderRadius: 9999, background: style.bg, color: style.color, textTransform: 'uppercase' }}>
-      {style.label}
+    <span style={{ fontSize:10, fontWeight:800, letterSpacing:'0.08em', padding:'3px 10px', borderRadius:99, background:s.bg, color:s.color, textTransform:'uppercase' }}>
+      {s.label}
     </span>
-  )
-}
-
-function SectionHeader({ title, count, badge }: { title: string; count: number; badge?: string }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-      <h2 style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.2px' }}>{title}</h2>
-      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)', borderRadius: 9999, padding: '2px 8px' }}>{count}</span>
-      {badge && (
-        <span style={{ fontSize: 11, fontWeight: 700, color: '#e9c176', background: 'rgba(233,193,118,0.1)', border: '1px solid rgba(233,193,118,0.2)', borderRadius: 9999, padding: '2px 8px' }}>{badge}</span>
-      )}
-    </div>
   )
 }
 
 function EmptyCard({ icon, text }: { icon: string; text: string }) {
   return (
-    <div style={{ padding: '32px 20px', textAlign: 'center', background: 'rgba(41,28,30,0.25)', border: '1px dashed rgba(87,65,68,0.25)', borderRadius: 14 }}>
-      <div style={{ fontSize: 24, marginBottom: 10, opacity: 0.4 }}>{icon}</div>
-      <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6 }}>{text}</div>
+    <div style={{ padding:'52px 24px', textAlign:'center', background:'rgba(22,13,17,0.5)', border:'1px dashed rgba(87,65,68,0.2)', borderRadius:16, animation:'pf-in 0.3s ease both' }}>
+      <div style={{ fontSize:34, marginBottom:12, opacity:0.3 }}>{icon}</div>
+      <div style={{ fontSize:13, color:'var(--text-muted)', lineHeight:1.65 }}>{text}</div>
     </div>
   )
 }

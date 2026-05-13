@@ -678,10 +678,13 @@ function Card({
             <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
               {comments.map((c,ci) => (
                 <div key={c.id} style={{ display:'flex',gap:10,animation:'fadeUp .28s ease both',animationDelay:`${ci*30}ms` }}>
-                  <Av url={c.profile?.avatar_url??null} name={c.profile?.full_name??null} size={32}/>
+                  <Av url={c.profile?.avatar_url??null} name={c.profile?.full_name??null} size={32} onClick={()=>onProfile(c.user_id)}/>
                   <div style={{ flex:1, background:'rgba(255,255,255,.03)', border:'1px solid rgba(255,255,255,.06)', borderRadius:12, padding:'9px 13px' }}>
                     <div style={{ display:'flex',alignItems:'center',gap:8,marginBottom:3 }}>
-                      <span style={{ fontSize:12,fontWeight:700,color:'var(--text-primary)' }}>{c.profile?.full_name??'User'}</span>
+                      <span onClick={()=>onProfile(c.user_id)} style={{ fontSize:12,fontWeight:700,color:'var(--text-primary)',cursor:'pointer',transition:'color .15s' }}
+                        onMouseEnter={e=>e.currentTarget.style.color='var(--accent)'} onMouseLeave={e=>e.currentTarget.style.color='var(--text-primary)'}>
+                        {c.profile?.full_name??'User'}
+                      </span>
                       <span style={{ fontSize:10,color:'var(--text-muted)' }}>{reltime(c.created_at)}</span>
                     </div>
                     <div style={{ fontSize:13.5,color:'var(--text-secondary)',lineHeight:1.65,wordBreak:'break-word' }}>{c.content}</div>

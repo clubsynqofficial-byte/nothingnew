@@ -313,7 +313,15 @@ export default function TalentPage() {
     <div className="page-content" style={{ maxWidth: 1100 }}>
       <style>{`
         @keyframes spinTalent { to { transform: rotate(360deg); } }
-        .listing-card:hover { border-color: rgba(138,21,56,0.55) !important; box-shadow: 0 8px 32px rgba(0,0,0,0.3) !important; transform: translateY(-1px); }
+        @keyframes tp-up { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes tp-pop { from { opacity:0; transform:translateY(10px) scale(0.99); } to { opacity:1; transform:translateY(0) scale(1); } }
+        @keyframes tp-shimmer { from { background-position:-700px 0; } to { background-position:700px 0; } }
+        .tp-0 { animation: tp-up 0.5s cubic-bezier(0.22,1,0.36,1) both; }
+        .tp-1 { animation: tp-up 0.5s cubic-bezier(0.22,1,0.36,1) 0.08s both; }
+        .tp-2 { animation: tp-up 0.5s cubic-bezier(0.22,1,0.36,1) 0.15s both; }
+        .tp-panel { animation: tp-pop 0.3s cubic-bezier(0.22,1,0.36,1) both; }
+        .tp-shimmer { background: linear-gradient(90deg, rgba(41,28,30,0.6) 25%, rgba(72,46,54,0.85) 50%, rgba(41,28,30,0.6) 75%); background-size:700px 100%; animation:tp-shimmer 1.4s ease-in-out infinite; border-radius:8px; }
+        .listing-card:hover { border-color: rgba(138,21,56,0.55) !important; box-shadow: 0 8px 32px rgba(0,0,0,0.3) !important; transform: translateY(-2px); }
         .listing-card { transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s, opacity 0.2s !important; }
         .req-btn:hover:not(:disabled) { background: var(--accent) !important; color: #fff !important; border-color: var(--accent) !important; }
         .action-btn:hover:not(:disabled) { opacity: 0.85; }
@@ -321,7 +329,7 @@ export default function TalentPage() {
 
       {/* ── Header ── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32, flexWrap: 'wrap', gap: 16 }}>
-        <div>
+        <div className="tp-0">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
             <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', boxShadow: '0 0 8px var(--accent-glow)' }} />
             <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', color: 'var(--accent)', textTransform: 'uppercase' }}>Skill Souq</span>
@@ -329,7 +337,7 @@ export default function TalentPage() {
           <h1 style={{ fontSize: 32, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.5px', lineHeight: 1.1 }}>Trade Skills. Grow Together.</h1>
           <p style={{ fontSize: 14, color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.5 }}>Offer what you know. Get what you need. No money required.</p>
         </div>
-        <button onClick={openCreate} style={{
+        <button className="tp-1" onClick={openCreate} style={{
           display: 'flex', alignItems: 'center', gap: 6,
           padding: '11px 22px', background: 'var(--accent)', border: 'none', borderRadius: 10,
           color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', flexShrink: 0,
@@ -340,7 +348,7 @@ export default function TalentPage() {
       </div>
 
       {/* ── Tabs ── */}
-      <div style={{ display: 'flex', gap: 2, background: 'rgba(0,0,0,0.3)', borderRadius: 12, padding: 4, marginBottom: 32, width: 'fit-content', border: '1px solid rgba(87,65,68,0.2)' }}>
+      <div className="tp-2" style={{ display: 'flex', gap: 2, background: 'rgba(0,0,0,0.3)', borderRadius: 12, padding: 4, marginBottom: 32, width: 'fit-content', border: '1px solid rgba(87,65,68,0.2)' }}>
         {([
           { key: 'browse' as Tab, label: 'Browse', icon: '⊞' },
           { key: 'my-listings' as Tab, label: 'My Listings', icon: '◫', count: myListings.length },
@@ -373,7 +381,7 @@ export default function TalentPage() {
 
       {/* ── BROWSE ── */}
       {tab === 'browse' && (
-        <>
+        <div className="tp-panel">
           {/* Search + filters */}
           <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: '14px 16px', marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ position: 'relative' }}>
@@ -397,9 +405,24 @@ export default function TalentPage() {
           </div>
 
           {loading ? (
-            <div style={{ textAlign: 'center', padding: '80px 0', color: 'var(--text-muted)' }}>
-              <div style={{ width: 36, height: 36, border: '3px solid rgba(87,65,68,0.2)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spinTalent 0.8s linear infinite', margin: '0 auto 16px' }} />
-              <div style={{ fontSize: 13 }}>Fetching listings…</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
+              {[0,1,2,3,4,5].map(i => (
+                <div key={i} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', animationDelay: `${i * 0.05}s` }}>
+                  <div className="tp-shimmer" style={{ height: 4, borderRadius: 0 }} />
+                  <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 13 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div className="tp-shimmer" style={{ width: 56, height: 11, borderRadius: 6 }} />
+                      <div className="tp-shimmer" style={{ width: 26, height: 26, borderRadius: '50%' }} />
+                    </div>
+                    <div className="tp-shimmer" style={{ width: '75%', height: 17, borderRadius: 7 }} />
+                    <div className="tp-shimmer" style={{ height: 58, borderRadius: 10 }} />
+                    <div className="tp-shimmer" style={{ width: '55%', height: 12, borderRadius: 6 }} />
+                  </div>
+                  <div style={{ padding: '0 18px 16px' }}>
+                    <div className="tp-shimmer" style={{ height: 36, borderRadius: 9 }} />
+                  </div>
+                </div>
+              ))}
             </div>
           ) : listings.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '80px 0' }}>
@@ -410,10 +433,10 @@ export default function TalentPage() {
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
-              {listings.map(l => {
+              {listings.map((l, i) => {
                 const already = alreadyRequestedIds.has(l.id)
                 return (
-                  <ListingCard key={l.id} listing={l} onViewUser={() => setViewingUserId(l.user_id)} action={
+                  <ListingCard key={l.id} listing={l} index={i} onViewUser={() => setViewingUserId(l.user_id)} action={
                     <button className="req-btn" onClick={() => !already && setRequestPrompt(l)} disabled={!!requestingId || already}
                       style={{ width: '100%', padding: '10px', background: already ? 'rgba(138,21,56,0.08)' : 'rgba(138,21,56,0.12)', border: '1px solid rgba(138,21,56,0.3)', borderRadius: 9, color: already ? 'var(--accent)' : 'var(--text-secondary)', fontSize: 13, fontWeight: 600, cursor: already || requestingId ? 'default' : 'pointer', opacity: requestingId === l.id ? 0.6 : 1, transition: 'all 0.15s' }}>
                       {requestingId === l.id ? 'Sending…' : already ? '✓ Requested' : 'Request Trade'}
@@ -423,42 +446,44 @@ export default function TalentPage() {
               })}
             </div>
           )}
-        </>
+        </div>
       )}
 
       {/* ── MY LISTINGS ── */}
       {tab === 'my-listings' && (
-        myListings.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '80px 0' }}>
-            <div style={{ width: 64, height: 64, borderRadius: 18, background: 'var(--bg-card)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, margin: '0 auto 20px' }}>✨</div>
-            <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>No listings yet</div>
-            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 24 }}>Share what you can offer, and what skill you're looking for in return.</div>
-            <button onClick={openCreate} style={{ padding: '10px 24px', background: 'var(--accent)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>+ Create Your First Listing</button>
-          </div>
-        ) : (
-          <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}><span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{myListings.filter(l => l.is_active).length}</span> active · <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{myListings.filter(l => !l.is_active).length}</span> paused</div>
+        <div className="tp-panel">
+          {myListings.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '80px 0' }}>
+              <div style={{ width: 64, height: 64, borderRadius: 18, background: 'var(--bg-card)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, margin: '0 auto 20px' }}>✨</div>
+              <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>No listings yet</div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 24 }}>Share what you can offer, and what skill you're looking for in return.</div>
+              <button onClick={openCreate} style={{ padding: '10px 24px', background: 'var(--accent)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>+ Create Your First Listing</button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
-              {myListings.map(l => (
-                <ListingCard key={l.id} listing={l} dimmed={!l.is_active} action={
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => openEdit(l)} style={{ flex: 1, padding: '9px', background: 'transparent', border: '1px solid rgba(87,65,68,0.35)', borderRadius: 9, color: 'var(--text-muted)', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Edit</button>
-                    <button onClick={() => handleToggle(l.id, l.is_active)} style={{ flex: 1, padding: '9px', background: l.is_active ? 'transparent' : 'rgba(138,21,56,0.12)', border: l.is_active ? '1px solid rgba(87,65,68,0.35)' : '1px solid var(--accent)', borderRadius: 9, color: l.is_active ? 'var(--text-muted)' : 'var(--accent)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                      {l.is_active ? 'Pause' : 'Activate'}
-                    </button>
-                  </div>
-                } />
-              ))}
-            </div>
-          </>
-        )
+          ) : (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}><span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{myListings.filter(l => l.is_active).length}</span> active · <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{myListings.filter(l => !l.is_active).length}</span> paused</div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
+                {myListings.map((l, i) => (
+                  <ListingCard key={l.id} listing={l} index={i} dimmed={!l.is_active} action={
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={() => openEdit(l)} style={{ flex: 1, padding: '9px', background: 'transparent', border: '1px solid rgba(87,65,68,0.35)', borderRadius: 9, color: 'var(--text-muted)', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Edit</button>
+                      <button onClick={() => handleToggle(l.id, l.is_active)} style={{ flex: 1, padding: '9px', background: l.is_active ? 'transparent' : 'rgba(138,21,56,0.12)', border: l.is_active ? '1px solid rgba(87,65,68,0.35)' : '1px solid var(--accent)', borderRadius: 9, color: l.is_active ? 'var(--text-muted)' : 'var(--accent)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                        {l.is_active ? 'Pause' : 'Activate'}
+                      </button>
+                    </div>
+                  } />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       )}
 
       {/* ── REQUESTS ── */}
       {tab === 'requests' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 40 }}>
+        <div className="tp-panel" style={{ display: 'flex', flexDirection: 'column', gap: 40 }}>
           <section>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               <div>
@@ -472,8 +497,8 @@ export default function TalentPage() {
                   <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No incoming requests yet — share your listings to attract trade partners.</div>
                 </div>
               : <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {incoming.map(req => (
-                    <ReqCard key={req.id} req={req} mode="incoming" currentUserId={user?.id ?? ''} actionId={actionId} hasReviewed={reviewedIds.has(req.id)}
+                  {incoming.map((req, i) => (
+                    <ReqCard key={req.id} req={req} index={i} mode="incoming" currentUserId={user?.id ?? ''} actionId={actionId} hasReviewed={reviewedIds.has(req.id)}
                       onAccept={() => handleRequestAction(req.id, 'accepted')}
                       onReject={() => handleRequestAction(req.id, 'rejected')}
                       onOpenChat={() => req.status === 'accepted' && setChatTrade(req)}
@@ -494,8 +519,8 @@ export default function TalentPage() {
                   <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>You haven't sent any requests yet. Browse listings and find a skill to trade for.</div>
                 </div>
               : <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {outgoing.map(req => (
-                    <ReqCard key={req.id} req={req} mode="outgoing" currentUserId={user?.id ?? ''} actionId={actionId} hasReviewed={reviewedIds.has(req.id)}
+                  {outgoing.map((req, i) => (
+                    <ReqCard key={req.id} req={req} index={i} mode="outgoing" currentUserId={user?.id ?? ''} actionId={actionId} hasReviewed={reviewedIds.has(req.id)}
                       onOpenChat={() => req.status === 'accepted' && setChatTrade(req)}
                       onLeaveReview={() => { setRatingValue(5); setRatingComment(''); setRatingTrade(req) }}
                       onViewUser={setViewingUserId}
@@ -992,7 +1017,7 @@ function UserProfileModal({ userId, onClose }: { userId: string; onClose: () => 
 
 // ── Listing Card ───────────────────────────────────────────────────────────
 
-function ListingCard({ listing, action, dimmed, onViewUser }: { listing: ListingRow; action?: React.ReactNode; dimmed?: boolean; onViewUser?: () => void }) {
+function ListingCard({ listing, action, dimmed, onViewUser, index = 0 }: { listing: ListingRow; action?: React.ReactNode; dimmed?: boolean; onViewUser?: () => void; index?: number }) {
   const catColor = CATEGORY_COLORS[listing.category ?? ''] ?? '#6b7280'
   return (
     <div className="listing-card" style={{
@@ -1000,6 +1025,7 @@ function ListingCard({ listing, action, dimmed, onViewUser }: { listing: Listing
       borderTop: `3px solid ${catColor}`,
       borderRadius: 16, overflow: 'hidden', display: 'flex', flexDirection: 'column',
       opacity: dimmed ? 0.52 : 1,
+      animation: `tp-up 0.42s cubic-bezier(0.22,1,0.36,1) ${index * 0.045}s both`,
     }}>
       <div style={{ padding: '16px 18px', flex: 1, display: 'flex', flexDirection: 'column', gap: 13 }}>
         {/* Category + author */}
@@ -1048,7 +1074,7 @@ const STATUS_STYLES: Record<string, { bg: string; border: string; color: string;
   completed: { bg: 'rgba(99,102,241,0.07)',  border: 'rgba(99,102,241,0.2)',  color: '#a5b4fc',      label: 'Completed',         dot: '#a5b4fc' },
 }
 
-function ReqCard({ req, mode, currentUserId: _currentUserId, actionId, hasReviewed, onAccept, onReject, onOpenChat, onLeaveReview, onViewUser }: {
+function ReqCard({ req, mode, currentUserId: _currentUserId, actionId, hasReviewed, onAccept, onReject, onOpenChat, onLeaveReview, onViewUser, index = 0 }: {
   req: RequestRow
   mode: 'incoming' | 'outgoing'
   currentUserId: string
@@ -1059,6 +1085,7 @@ function ReqCard({ req, mode, currentUserId: _currentUserId, actionId, hasReview
   onOpenChat?: () => void
   onLeaveReview?: () => void
   onViewUser?: (uid: string) => void
+  index?: number
 }) {
   const st = STATUS_STYLES[req.status] ?? STATUS_STYLES.pending
   const busy = actionId === req.id
@@ -1072,7 +1099,7 @@ function ReqCard({ req, mode, currentUserId: _currentUserId, actionId, hasReview
     : (listing?.profile?.full_name ?? 'Someone')
 
   return (
-    <div style={{ background: 'var(--bg-card)', border: `1px solid ${st.border}`, borderRadius: 14, overflow: 'hidden' }}>
+    <div style={{ background: 'var(--bg-card)', border: `1px solid ${st.border}`, borderRadius: 14, overflow: 'hidden', animation: `tp-up 0.4s cubic-bezier(0.22,1,0.36,1) ${index * 0.055}s both` }}>
       {/* Status bar + context */}
       <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.04)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <Avatar name={mode === 'incoming' ? personName : undefined} size={34} onClick={otherUserId ? () => onViewUser?.(otherUserId) : undefined} />
