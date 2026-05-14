@@ -11,7 +11,7 @@ interface PostRow {
 }
 interface FeedPost extends PostRow {
   likeCount: number; commentCount: number; repostCount: number
-  isLiked: boolean; repostSource: PostRow | null
+  isLiked: boolean; isReposted: boolean; repostSource: PostRow | null
 }
 interface CommentRow {
   id: string; post_id: string; user_id: string; content: string; created_at: string
@@ -103,12 +103,17 @@ export default function HomePage() {
       .order('created_at', { ascending: false }).limit(60)
     if (!raw) { setLoading(false); return }
 
-    const ids = raw.map(p => p.id)
-    const rids = raw.flatMap(p => p.repost_of ? [p.repost_of as string] : [])
+    // Exclude pure repost rows (no content, no images) from the display feed
+    const displayRaw = (raw as unknown as PostRow[]).filter(p =>
+      !p.repost_of || !!p.content || (p.image_urls?.length ?? 0) > 0 || !!p.image_url
+    )
+    const ids = displayRaw.map(p => p.id)
+    const rids = displayRaw.flatMap(p => p.repost_of ? [p.repost_of as string] : [])
+
     const [lk, cm, rp, src] = await Promise.all([
       ids.length ? supabase.from('post_likes').select('post_id,user_id').in('post_id', ids) : { data: [] as any[] },
       ids.length ? supabase.from('post_comments').select('post_id').in('post_id', ids) : { data: [] as any[] },
-      ids.length ? supabase.from('posts').select('repost_of').in('repost_of', ids) : { data: [] as any[] },
+      ids.length ? supabase.from('posts').select('repost_of,user_id').in('repost_of', ids).is('content', null).is('image_url', null) : { data: [] as any[] },
       rids.length ? supabase.from('posts').select('id,user_id,content,image_url,image_urls,repost_of,created_at,profile:profiles!user_id(full_name,avatar_url)').in('id', rids) : { data: [] as any[] },
     ])
     const likeMap: Record<string, string[]> = {}
@@ -116,16 +121,23 @@ export default function HomePage() {
     const cmMap: Record<string, number> = {}
     for (const c of cm.data ?? []) cmMap[c.post_id] = (cmMap[c.post_id] ?? 0) + 1
     const rpMap: Record<string, number> = {}
-    for (const r of rp.data ?? []) if (r.repost_of) rpMap[r.repost_of] = (rpMap[r.repost_of] ?? 0) + 1
+    const myRepostSet = new Set<string>()
+    for (const r of rp.data ?? []) {
+      if (r.repost_of) {
+        rpMap[r.repost_of] = (rpMap[r.repost_of] ?? 0) + 1
+        if (user && r.user_id === user.id) myRepostSet.add(r.repost_of)
+      }
+    }
     const srcMap: Record<string, PostRow> = {}
     for (const s of (src.data ?? []) as unknown as PostRow[]) srcMap[s.id] = s
 
-    setPosts((raw as unknown as PostRow[]).map(p => ({
+    setPosts(displayRaw.map(p => ({
       ...p,
       likeCount: (likeMap[p.id] ?? []).length,
       commentCount: cmMap[p.id] ?? 0,
       repostCount: rpMap[p.id] ?? 0,
       isLiked: user ? (likeMap[p.id] ?? []).includes(user.id) : false,
+      isReposted: myRepostSet.has(p.id),
       repostSource: p.repost_of ? (srcMap[p.repost_of] ?? null) : null,
     })))
     setLoading(false)
@@ -188,9 +200,15 @@ export default function HomePage() {
   async function doRepost(pid: string) {
     if (!user || reposting) return
     setReposting(pid)
-    await supabase.from('posts').insert({ user_id: user.id, content: null, repost_of: pid })
-    setPosts(prev => prev.map(p => p.id === pid ? { ...p, repostCount: p.repostCount + 1 } : p))
-    setReposting(null); fetchFeed()
+    const already = posts.find(p => p.id === pid)?.isReposted ?? false
+    if (already) {
+      setPosts(prev => prev.map(p => p.id === pid ? { ...p, isReposted: false, repostCount: Math.max(0, p.repostCount - 1) } : p))
+      await supabase.from('posts').delete().eq('repost_of', pid).eq('user_id', user.id).is('content', null).is('image_url', null)
+    } else {
+      setPosts(prev => prev.map(p => p.id === pid ? { ...p, isReposted: true, repostCount: p.repostCount + 1 } : p))
+      await supabase.from('posts').insert({ user_id: user.id, content: null, repost_of: pid })
+    }
+    setReposting(null)
   }
   async function doDelete(pid: string) {
     if (!user || deletingId) return
@@ -719,13 +737,14 @@ function Card({
             <Bubble/>{post.commentCount > 0 && <span>{post.commentCount}</span>}
           </button>
           {/* Repost */}
-          <button className="abt" onClick={onRepost} disabled={reposting||post.user_id===uid} title="Repost" style={{
-            color:'rgba(74,222,128,.5)', background:'transparent',
+          <button className="abt" onClick={onRepost} disabled={reposting||post.user_id===uid} title={post.isReposted ? 'Unrepost' : 'Repost'} style={{
+            color: post.isReposted ? '#4ade80' : 'rgba(74,222,128,.5)',
+            background: post.isReposted ? 'rgba(74,222,128,.12)' : 'transparent',
             opacity: reposting||post.user_id===uid ? .28 : 1,
             cursor: reposting||post.user_id===uid ? 'default' : 'pointer',
           }}
             onMouseEnter={e=>{ if(!(reposting||post.user_id===uid)){e.currentTarget.style.background='rgba(74,222,128,.12)';e.currentTarget.style.color='#4ade80'} }}
-            onMouseLeave={e=>{ e.currentTarget.style.background='transparent';e.currentTarget.style.color='rgba(74,222,128,.5)' }}>
+            onMouseLeave={e=>{ e.currentTarget.style.background=post.isReposted?'rgba(74,222,128,.12)':'transparent';e.currentTarget.style.color=post.isReposted?'#4ade80':'rgba(74,222,128,.5)' }}>
             <Repeat/>{post.repostCount > 0 && <span>{post.repostCount}</span>}
           </button>
         </div>

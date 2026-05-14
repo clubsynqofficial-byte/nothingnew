@@ -16,6 +16,7 @@ import AttendPage from './pages/attend/AttendPage'
 import ProfilePage from './pages/profile/ProfilePage'
 import PositionsPage from './pages/positions/PositionsPage'
 import MessagesPage from './pages/messages/MessagesPage'
+import EventsPage from './pages/events/EventsPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
@@ -90,6 +91,7 @@ function AppRoutes() {
       <Route path="/profile" element={<ProtectedRoute><ProfilePage key="own" /></ProtectedRoute>} />
       <Route path="/profile/:userId" element={<ProtectedRoute><ProfilePageWithKey /></ProtectedRoute>} />
       <Route path="/messages" element={<ProtectedRoute><MessagesPage /></ProtectedRoute>} />
+      <Route path="/events" element={<ProtectedRoute><EventsPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/home" replace />} />
     </Routes>
   )

@@ -13,6 +13,7 @@ const STATUS_OPTIONS: { value: PresenceStatus; label: string; color: string }[] 
 const NAV_ITEMS = [
   { path: '/home', label: 'Home' },
   { path: '/discovery', label: 'Discovery' },
+  { path: '/events', label: 'Events' },
   { path: '/positions', label: 'Positions' },
   { path: '/leadership', label: 'Leadership' },
   { path: '/collaboration', label: 'Collaboration' },

@@ -7,12 +7,19 @@ import { filterText } from '../../lib/contentFilter'
 
 // ─────────────────────────────────────────── Types ──
 
+interface SocialLink {
+  type: 'instagram' | 'twitter' | 'linkedin' | 'facebook' | 'youtube' | 'website' | 'custom'
+  url: string
+  label?: string
+}
+
 interface ClubDetail {
   id: string; name: string; description: string | null
   category: string | null; logo_url: string | null
   banner_url: string | null; is_verified: boolean
   president_id: string | null; member_count: number
   created_at: string
+  social_links?: SocialLink[]
   university?: { name: string; short_name: string | null } | null
 }
 
@@ -172,7 +179,7 @@ export default function ClubProfilePage() {
   const fetchAll = useCallback(async () => {
     if (!clubId || !user) return
     const [{ data: cd }, { data: ed }, { data: md }, { data: att }, { data: td }, { data: ad }] = await Promise.all([
-      supabase.from('clubs').select('*, university:universities(name,short_name)').eq('id', clubId).single(),
+      supabase.from('clubs').select('*, social_links, university:universities(name,short_name)').eq('id', clubId).single(),
       supabase.from('events').select('*').eq('club_id', clubId).order('start_time', { ascending: true }),
       supabase.from('club_memberships')
         .select('id,role,custom_role,joined_at,profile:profiles(id,full_name,school,skills)')
@@ -370,6 +377,13 @@ export default function ClubProfilePage() {
             <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.7, margin: 0 }}>{club.description}</p>
           </div>
         )}
+
+        {/* ── Links ── */}
+        <LinksSection
+          club={club}
+          canEdit={canPost}
+          onSaved={links => setClub(c => c ? { ...c, social_links: links } : c)}
+        />
 
         {/* ── Tabs ── */}
         <div className="cp-2" style={{ display: 'flex', gap: 0, borderBottom: '1px solid rgba(87,65,68,0.3)', marginTop: 28 }}>
@@ -830,6 +844,186 @@ function CalendarSection({ events }: { events: EventRow[] }) {
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ──────────────────────────── LinksSection ──────────
+
+const LINK_TYPES: { value: SocialLink['type']; label: string; placeholder: string; icon: string }[] = [
+  { value: 'instagram', label: 'Instagram', placeholder: 'https://instagram.com/yourclub', icon: '📸' },
+  { value: 'twitter',   label: 'X / Twitter', placeholder: 'https://x.com/yourclub',      icon: '𝕏' },
+  { value: 'linkedin',  label: 'LinkedIn',  placeholder: 'https://linkedin.com/company/…', icon: '💼' },
+  { value: 'facebook',  label: 'Facebook',  placeholder: 'https://facebook.com/…',         icon: '🔵' },
+  { value: 'youtube',   label: 'YouTube',   placeholder: 'https://youtube.com/@…',         icon: '▶️' },
+  { value: 'website',   label: 'Website',   placeholder: 'https://yourclub.com',           icon: '🌐' },
+  { value: 'custom',    label: 'Custom',    placeholder: 'https://…',                      icon: '🔗' },
+]
+
+function linkIcon(type: SocialLink['type']) {
+  return LINK_TYPES.find(l => l.value === type)?.icon ?? '🔗'
+}
+function linkLabel(l: SocialLink) {
+  if (l.type === 'custom' && l.label) return l.label
+  return LINK_TYPES.find(t => t.value === l.type)?.label ?? 'Link'
+}
+
+function LinksSection({ club, canEdit, onSaved }: {
+  club: ClubDetail
+  canEdit: boolean
+  onSaved: (links: SocialLink[]) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [links, setLinks] = useState<SocialLink[]>(club.social_links ?? [])
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { setLinks(club.social_links ?? []) }, [club.social_links])
+
+  const openEdit = () => {
+    const existing = club.social_links ?? []
+    setLinks(existing.length > 0 ? existing : [{ type: 'website', url: '' }])
+    setEditing(true)
+  }
+
+  const addLink = () => setLinks(l => [...l, { type: 'website', url: '' }])
+  const removeLink = (i: number) => setLinks(l => l.filter((_, idx) => idx !== i))
+  const updateLink = (i: number, patch: Partial<SocialLink>) =>
+    setLinks(l => l.map((item, idx) => idx === i ? { ...item, ...patch } : item))
+
+  const save = async () => {
+    const valid = links.filter(l => l.url.trim())
+    setSaving(true)
+    await supabase.from('clubs').update({ social_links: valid }).eq('id', club.id)
+    onSaved(valid)
+    setLinks(valid)
+    setSaving(false)
+    setEditing(false)
+  }
+
+  const hasLinks = (club.social_links ?? []).length > 0
+
+  if (!hasLinks && !canEdit) return null
+
+  return (
+    <div className="cp-1" style={{ marginTop: 16 }}>
+      {/* Display mode */}
+      {!editing && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          {hasLinks && (club.social_links ?? []).map((l, i) => (
+            <a
+              key={i}
+              href={l.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '6px 14px', borderRadius: 9999,
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                color: 'var(--text-secondary)', fontSize: 13, fontWeight: 500,
+                textDecoration: 'none', transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.background = 'rgba(255,255,255,0.08)'; (e.currentTarget as HTMLAnchorElement).style.borderColor = 'rgba(255,255,255,0.2)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.background = 'rgba(255,255,255,0.04)'; (e.currentTarget as HTMLAnchorElement).style.borderColor = 'rgba(255,255,255,0.1)' }}
+            >
+              <span>{linkIcon(l.type)}</span>
+              <span>{linkLabel(l)}</span>
+            </a>
+          ))}
+          {canEdit && (
+            <button
+              onClick={openEdit}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                padding: '6px 14px', borderRadius: 9999,
+                background: 'transparent',
+                border: '1px dashed rgba(87,65,68,0.5)',
+                color: 'var(--text-muted)', fontSize: 12, fontWeight: 500,
+                cursor: 'pointer', transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--accent)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(87,65,68,0.5)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-muted)' }}
+            >
+              + {hasLinks ? 'Edit Links' : 'Add Links'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Edit mode */}
+      {editing && (
+        <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '18px 20px' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 14 }}>Club Links</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {links.map((l, i) => (
+              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <select
+                  value={l.type}
+                  onChange={e => updateLink(i, { type: e.target.value as SocialLink['type'] })}
+                  style={{
+                    padding: '7px 10px', borderRadius: 8, fontSize: 12,
+                    background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+                    color: 'var(--text-primary)', flexShrink: 0, width: 120,
+                  }}
+                >
+                  {LINK_TYPES.map(t => <option key={t.value} value={t.value}>{t.icon} {t.label}</option>)}
+                </select>
+                {l.type === 'custom' && (
+                  <input
+                    value={l.label ?? ''}
+                    onChange={e => updateLink(i, { label: e.target.value })}
+                    placeholder="Label"
+                    style={{
+                      padding: '7px 10px', borderRadius: 8, fontSize: 12, width: 100, flexShrink: 0,
+                      background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+                      color: 'var(--text-primary)', outline: 'none',
+                    }}
+                  />
+                )}
+                <input
+                  value={l.url}
+                  onChange={e => updateLink(i, { url: e.target.value })}
+                  placeholder={LINK_TYPES.find(t => t.value === l.type)?.placeholder ?? 'https://…'}
+                  style={{
+                    flex: 1, padding: '7px 10px', borderRadius: 8, fontSize: 12,
+                    background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+                    color: 'var(--text-primary)', outline: 'none',
+                  }}
+                />
+                <button
+                  onClick={() => removeLink(i)}
+                  style={{ background: 'transparent', border: 'none', color: '#f87171', fontSize: 16, cursor: 'pointer', flexShrink: 0, padding: '4px 6px', lineHeight: 1 }}
+                >×</button>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+            <button
+              onClick={addLink}
+              style={{
+                padding: '7px 16px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                background: 'rgba(138,21,56,0.12)', border: '1px solid rgba(138,21,56,0.3)',
+                color: 'var(--accent)', cursor: 'pointer',
+              }}
+            >
+              + Add Another Link
+            </button>
+            <button
+              onClick={save}
+              disabled={saving}
+              style={{ padding: '7px 18px', borderRadius: 8, fontSize: 12, fontWeight: 700, background: 'var(--accent)', border: 'none', color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.6 : 1 }}
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              onClick={() => { setLinks(club.social_links ?? []); setEditing(false) }}
+              style={{ padding: '7px 14px', borderRadius: 8, fontSize: 12, background: 'transparent', border: '1px solid rgba(87,65,68,0.3)', color: 'var(--text-muted)', cursor: 'pointer' }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
