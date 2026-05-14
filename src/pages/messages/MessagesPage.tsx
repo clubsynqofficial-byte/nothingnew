@@ -339,7 +339,7 @@ export default function MessagesPage() {
     const groupIds = (memberships ?? []).map(m => m.group_id as string)
     if (!groupIds.length) { setGroupChats([]); setLoadingGroups(false); return }
     const [{ data: groups }, { data: allMembers }, { data: lastMsgs }] = await Promise.all([
-      supabase.from('group_chats').select('id, name, created_by, last_message_at').in('id', groupIds).order('last_message_at', { ascending: false }),
+      supabase.from('group_chats').select('id, name, created_by, last_message_at, created_at').in('id', groupIds).order('last_message_at', { ascending: false }),
       supabase.from('group_chat_members').select('group_id, user_id, profile:profiles(id,full_name,avatar_url)').in('group_id', groupIds),
       supabase.from('group_messages').select('group_id, content, created_at, sender_id').in('group_id', groupIds).order('created_at', { ascending: false }),
     ])
@@ -753,7 +753,7 @@ export default function MessagesPage() {
                         <div key={msg.id} style={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start', alignItems: 'flex-end', gap: 8, marginBottom: sameAsNext ? 3 : 12, animation: isOpt ? 'mp-msg-in 0.2s ease both' : 'mp-msg-in 0.22s cubic-bezier(0.22,1,0.36,1) both' }}>
                           {!isMine && (
                             <div style={{ width: 28, flexShrink: 0, marginBottom: 2 }}>
-                              {!sameAsNext && (senderProfile ? <Av url={senderProfile.avatar_url} name={senderProfile.full_name} size={28} /> : <Av url={activeProfile?.avatar_url} name={activeProfile?.full_name} size={28} />)}
+                              {!sameAsNext && (senderProfile ? <Av url={(senderProfile as any).avatar_url ?? null} name={senderProfile.full_name} size={28} /> : <Av url={activeProfile?.avatar_url} name={activeProfile?.full_name} size={28} />)}
                             </div>
                           )}
                           <div style={{ maxWidth: '68%', display: 'flex', flexDirection: 'column', alignItems: isMine ? 'flex-end' : 'flex-start', gap: 2 }}>
