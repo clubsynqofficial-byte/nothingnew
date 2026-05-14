@@ -378,7 +378,6 @@ export default function MessagesPage() {
       .from('club_memberships')
       .select('user_id, role, custom_role, club_id, club:clubs(id,name), profile:profiles(id,full_name,avatar_url,last_seen_at)')
       .in('club_id', myLeaderClubIds)
-      .or('role.eq.president,custom_role.not.is.null')
       .neq('user_id', user.id)
     const leaderUserIds = [...new Set((leaderMems ?? []).map(m => m.user_id as string))]
     const { data: convs } = leaderUserIds.length > 0
@@ -713,7 +712,7 @@ export default function MessagesPage() {
                           <Av url={l.profile.avatar_url} name={l.profile.full_name} size={24} />
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.profile.full_name ?? 'Leader'}</div>
-                            <div style={{ fontSize: 10, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 3 }}>{l.role === 'president' ? <IcCrown size={9} /> : <IcStar size={9} />} {l.customRole ?? (l.role === 'president' ? 'President' : 'Officer')} · {l.clubName}</div>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 3 }}>{l.role === 'president' ? <IcCrown size={9} /> : l.customRole ? <IcStar size={9} /> : null} {l.role === 'president' ? 'President' : l.customRole ?? 'Member'} · {l.clubName}</div>
                           </div>
                         </label>
                       ))}
@@ -746,16 +745,16 @@ export default function MessagesPage() {
 
               {/* Club leaders */}
               {(loadingLeaders ? false : shownLeaders.length > 0) && (
-                <div style={{ padding: '12px 16px 4px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Club Leaders</div>
+                <div style={{ padding: '12px 16px 4px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Club Members</div>
               )}
               {loadingLeaders ? <ShimmerList /> : shownLeaders.length === 0 && shownGroups.length === 0 && !creatingGroup ? (
-                <EmptyList icon={<IcCrown size={38} />} title={q ? 'No results' : 'No co-leaders found'} sub={q ? `Nothing for "${search}"` : 'This shows your fellow officers once you become a president or officer of a club.'} />
+                <EmptyList icon={<IcCrown size={38} />} title={q ? 'No results' : 'No members found'} sub={q ? `Nothing for "${search}"` : 'This shows all members of your club once you become a president or officer.'} />
               ) : shownLeaders.map((l, i) => (
                 <div key={l.userId} className={`thread-row${activeLeader?.userId === l.userId ? ' active' : ''}`} onClick={() => openLeader(l)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', animationDelay: `${i * 0.04}s` }}>
                   <div style={{ position: 'relative', flexShrink: 0 }}><Av url={l.profile.avatar_url} name={l.profile.full_name} size={44} /><div style={{ position: 'absolute', bottom: 1, right: 1 }}><StatusDot userId={l.userId} lastSeenAt={l.profile.last_seen_at} connectedSet={connectedSet} statusMap={statusMap} size={12} /></div></div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}><span style={{ fontSize: 13, fontWeight: l.unread > 0 ? 700 : 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 130 }}>{l.profile.full_name ?? 'Leader'}</span>{l.lastAt && <span style={{ fontSize: 10, color: 'var(--text-muted)', opacity: 0.7 }}>{reltime(l.lastAt)}</span>}</div>
-                    <div style={{ fontSize: 10.5, color: l.role === 'president' ? 'var(--gold)' : 'var(--accent)', fontWeight: 600, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>{l.role === 'president' ? <IcCrown size={10} /> : <IcStar size={10} />}{l.role === 'president' ? 'President' : l.customRole ?? 'Officer'} · {l.clubName}</div>
+                    <div style={{ fontSize: 10.5, color: l.role === 'president' ? 'var(--gold)' : l.customRole ? 'var(--accent)' : 'var(--text-muted)', fontWeight: 600, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>{l.role === 'president' ? <IcCrown size={10} /> : l.customRole ? <IcStar size={10} /> : null}{l.role === 'president' ? 'President' : l.customRole ?? 'Member'} · {l.clubName}</div>
                     <div style={{ fontSize: 12, color: l.unread > 0 ? 'var(--text-secondary)' : 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.lastMsg ?? <span style={{ fontStyle: 'italic', opacity: 0.5 }}>Send a message</span>}</div>
                   </div>
                   {l.unread > 0 && <span style={{ minWidth: 18, height: 18, fontSize: 10, fontWeight: 900, background: 'var(--accent)', color: '#fff', borderRadius: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px', flexShrink: 0 }}>{l.unread}</span>}
@@ -792,7 +791,7 @@ export default function MessagesPage() {
                 )}
                 {activeCollab && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--accent)', background: 'rgba(138,21,56,0.15)', border: '1px solid rgba(138,21,56,0.25)', borderRadius: 6, padding: '2px 8px', display: 'flex', alignItems: 'center', gap: 5 }}><IcHandshake size={11} /> Collaborator</span>{activeCollab.projectTitle && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{activeCollab.projectTitle}</span>}</div>}
                 {activeTrade && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 10.5, fontWeight: 700, color: '#4ade80', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 6, padding: '2px 8px', display: 'flex', alignItems: 'center', gap: 5 }}><IcZap size={11} /> {activeTrade.skillOffered}</span><span style={{ fontSize: 11, color: 'var(--text-muted)', opacity: 0.5 }}>→</span><span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{activeTrade.skillWanted}</span>{activeTrade.status === 'completed' && <span style={{ fontSize: 9.5, fontWeight: 700, color: '#a5b4fc', background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.22)', borderRadius: 6, padding: '2px 7px' }}>COMPLETED</span>}</div>}
-                {activeLeader && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 10.5, fontWeight: 700, color: activeLeader.role === 'president' ? 'var(--gold)' : 'var(--accent)', background: 'rgba(138,21,56,0.12)', border: '1px solid rgba(138,21,56,0.2)', borderRadius: 6, padding: '2px 8px', display: 'flex', alignItems: 'center', gap: 5 }}>{activeLeader.role === 'president' ? <IcCrown size={11} /> : <IcStar size={11} />}{activeLeader.role === 'president' ? 'President' : activeLeader.customRole ?? 'Officer'}</span><span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{activeLeader.clubName}</span></div>}
+                {activeLeader && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 10.5, fontWeight: 700, color: activeLeader.role === 'president' ? 'var(--gold)' : activeLeader.customRole ? 'var(--accent)' : 'var(--text-muted)', background: activeLeader.role === 'president' || activeLeader.customRole ? 'rgba(138,21,56,0.12)' : 'rgba(255,255,255,0.05)', border: `1px solid ${activeLeader.role === 'president' || activeLeader.customRole ? 'rgba(138,21,56,0.2)' : 'rgba(255,255,255,0.08)'}`, borderRadius: 6, padding: '2px 8px', display: 'flex', alignItems: 'center', gap: 5 }}>{activeLeader.role === 'president' ? <IcCrown size={11} /> : activeLeader.customRole ? <IcStar size={11} /> : null}{activeLeader.role === 'president' ? 'President' : activeLeader.customRole ?? 'Member'}</span><span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{activeLeader.clubName}</span></div>}
               </div>
 
               {!activeGroup && (

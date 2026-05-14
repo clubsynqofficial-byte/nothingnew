@@ -6,11 +6,9 @@ import { useAuth } from '../../contexts/AuthContext'
 
 interface Props {
   children: ReactNode
-  searchPlaceholder?: string
-  onSearch?: (q: string) => void
 }
 
-export default function AppLayout({ children, searchPlaceholder, onSearch }: Props) {
+export default function AppLayout({ children }: Props) {
   const [navOpen, setNavOpen] = useState(false)
   const { user } = useAuth()
 
@@ -24,11 +22,7 @@ export default function AppLayout({ children, searchPlaceholder, onSearch }: Pro
 
   return (
     <div className="app-shell">
-      <TopBar
-        searchPlaceholder={searchPlaceholder}
-        onSearch={onSearch}
-        onMenuToggle={() => setNavOpen(o => !o)}
-      />
+      <TopBar onMenuToggle={() => setNavOpen(o => !o)} />
       <SideNav open={navOpen} onClose={() => setNavOpen(false)} />
       <main className="main-content">
         {children}

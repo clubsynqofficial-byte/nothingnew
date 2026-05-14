@@ -51,24 +51,29 @@ interface ClubRequest {
   created_at: string
 }
 
+interface PermissionedClub {
+  club: Club
+  permissions: string[]
+}
+
 export default function LeadershipPage() {
   const { user } = useAuth()
   const [club, setClub]       = useState<Club | null | undefined>(undefined)
   const [request, setRequest] = useState<ClubRequest | null | undefined>(undefined)
+  const [permClubs, setPermClubs] = useState<PermissionedClub[]>([])
+  const [selectedClubId, setSelectedClubId] = useState<string | null>(null)
 
   async function fetchClub() {
     if (!user) return
 
-    // Check for an existing approved club
-    const { data: clubData } = await supabase
-      .from('clubs')
-      .select('*, university:universities(*)')
-      .eq('president_id', user.id)
-      .maybeSingle()
+    const [presRes, memRes] = await Promise.all([
+      supabase.from('clubs').select('*, university:universities(*)').eq('president_id', user.id).maybeSingle(),
+      supabase.from('club_memberships').select('permissions, club:clubs(*, university:universities(*))').eq('user_id', user.id).neq('role', 'president'),
+    ])
 
-    setClub(clubData ?? null)
+    const clubData = presRes.data ?? null
+    setClub(clubData)
 
-    // If no club yet, check for a pending or rejected request
     if (!clubData) {
       const { data: reqData } = await supabase
         .from('club_requests')
@@ -77,9 +82,11 @@ export default function LeadershipPage() {
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
-
       setRequest(reqData ?? null)
     }
+
+    const withPerms = ((memRes.data ?? []) as any[]).filter(m => (m.permissions?.length ?? 0) > 0)
+    setPermClubs(withPerms.map(m => ({ club: m.club, permissions: m.permissions })))
   }
 
   useEffect(() => { fetchClub() }, [user])
@@ -103,8 +110,55 @@ export default function LeadershipPage() {
     )
   }
 
-  // Has an approved club
-  if (club) return <CommandCenter club={club} />
+  // Build list of all clubs this user can access
+  const allAccessible: Array<{ club: Club; permissions?: string[] }> = [
+    ...(club ? [{ club }] : []),
+    ...permClubs.map(pc => ({ club: pc.club, permissions: pc.permissions })),
+  ]
+
+  if (allAccessible.length > 0) {
+    const activeId = selectedClubId ?? allAccessible[0].club.id
+    const active = allAccessible.find(a => a.club.id === activeId) ?? allAccessible[0]
+
+    const switcher = allAccessible.length > 1 ? (
+      <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.07em', textTransform: 'uppercase', alignSelf: 'center', marginRight: 4 }}>Managing:</span>
+        {allAccessible.map(a => {
+          const isSel = a.club.id === activeId
+          return (
+            <button
+              key={a.club.id}
+              onClick={() => setSelectedClubId(a.club.id)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 7,
+                padding: '6px 14px', borderRadius: 9999, fontSize: 12, fontWeight: 600,
+                border: isSel ? '1px solid rgba(138,21,56,0.5)' : '1px solid rgba(255,255,255,0.1)',
+                background: isSel ? 'rgba(138,21,56,0.18)' : 'rgba(255,255,255,0.03)',
+                color: isSel ? 'var(--text-primary)' : 'var(--text-muted)',
+                cursor: 'pointer', transition: 'all 0.15s', fontFamily: 'inherit',
+              }}
+            >
+              {a.club.logo_url && <img src={a.club.logo_url} style={{ width: 16, height: 16, borderRadius: 4, objectFit: 'cover' }} />}
+              {a.club.name}
+              {!a.permissions && (
+                <span style={{ fontSize: 9, fontWeight: 800, color: 'var(--gold)', letterSpacing: '0.06em', background: 'rgba(233,193,118,0.12)', border: '1px solid rgba(233,193,118,0.25)', borderRadius: 9999, padding: '1px 6px' }}>PRESIDENT</span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+    ) : null
+
+    return (
+      <CommandCenter
+        key={active.club.id}
+        club={active.club}
+        userPermissions={active.permissions}
+        onDeleted={() => { setClub(null); setRequest(null); setSelectedClubId(null) }}
+        clubSwitcher={switcher}
+      />
+    )
+  }
 
   // Has a pending request — show waiting screen
   if (request?.status === 'pending') {

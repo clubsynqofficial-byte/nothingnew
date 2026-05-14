@@ -36,8 +36,17 @@ interface MembershipRow {
   user_id: string
   role: 'member' | 'officer' | 'president'
   custom_role: string | null
+  permissions: string[]
   profile: { full_name: string | null; school: string | null; email: string | null } | null
 }
+
+const PRIVILEGES = [
+  { key: 'remove_members',     label: 'Remove Members',     icon: '✕' },
+  { key: 'accept_members',     label: 'Accept Requests',    icon: '✓' },
+  { key: 'edit_appearance',    label: 'Edit Appearance',    icon: '🖼' },
+  { key: 'manage_events',      label: 'Manage Events',      icon: '📅' },
+  { key: 'post_announcements', label: 'Post Announcements', icon: '📢' },
+] as const
 
 interface ProfileSearchRow {
   id: string
@@ -48,10 +57,15 @@ interface ProfileSearchRow {
 
 interface Props {
   club: Club
+  onDeleted?: () => void
+  userPermissions?: string[]
+  clubSwitcher?: React.ReactNode
 }
 
-export default function CommandCenter({ club }: Props) {
+export default function CommandCenter({ club, onDeleted, userPermissions, clubSwitcher }: Props) {
   const { user, profile } = useAuth()
+  const isPresident = userPermissions === undefined
+  const canDo = (perm: string) => isPresident || (userPermissions ?? []).includes(perm)
   const [stats, setStats] = useState<Stats>({ memberCount: 0, eventCount: 0, totalAttendees: 0, threadCount: 0, newMembersThisMonth: 0 })
   const [events, setEvents] = useState<Event[]>([])
   const [announcements, setAnnouncements] = useState<AnnouncementRow[]>([])
@@ -105,6 +119,12 @@ export default function CommandCenter({ club }: Props) {
   const [postingEvtAnn, setPostingEvtAnn] = useState(false)
   const [evtAnnouncements, setEvtAnnouncements] = useState<EventAnnouncementRow[]>([])
 
+  // Delete club state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleteConfirmName, setDeleteConfirmName] = useState('')
+  const [deletingClub, setDeletingClub] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+
   useEffect(() => { fetchAll() }, [club.id])
 
   // Live attendee count — increments the matching event when anyone checks in via QR
@@ -141,7 +161,7 @@ export default function CommandCenter({ club }: Props) {
         .order('created_at', { ascending: false })
         .limit(20),
       supabase.from('club_memberships')
-        .select('id, user_id, role, custom_role, profile:profiles(full_name, school, email)')
+        .select('id, user_id, role, custom_role, permissions, profile:profiles(full_name, school, email)')
         .eq('club_id', club.id)
         .order('joined_at', { ascending: true }),
     ])
@@ -379,9 +399,16 @@ export default function CommandCenter({ club }: Props) {
 
   async function handleRoleChange(membershipId: string, newRole: 'officer' | 'member', customRole?: string) {
     setActionLoading(membershipId)
-    await supabase.from('club_memberships').update({ role: newRole, custom_role: customRole ?? null }).eq('id', membershipId)
-    setTeamMembers(prev => prev.map(m => m.id === membershipId ? { ...m, role: newRole, custom_role: customRole ?? null } : m))
+    const updates: Record<string, unknown> = { role: newRole, custom_role: customRole ?? null }
+    if (!customRole) updates.permissions = []
+    await supabase.from('club_memberships').update(updates).eq('id', membershipId)
+    setTeamMembers(prev => prev.map(m => m.id === membershipId ? { ...m, role: newRole, custom_role: customRole ?? null, permissions: customRole ? m.permissions : [] } : m))
     setActionLoading(null)
+  }
+
+  async function handlePermissionsChange(membershipId: string, permissions: string[]) {
+    setTeamMembers(prev => prev.map(m => m.id === membershipId ? { ...m, permissions } : m))
+    await supabase.from('club_memberships').update({ permissions }).eq('id', membershipId)
   }
 
   async function handleRemoveMember(membershipId: string) {
@@ -392,7 +419,25 @@ export default function CommandCenter({ club }: Props) {
     setActionLoading(null)
   }
 
-  const [activeTab, setActiveTab] = useState<'events'|'team'|'announcements'|'positions'|'settings'>('events')
+  async function handleDeleteClub() {
+    if (deleteConfirmName.trim() !== club.name) return
+    setDeletingClub(true)
+    setDeleteError('')
+    const { error } = await supabase.from('clubs').delete().eq('id', club.id)
+    if (error) {
+      setDeleteError('Failed to delete club. Please try again.')
+      setDeletingClub(false)
+      return
+    }
+    onDeleted?.()
+  }
+
+  const defaultTab = isPresident || canDo('manage_events') ? 'events'
+    : canDo('post_announcements') ? 'announcements'
+    : canDo('remove_members') || canDo('accept_members') ? 'team'
+    : canDo('edit_appearance') ? 'settings'
+    : 'events'
+  const [activeTab, setActiveTab] = useState<string>(defaultTab)
 
   const avgAttendees = stats.eventCount > 0 ? (stats.totalAttendees / stats.eventCount).toFixed(1) : '—'
   const liveCount = events.filter(e => e.is_live).length
@@ -420,12 +465,12 @@ export default function CommandCenter({ club }: Props) {
   )
 
   const TABS = [
-    { key: 'events',        label: 'Events',        badge: events.length },
-    { key: 'team',          label: 'Team',           badge: teamMembers.length },
-    { key: 'announcements', label: 'Announcements',  badge: announcements.length },
-    { key: 'positions',     label: 'Positions',      badge: null },
-    { key: 'settings',      label: 'Settings',       badge: null },
-  ] as const
+    { key: 'events',        label: 'Events',        badge: events.length,        visible: isPresident || canDo('manage_events') },
+    { key: 'team',          label: 'Team',           badge: teamMembers.length,   visible: isPresident || canDo('remove_members') || canDo('accept_members') },
+    { key: 'announcements', label: 'Announcements',  badge: announcements.length, visible: isPresident || canDo('post_announcements') },
+    { key: 'positions',     label: 'Positions',      badge: null,                 visible: isPresident },
+    { key: 'settings',      label: 'Settings',       badge: null,                 visible: isPresident || canDo('edit_appearance') },
+  ].filter(t => t.visible)
 
   return (
     <div className="page-content" style={{ maxWidth: 1100 }}>
@@ -435,6 +480,9 @@ export default function CommandCenter({ club }: Props) {
         .cc-tab { font-family:inherit; cursor:pointer; transition:all 0.18s; border:none; }
         .cc-tab:hover { color:var(--text-primary) !important; }
       `}</style>
+
+      {/* ── Club switcher (injected by LeadershipPage when user has access to multiple clubs) ── */}
+      {clubSwitcher}
 
       {/* ── Header ── */}
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:28, flexWrap:'wrap', gap:16 }}>
@@ -449,14 +497,16 @@ export default function CommandCenter({ club }: Props) {
               </span>
             )}
           </div>
-          <p style={{ fontSize:14, color:'var(--text-muted)' }}>Manage your organization's legacy, reach, and standing.</p>
+          <p style={{ fontSize:14, color:'var(--text-muted)' }}>{isPresident ? "Manage your organization's legacy, reach, and standing." : `You have limited access to ${club.name}.`}</p>
         </div>
-        <button
-          onClick={() => { setActiveTab('events'); setShowEventForm(v => !v) }}
-          style={{ background:'var(--accent)', border:'none', borderRadius:10, padding:'11px 22px', color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer', boxShadow:'0 0 20px rgba(138,21,56,0.3)', fontFamily:'inherit' }}
-        >
-          {showEventForm ? '✕ Cancel' : '+ Create Event'}
-        </button>
+        {(isPresident || canDo('manage_events')) && (
+          <button
+            onClick={() => { setActiveTab('events'); setShowEventForm(v => !v) }}
+            style={{ background:'var(--accent)', border:'none', borderRadius:10, padding:'11px 22px', color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer', boxShadow:'0 0 20px rgba(138,21,56,0.3)', fontFamily:'inherit' }}
+          >
+            {showEventForm ? '✕ Cancel' : '+ Create Event'}
+          </button>
+        )}
       </div>
 
       {/* ── Stats (untouched) ── */}
@@ -590,12 +640,14 @@ export default function CommandCenter({ club }: Props) {
               {stats.memberCount} MEMBER{stats.memberCount !== 1 ? 'S' : ''}
             </span>
           </div>
-          <div style={{ position:'relative', marginBottom:20 }}>
-            <span style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', fontSize:14, color:'var(--text-muted)', pointerEvents:'none' }}>🔍</span>
-            <input value={memberSearch} onChange={e => setMemberSearch(e.target.value)} placeholder="Search by name or email to find and add members…" style={{ ...fi, paddingLeft:36, fontSize:13 }} />
-            {memberSearch && <button onClick={() => { setMemberSearch(''); setSearchProfiles([]) }} style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:'transparent', border:'none', color:'var(--text-muted)', cursor:'pointer', fontSize:16, lineHeight:1, padding:'2px 4px' }}>✕</button>}
-          </div>
-          {memberSearch.trim() && (
+          {isPresident && (
+            <div style={{ position:'relative', marginBottom:20 }}>
+              <span style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', fontSize:14, color:'var(--text-muted)', pointerEvents:'none' }}>🔍</span>
+              <input value={memberSearch} onChange={e => setMemberSearch(e.target.value)} placeholder="Search by name or email to find and add members…" style={{ ...fi, paddingLeft:36, fontSize:13 }} />
+              {memberSearch && <button onClick={() => { setMemberSearch(''); setSearchProfiles([]) }} style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:'transparent', border:'none', color:'var(--text-muted)', cursor:'pointer', fontSize:16, lineHeight:1, padding:'2px 4px' }}>✕</button>}
+            </div>
+          )}
+          {isPresident && memberSearch.trim() && (
             <div style={{ marginBottom: teamMembers.length > 0 ? 20 : 0 }}>
               <div style={{ fontSize:10, fontWeight:700, letterSpacing:'0.1em', color:'var(--text-muted)', textTransform:'uppercase', marginBottom:10 }}>
                 {searchLoading ? 'Searching…' : `${searchProfiles.length} result${searchProfiles.length !== 1 ? 's' : ''}`}
@@ -606,10 +658,10 @@ export default function CommandCenter({ club }: Props) {
               {searchProfiles.map(p => {
                 const existing = teamMembers.find(m => m.user_id === p.id)
                 const isLoading = actionLoading === (existing?.id ?? p.id)
-                const isPresident = p.id === club.president_id
+                const isPres = p.id === club.president_id
                 return existing ? (
-                  <ExistingMemberRow key={p.id} profile={p} membership={existing} isLoading={isLoading} onRoleChange={handleRoleChange} onRemove={handleRemoveMember} />
-                ) : isPresident ? (
+                  <ExistingMemberRow key={p.id} profile={p} membership={existing} isLoading={isLoading} canRemove={isPresident || canDo('remove_members')} canEditRole={isPresident} onRoleChange={handleRoleChange} onRemove={handleRemoveMember} onPermissionsChange={handlePermissionsChange} />
+                ) : isPres ? (
                   <div key={p.id} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 14px', borderRadius:10, marginBottom:6, background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.06)' }}>
                     <TeamAvatar name={p.full_name} />
                     <div style={{ flex:1, minWidth:0 }}>
@@ -625,7 +677,7 @@ export default function CommandCenter({ club }: Props) {
             </div>
           )}
           {teamMembers.length === 0 && !memberSearch.trim() ? (
-            <div style={{ textAlign:'center', padding:'28px 0', color:'var(--text-muted)', fontSize:13 }}>No members yet — search above to add your first team member.</div>
+            <div style={{ textAlign:'center', padding:'28px 0', color:'var(--text-muted)', fontSize:13 }}>{isPresident ? 'No members yet — search above to add your first team member.' : 'No members found.'}</div>
           ) : teamMembers.length > 0 && (
             <>
               {!memberSearch.trim() && <div style={{ fontSize:10, fontWeight:700, letterSpacing:'0.1em', color:'var(--text-muted)', textTransform:'uppercase', marginBottom:10 }}>Current Team</div>}
@@ -641,7 +693,7 @@ export default function CommandCenter({ club }: Props) {
                       <span style={{ fontSize:10, fontWeight:700, letterSpacing:'0.06em', padding:'3px 10px', borderRadius:9999, background:'rgba(233,193,118,0.15)', color:'var(--gold)', flexShrink:0 }}>PRESIDENT</span>
                     </div>
                   )
-                  return <ExistingMemberRow key={m.id} profile={{ id:m.user_id, full_name:m.profile?.full_name??null, school:m.profile?.school??null, email:m.profile?.email??null }} membership={m} isLoading={actionLoading===m.id} onRoleChange={handleRoleChange} onRemove={handleRemoveMember} />
+                  return <ExistingMemberRow key={m.id} profile={{ id:m.user_id, full_name:m.profile?.full_name??null, school:m.profile?.school??null, email:m.profile?.email??null }} membership={m} isLoading={actionLoading===m.id} canRemove={isPresident || canDo('remove_members')} canEditRole={isPresident} onRoleChange={handleRoleChange} onRemove={handleRemoveMember} onPermissionsChange={handlePermissionsChange} />
                 })}
               </div>
             </>
@@ -769,12 +821,73 @@ export default function CommandCenter({ club }: Props) {
             )}
           </div>
 
-          {/* Application Form Builder */}
-          <ClubFormBuilder club={club} />
+          {/* Application Form Builder — president only */}
+          {isPresident && <ClubFormBuilder club={club} />}
+
+          {/* Danger Zone — presidents only */}
+          {isPresident && user?.id === club.president_id && (
+            <div style={{ background: 'rgba(239,68,68,0.04)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 16, padding: 24, marginTop: 20 }}>
+              <div style={{ marginBottom: 16 }}>
+                <h2 style={{ fontSize: 15, fontWeight: 700, color: '#f87171', marginBottom: 4 }}>Danger Zone</h2>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                  Permanently delete <strong style={{ color: 'var(--text-primary)' }}>{club.name}</strong>. This action cannot be undone — all members, events, announcements, and posts will be removed.
+                </p>
+              </div>
+              <button
+                onClick={() => { setShowDeleteConfirm(true); setDeleteConfirmName(''); setDeleteError('') }}
+                style={{ padding: '8px 18px', borderRadius: 9, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', color: '#f87171', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.18)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.6)' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.35)' }}
+              >
+                Delete Club
+              </button>
+            </div>
+          )}
         </div>
       )}
 
       {/* ── Modals (always rendered) ── */}
+      {showDeleteConfirm && createPortal(
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(14px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 18, padding: 28, width: '100%', maxWidth: 420, boxShadow: '0 24px 60px rgba(0,0,0,0.6)' }}>
+            <div style={{ fontSize: 28, marginBottom: 12, textAlign: 'center' }}>⚠️</div>
+            <h3 style={{ fontSize: 17, fontWeight: 800, color: '#f87171', marginBottom: 8, textAlign: 'center' }}>Delete {club.name}?</h3>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.65, marginBottom: 20, textAlign: 'center' }}>
+              This will permanently delete the club and all its data. Type the club name to confirm.
+            </p>
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 6 }}>
+                Type <strong style={{ color: 'var(--text-primary)', fontFamily: 'monospace' }}>{club.name}</strong> to confirm
+              </div>
+              <input
+                value={deleteConfirmName}
+                onChange={e => setDeleteConfirmName(e.target.value)}
+                placeholder={club.name}
+                autoFocus
+                style={{ ...fi, borderColor: deleteConfirmName && deleteConfirmName !== club.name ? 'rgba(239,68,68,0.5)' : undefined }}
+              />
+            </div>
+            {deleteError && <div style={{ fontSize: 12, color: '#f87171', marginBottom: 10 }}>{deleteError}</div>}
+            <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deletingClub}
+                style={{ flex: 1, padding: '10px', borderRadius: 9, background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteClub}
+                disabled={deleteConfirmName.trim() !== club.name || deletingClub}
+                style={{ flex: 1, padding: '10px', borderRadius: 9, background: deleteConfirmName.trim() === club.name ? 'rgba(239,68,68,0.85)' : 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.4)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: deleteConfirmName.trim() === club.name && !deletingClub ? 'pointer' : 'default', fontFamily: 'inherit', opacity: deleteConfirmName.trim() !== club.name || deletingClub ? 0.5 : 1, transition: 'all 0.15s' }}
+              >
+                {deletingClub ? 'Deleting…' : 'Delete Forever'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
       {bannerCropFile && <BannerCropModal file={bannerCropFile} onSave={handleBannerCropSave} onClose={() => setBannerCropFile(null)} />}
       {qrEvent && <QRModal event={qrEvent} onClose={() => setQrEvent(null)} />}
       {certEvent && <CertificateModal event={certEvent} club={club} members={teamMembers} onClose={() => setCertEvent(null)} />}
@@ -981,39 +1094,97 @@ function NewMemberRow({
 // ─── ExistingMemberRow ──────────────────────────────────────────────────────
 
 function ExistingMemberRow({
-  profile, membership, isLoading, onRoleChange, onRemove,
+  profile, membership, isLoading, canRemove = true, canEditRole = true, onRoleChange, onRemove, onPermissionsChange,
 }: {
   profile: ProfileSearchRow
   membership: MembershipRow
   isLoading: boolean
+  canRemove?: boolean
+  canEditRole?: boolean
   onRoleChange: (membershipId: string, role: 'officer' | 'member', customRole?: string) => void
   onRemove: (membershipId: string) => void
+  onPermissionsChange: (membershipId: string, permissions: string[]) => void
 }) {
+  const [hasCustomRole, setHasCustomRole] = useState(!!membership.custom_role)
+  const [perms, setPerms] = useState<string[]>(membership.permissions ?? [])
+
+  const togglePerm = (key: string) => {
+    const next = perms.includes(key) ? perms.filter(p => p !== key) : [...perms, key]
+    setPerms(next)
+    onPermissionsChange(membership.id, next)
+  }
+
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 12,
-      padding: '10px 14px', borderRadius: 10, marginBottom: 6,
+      borderRadius: 10, marginBottom: 6,
       background: 'rgba(138,21,56,0.06)', border: '1px solid rgba(138,21,56,0.2)',
+      overflow: 'hidden',
     }}>
-      <TeamAvatar name={profile.full_name} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{profile.full_name ?? 'Unknown'}</div>
-        {profile.school && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.school}</div>}
-        {profile.email && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.email}</div>}
+      {/* Main row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px' }}>
+        <TeamAvatar name={profile.full_name} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{profile.full_name ?? 'Unknown'}</div>
+          {profile.school && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.school}</div>}
+          {profile.email && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.email}</div>}
+        </div>
+        {canEditRole ? (
+          <RoleTags
+            key={`${membership.id}-${membership.role}-${membership.custom_role}`}
+            role={membership.role as 'officer' | 'member'}
+            customRole={membership.custom_role}
+            disabled={isLoading}
+            onChange={(r, c) => {
+              const gaining = !!c && !hasCustomRole
+              setHasCustomRole(!!c)
+              if (!c) { setPerms([]); }
+              if (gaining) setPerms([])
+              onRoleChange(membership.id, r, c)
+            }}
+          />
+        ) : (
+          <span style={{ fontSize: 11, fontWeight: 600, color: membership.custom_role ? 'var(--accent)' : 'var(--text-muted)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 9999, padding: '3px 10px', flexShrink: 0 }}>
+            {membership.custom_role ?? 'Member'}
+          </span>
+        )}
+        {canRemove && (
+          <button
+            onClick={() => onRemove(membership.id)}
+            disabled={isLoading}
+            title="Remove from club"
+            style={{ background: 'transparent', border: '1px solid rgba(87,65,68,0.3)', borderRadius: 6, padding: '4px 9px', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', flexShrink: 0, opacity: isLoading ? 0.5 : 1 }}
+          >{isLoading ? '…' : '✕'}</button>
+        )}
       </div>
-      <RoleTags
-        key={`${membership.id}-${membership.role}-${membership.custom_role}`}
-        role={membership.role as 'officer' | 'member'}
-        customRole={membership.custom_role}
-        disabled={isLoading}
-        onChange={(r, c) => onRoleChange(membership.id, r, c)}
-      />
-      <button
-        onClick={() => onRemove(membership.id)}
-        disabled={isLoading}
-        title="Remove from club"
-        style={{ background: 'transparent', border: '1px solid rgba(87,65,68,0.3)', borderRadius: 6, padding: '4px 9px', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', flexShrink: 0, opacity: isLoading ? 0.5 : 1 }}
-      >{isLoading ? '…' : '✕'}</button>
+
+      {/* Privileges panel — only for custom-role members, editable by president */}
+      {hasCustomRole && canEditRole && (
+        <div style={{ padding: '10px 14px 12px', borderTop: '1px solid rgba(138,21,56,0.15)', background: 'rgba(0,0,0,0.12)' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>Privileges</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {PRIVILEGES.map(p => {
+              const active = perms.includes(p.key)
+              return (
+                <button
+                  key={p.key}
+                  onClick={() => togglePerm(p.key)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    padding: '4px 11px', borderRadius: 9999, fontSize: 11, fontWeight: 600,
+                    border: active ? '1px solid rgba(74,222,128,0.45)' : '1px solid rgba(87,65,68,0.3)',
+                    background: active ? 'rgba(74,222,128,0.1)' : 'transparent',
+                    color: active ? '#4ade80' : 'var(--text-muted)',
+                    cursor: 'pointer', transition: 'all 0.15s', fontFamily: 'inherit',
+                  }}
+                >
+                  <span style={{ fontSize: 10 }}>{active ? '✓' : '+'}</span>
+                  {p.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1139,10 +1310,10 @@ function CertificateModal({
             <div style={{ textAlign: 'center', padding: '32px 0' }}>
               <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
               <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
-                Sent to Google Sheets!
+                Certificates Sent!
               </div>
               <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-                {selected.size} certificate{selected.size !== 1 ? 's' : ''} dispatched to Google Sheets.
+                {selected.size} certificate{selected.size !== 1 ? 's' : ''} have been successfully dispatched.
               </div>
               <button onClick={onClose} style={{
                 marginTop: 24, padding: '10px 28px',

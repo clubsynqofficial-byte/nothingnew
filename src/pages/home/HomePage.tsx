@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -76,6 +77,7 @@ export default function HomePage() {
   const [postingC, setPostingC]     = useState<string | null>(null)
   const [reposting, setReposting]   = useState<string | null>(null)
   const [menuId, setMenuId]         = useState<string | null>(null)
+  const [openPostId, setOpenPostId] = useState<string | null>(null)
 
   const h = new Date().getHours()
   const greeting = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
@@ -95,6 +97,14 @@ export default function HomePage() {
     window.addEventListener('click', h)
     return () => window.removeEventListener('click', h)
   }, [menuId])
+
+  useEffect(() => {
+    if (!openPostId) return
+    if (!comments[openPostId]) loadComments(openPostId)
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpenPostId(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [openPostId])
 
   async function fetchFeed() {
     setLoading(true)
@@ -439,6 +449,7 @@ export default function HomePage() {
                   onCChange={t => setCTxts(prev=>({...prev,[p.id]:t}))}
                   onComment={() => doComment(p.id)}
                   onProfile={uid => nav(`/profile/${uid}`)}
+                  onOpen={() => setOpenPostId(p.id)}
                 />
               ))}
             </div>
@@ -546,6 +557,30 @@ export default function HomePage() {
         </div>
       </div>
     </div>
+
+    {/* ── Post modal ── */}
+    {openPostId && (() => {
+      const mp = posts.find(p => p.id === openPostId)
+      if (!mp) return null
+      return createPortal(
+        <PostModal
+          post={mp}
+          uid={user?.id ?? null}
+          myProfile={profile}
+          comments={comments[openPostId] ?? []}
+          cTxt={cTxts[openPostId] ?? ''}
+          postingC={postingC === openPostId}
+          reposting={reposting === openPostId}
+          onClose={() => setOpenPostId(null)}
+          onLike={() => doLike(openPostId, mp.isLiked)}
+          onRepost={() => doRepost(openPostId)}
+          onCChange={t => setCTxts(prev => ({ ...prev, [openPostId]: t }))}
+          onComment={() => doComment(openPostId)}
+          onProfile={uid => { setOpenPostId(null); nav(`/profile/${uid}`) }}
+        />,
+        document.body
+      )
+    })()}
     </>
   )
 }
@@ -620,7 +655,7 @@ function ImageCarousel({ urls }: { urls: string[] }) {
 function Card({
   post, idx, uid, myProfile, threadOpen, comments, cTxt, postingC,
   reposting, menuOpen, onMenu, onLike, onRepost, onDelete, onThread,
-  onCChange, onComment, onProfile,
+  onCChange, onComment, onProfile, onOpen,
 }: {
   post: FeedPost; idx: number; uid: string | null
   myProfile: {full_name?:string|null;avatar_url?:string|null}|null
@@ -629,6 +664,7 @@ function Card({
   onMenu:(e:React.MouseEvent)=>void
   onLike:()=>void; onRepost:()=>void; onDelete:()=>void; onThread:()=>void
   onCChange:(t:string)=>void; onComment:()=>void; onProfile:(uid:string)=>void
+  onOpen:()=>void
 }) {
   const cinRef = useRef<HTMLInputElement>(null)
   const effectiveImgs = (p: PostRow) => (p.image_urls && p.image_urls.length > 0) ? p.image_urls : (p.image_url ? [p.image_url] : [])
@@ -651,16 +687,16 @@ function Card({
   useEffect(() => { if (threadOpen) setTimeout(()=>cinRef.current?.focus(),80) }, [threadOpen])
 
   return (
-    <div className="pcard" style={{ animation:`fadeUp .36s cubic-bezier(.22,1,.36,1) both`, animationDelay:`${Math.min(idx,6)*50}ms` }}>
+    <div className="pcard" style={{ animation:`fadeUp .36s cubic-bezier(.22,1,.36,1) both`, animationDelay:`${Math.min(idx,6)*50}ms` }} onClick={onOpen}>
       <div className="pcard-pad" style={{ padding:'16px 18px 12px' }}>
 
         {/* Header */}
         <div style={{ display:'flex', alignItems:'flex-start', gap:12, marginBottom: dContent||dImgs.length ? 11 : 0 }}>
-          <Av url={dp?.avatar_url??null} name={dp?.full_name??null} size={44} onClick={()=>onProfile(dUid)}/>
+          <Av url={dp?.avatar_url??null} name={dp?.full_name??null} size={44} onClick={e=>{e.stopPropagation();onProfile(dUid)}}/>
 
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:2 }}>
-              <span onClick={()=>onProfile(dUid)} style={{ fontSize:14.5, fontWeight:800, color:'var(--text-primary)', cursor:'pointer', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', transition:'color .15s' }}
+              <span onClick={e=>{e.stopPropagation();onProfile(dUid)}} style={{ fontSize:14.5, fontWeight:800, color:'var(--text-primary)', cursor:'pointer', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', transition:'color .15s' }}
                 onMouseEnter={e=>e.currentTarget.style.color='var(--accent)'} onMouseLeave={e=>e.currentTarget.style.color='var(--text-primary)'}>
                 {dp?.full_name??'User'}
               </span>
@@ -716,7 +752,7 @@ function Card({
         )}
 
         {/* Actions */}
-        <div style={{ display:'flex', alignItems:'center', gap:2, paddingTop:8, borderTop:'1px solid rgba(255,255,255,.05)' }}>
+        <div onClick={e => e.stopPropagation()} style={{ display:'flex', alignItems:'center', gap:2, paddingTop:8, borderTop:'1px solid rgba(255,255,255,.05)' }}>
           {/* Like */}
           <button className="abt" onClick={onLike} title="Like" style={{
             color: post.isLiked ? '#f87171' : 'rgba(248,113,113,.55)',
@@ -752,7 +788,7 @@ function Card({
 
       {/* Thread */}
       {threadOpen && (
-        <div className="thread-pad" style={{ borderTop:'1px solid rgba(255,255,255,.07)', background:'rgba(0,0,0,.2)', padding:'15px 18px 18px' }}>
+        <div onClick={e => e.stopPropagation()} className="thread-pad" style={{ borderTop:'1px solid rgba(255,255,255,.07)', background:'rgba(0,0,0,.2)', padding:'15px 18px 18px' }}>
           <div style={{ display:'flex', gap:11, marginBottom:14 }}>
             <Av url={myProfile?.avatar_url??null} name={myProfile?.full_name??null} size={34}/>
             <div style={{ flex:1, display:'flex', alignItems:'center', gap:8, background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.09)', borderRadius:9999, padding:'0 6px 0 14px', transition:'border-color .15s,box-shadow .15s' }}>
@@ -804,9 +840,282 @@ function Card({
   )
 }
 
+// ─── Post Modal ───────────────────────────────────────────────────────────────
+function PostModal({
+  post, uid, myProfile, comments, cTxt, postingC, reposting,
+  onClose, onLike, onRepost, onCChange, onComment, onProfile,
+}: {
+  post: FeedPost; uid: string | null
+  myProfile: { full_name?: string | null; avatar_url?: string | null } | null
+  comments: CommentRow[]; cTxt: string; postingC: boolean; reposting: boolean
+  onClose: () => void
+  onLike: () => void; onRepost: () => void
+  onCChange: (t: string) => void; onComment: () => void; onProfile: (uid: string) => void
+}) {
+  const cinRef = useRef<HTMLInputElement>(null)
+  const effectiveImgs = (p: PostRow) => (p.image_urls && p.image_urls.length > 0) ? p.image_urls : (p.image_url ? [p.image_url] : [])
+  const isRO = !!post.repost_of && !post.content && effectiveImgs(post).length === 0
+  const dp = isRO ? post.repostSource?.profile : post.profile
+  const dUid = isRO ? (post.repostSource?.user_id ?? post.user_id) : post.user_id
+  const dTime = isRO ? (post.repostSource?.created_at ?? post.created_at) : post.created_at
+  const dContent = isRO ? post.repostSource?.content : post.content
+  const dImgs = isRO && post.repostSource ? effectiveImgs(post.repostSource) : effectiveImgs(post)
+  const [lPop, setLPop] = useState(false)
+  const prevLiked = useRef(post.isLiked)
+  useEffect(() => {
+    if (!prevLiked.current && post.isLiked) { setLPop(true); setTimeout(() => setLPop(false), 380) }
+    prevLiked.current = post.isLiked
+  }, [post.isLiked])
+  useEffect(() => { setTimeout(() => cinRef.current?.focus(), 160) }, [])
+
+  const statNum = (n: number) => n > 999 ? `${(n/1000).toFixed(1)}k` : n
+
+  return (
+    <div className="pm-overlay" onClick={onClose} style={{
+      position: 'fixed', inset: 0, zIndex: 9000,
+      background: 'rgba(4,1,3,0.88)', backdropFilter: 'blur(22px) saturate(160%)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '20px 16px',
+      animation: 'pmBgIn .2s ease both',
+    }}>
+      <style>{`
+        @keyframes pmBgIn    { from{opacity:0}                                       to{opacity:1} }
+        @keyframes pmCardIn  { from{opacity:0;transform:translateY(32px) scale(.96)} to{opacity:1;transform:none} }
+        @keyframes pmSheetIn { from{transform:translateY(100%)}                      to{transform:translateY(0)} }
+        .pm-comment-in { animation: fadeUp .26s cubic-bezier(.22,1,.36,1) both }
+        .pm-reply-row:hover .pm-reply-name { color:var(--accent)!important }
+        .pm-handle { display:none }
+        @media(max-width:700px){
+          .pm-overlay  { align-items:flex-end!important; padding:0!important }
+          .pm-card     { border-radius:22px 22px 0 0!important; max-width:100%!important; max-height:94svh!important; max-height:94vh!important; animation:pmSheetIn .32s cubic-bezier(.22,1,.36,1) both!important }
+          .pm-grid     { flex-direction:column!important }
+          .pm-left     { width:100%!important; max-height:44vh!important; padding:16px 16px 12px!important }
+          .pm-right    { border-left:none!important; border-top:1px solid rgba(255,255,255,.07)!important; min-height:0!important }
+          .pm-handle   { display:block!important }
+          .pm-close    { top:10px!important; right:12px!important; width:38px!important; height:38px!important }
+        }
+      `}</style>
+
+      {/* Modal card */}
+      <div className="pm-card" onClick={e => e.stopPropagation()} style={{
+        width: '100%', maxWidth: 860,
+        maxHeight: '92vh',
+        display: 'flex', flexDirection: 'column',
+        background: 'radial-gradient(ellipse at 20% 0%, rgba(138,21,56,.18) 0%, transparent 55%), linear-gradient(170deg,#16090d 0%,#0d050a 100%)',
+        border: '1px solid rgba(138,21,56,.28)',
+        borderRadius: 24,
+        boxShadow: '0 0 0 1px rgba(138,21,56,.08), 0 50px 130px rgba(0,0,0,.92), inset 0 1px 0 rgba(255,255,255,.06)',
+        overflow: 'hidden',
+        animation: 'pmCardIn .26s cubic-bezier(.22,1,.36,1) both',
+        position: 'relative',
+      }}>
+
+        {/* Drag handle — mobile only */}
+        <div className="pm-handle" style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255,255,255,.18)', margin: '10px auto 2px', flexShrink: 0 }} />
+
+        {/* Floating close */}
+        <button className="pm-close" onClick={onClose} style={{
+          position: 'absolute', top: 14, right: 14, zIndex: 10,
+          width: 34, height: 34, borderRadius: '50%',
+          background: 'rgba(255,255,255,.07)', backdropFilter: 'blur(8px)',
+          border: '1px solid rgba(255,255,255,.12)',
+          color: 'rgba(255,255,255,.6)', fontSize: 15, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          transition: 'all .15s', fontFamily: 'inherit',
+        }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.14)'; e.currentTarget.style.color = '#fff' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,.07)'; e.currentTarget.style.color = 'rgba(255,255,255,.6)' }}
+        >✕</button>
+
+        {/* Two-column body */}
+        <div className="pm-grid" style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+
+          {/* ── LEFT: Post ─────────────────────────────────── */}
+          <div className="pm-left" style={{ flex: '0 0 auto', width: '50%', display: 'flex', flexDirection: 'column', overflowY: 'auto', padding: '28px 26px 24px' }}>
+
+            {/* Author row */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 13, marginBottom: 16 }}>
+              <div style={{ position: 'relative', flexShrink: 0 }}>
+                <Av url={dp?.avatar_url ?? null} name={dp?.full_name ?? null} size={50}
+                  onClick={e => { e.stopPropagation(); onProfile(dUid) }} />
+                {/* connector dot */}
+                {dContent && <div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: 54, width: 2, height: 'calc(100% + 12px)', background: 'linear-gradient(180deg,rgba(138,21,56,.4),transparent)', borderRadius: 1 }} />}
+              </div>
+              <div style={{ flex: 1, minWidth: 0, paddingTop: 2 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, flexWrap: 'wrap' }}>
+                  <span onClick={() => onProfile(dUid)} style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)', cursor: 'pointer', transition: 'color .15s', letterSpacing: '-.2px' }}
+                    onMouseEnter={e => e.currentTarget.style.color = 'var(--accent)'}
+                    onMouseLeave={e => e.currentTarget.style.color = 'var(--text-primary)'}>
+                    {dp?.full_name ?? 'User'}
+                  </span>
+                </div>
+                <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,.32)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
+                  {new Date(dTime).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} · {reltime(dTime)}
+                </div>
+              </div>
+            </div>
+
+            {/* Content */}
+            {dContent && (
+              <p style={{ fontSize: 17.5, color: 'var(--text-primary)', lineHeight: 1.82, margin: '0 0 18px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontWeight: 450, letterSpacing: '.01em' }}>
+                {dContent}
+              </p>
+            )}
+
+            {/* Images */}
+            {dImgs.length > 0 && (
+              <div style={{ marginBottom: 18, borderRadius: 16, overflow: 'hidden' }}>
+                <ImageCarousel urls={dImgs} />
+              </div>
+            )}
+
+            {/* Quoted repost */}
+            {!isRO && post.repostSource && (
+              <div style={{ marginBottom: 18, borderRadius: 16, padding: '14px 16px', background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.08)', position: 'relative', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: 3, background: 'linear-gradient(180deg,var(--accent),transparent)', borderRadius: '3px 0 0 3px' }} />
+                <div style={{ display: 'flex', gap: 10, marginBottom: 8, paddingLeft: 6 }}>
+                  <Av url={post.repostSource.profile?.avatar_url ?? null} name={post.repostSource.profile?.full_name ?? null} size={26}
+                    onClick={e => { e.stopPropagation(); onProfile(post.repostSource!.user_id) }} />
+                  <div>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-primary)' }}>{post.repostSource.profile?.full_name ?? 'User'}</div>
+                    <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,.3)' }}>{reltime(post.repostSource.created_at)}</div>
+                  </div>
+                </div>
+                {post.repostSource.content && <p style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.65, margin: '0 0 0 6px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{post.repostSource.content}</p>}
+              </div>
+            )}
+
+            {/* Stats bar */}
+            {(post.likeCount > 0 || post.commentCount > 0 || post.repostCount > 0) && (
+              <div style={{ display: 'flex', gap: 20, padding: '13px 0', borderTop: '1px solid rgba(255,255,255,.06)', borderBottom: '1px solid rgba(255,255,255,.06)', marginBottom: 14 }}>
+                {post.likeCount > 0 && <div style={{ fontSize: 13 }}><span style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: 15 }}>{statNum(post.likeCount)}</span><span style={{ color: 'rgba(255,255,255,.38)', marginLeft: 4 }}>Like{post.likeCount !== 1 ? 's' : ''}</span></div>}
+                {post.commentCount > 0 && <div style={{ fontSize: 13 }}><span style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: 15 }}>{statNum(post.commentCount)}</span><span style={{ color: 'rgba(255,255,255,.38)', marginLeft: 4 }}>Repl{post.commentCount !== 1 ? 'ies' : 'y'}</span></div>}
+                {post.repostCount > 0 && <div style={{ fontSize: 13 }}><span style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: 15 }}>{statNum(post.repostCount)}</span><span style={{ color: 'rgba(255,255,255,.38)', marginLeft: 4 }}>Repost{post.repostCount !== 1 ? 's' : ''}</span></div>}
+              </div>
+            )}
+
+            {/* Action buttons */}
+            <div style={{ display: 'flex', gap: 6 }}>
+              {/* Like */}
+              <button className="abt" onClick={onLike} title="Like" style={{
+                color: post.isLiked ? '#f87171' : 'rgba(248,113,113,.5)',
+                background: post.isLiked ? 'rgba(248,113,113,.13)' : 'rgba(255,255,255,.04)',
+                border: `1px solid ${post.isLiked ? 'rgba(248,113,113,.3)' : 'rgba(255,255,255,.07)'}`,
+                padding: '8px 16px', borderRadius: 12, gap: 7,
+              }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(248,113,113,.18)'; e.currentTarget.style.color = '#f87171' }}
+                onMouseLeave={e => { e.currentTarget.style.background = post.isLiked ? 'rgba(248,113,113,.13)' : 'rgba(255,255,255,.04)'; e.currentTarget.style.color = post.isLiked ? '#f87171' : 'rgba(248,113,113,.5)' }}>
+                <span style={{ display: 'inline-flex', animation: lPop ? 'pop .38s ease' : 'none' }}><Heart on={post.isLiked} /></span>
+                <span style={{ fontSize: 13 }}>{post.isLiked ? 'Liked' : 'Like'}</span>
+              </button>
+              {/* Repost */}
+              <button className="abt" onClick={onRepost} disabled={reposting || post.user_id === uid}
+                title={post.isReposted ? 'Unrepost' : 'Repost'} style={{
+                  color: post.isReposted ? '#4ade80' : 'rgba(74,222,128,.5)',
+                  background: post.isReposted ? 'rgba(74,222,128,.1)' : 'rgba(255,255,255,.04)',
+                  border: `1px solid ${post.isReposted ? 'rgba(74,222,128,.28)' : 'rgba(255,255,255,.07)'}`,
+                  opacity: reposting || post.user_id === uid ? .3 : 1,
+                  cursor: reposting || post.user_id === uid ? 'default' : 'pointer',
+                  padding: '8px 16px', borderRadius: 12, gap: 7,
+                }}
+                onMouseEnter={e => { if (!(reposting || post.user_id === uid)) { e.currentTarget.style.background = 'rgba(74,222,128,.16)'; e.currentTarget.style.color = '#4ade80' } }}
+                onMouseLeave={e => { e.currentTarget.style.background = post.isReposted ? 'rgba(74,222,128,.1)' : 'rgba(255,255,255,.04)'; e.currentTarget.style.color = post.isReposted ? '#4ade80' : 'rgba(74,222,128,.5)' }}>
+                <Repeat /><span style={{ fontSize: 13 }}>{post.isReposted ? 'Reposted' : 'Repost'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* ── RIGHT: Comments ─────────────────────────────── */}
+          <div className="pm-right" style={{
+            flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column',
+            borderLeft: '1px solid rgba(255,255,255,.07)',
+            maxHeight: '92vh',
+          }}>
+            {/* Replies header */}
+            <div style={{ padding: '20px 22px 14px', borderBottom: '1px solid rgba(255,255,255,.06)', flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Bubble />
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {comments.length === 0 ? 'Replies' : `${comments.length} Repl${comments.length === 1 ? 'y' : 'ies'}`}
+                </span>
+              </div>
+            </div>
+
+            {/* Comment list — scrollable */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '14px 22px 10px' }}>
+              {comments.length === 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 10, opacity: .45, paddingBottom: 30 }}>
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-muted)' }}>
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                  </svg>
+                  <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.6 }}>
+                    No replies yet.<br/>Be the first to respond.
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {comments.map((c, ci) => (
+                    <div key={c.id} className="pm-comment-in pm-reply-row" style={{ display: 'flex', gap: 11, padding: '10px 8px', borderRadius: 14, transition: 'background .12s', animationDelay: `${Math.min(ci, 8) * 30}ms` }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,.03)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      {/* Avatar + thread line */}
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
+                        <Av url={c.profile?.avatar_url ?? null} name={c.profile?.full_name ?? null} size={34}
+                          onClick={e => { e.stopPropagation(); onProfile(c.user_id) }} />
+                        {ci < comments.length - 1 && (
+                          <div style={{ width: 2, flex: 1, marginTop: 5, background: 'linear-gradient(180deg,rgba(255,255,255,.1),transparent)', borderRadius: 1, minHeight: 16 }} />
+                        )}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0, paddingTop: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
+                          <span className="pm-reply-name" onClick={() => onProfile(c.user_id)} style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', cursor: 'pointer', transition: 'color .15s' }}>
+                            {c.profile?.full_name ?? 'User'}
+                          </span>
+                          <span style={{ fontSize: 10.5, color: 'rgba(255,255,255,.28)' }}>{reltime(c.created_at)}</span>
+                        </div>
+                        <div style={{ fontSize: 13.5, color: 'rgba(255,255,255,.72)', lineHeight: 1.68, wordBreak: 'break-word' }}>{c.content}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Reply input — sticky bottom */}
+            <div style={{ flexShrink: 0, padding: '12px 18px 16px', borderTop: '1px solid rgba(255,255,255,.07)', background: 'rgba(0,0,0,.3)', backdropFilter: 'blur(8px)' }}>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <Av url={myProfile?.avatar_url ?? null} name={myProfile?.full_name ?? null} size={34} />
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.09)', borderRadius: 14, padding: '0 8px 0 14px', transition: 'border-color .15s, box-shadow .15s' }}>
+                  <input ref={cinRef} value={cTxt}
+                    onChange={e => onCChange(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onComment() } }}
+                    placeholder="Add a reply…" maxLength={300}
+                    style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 13.5, color: 'var(--text-primary)', fontFamily: 'inherit', padding: '11px 0' }}
+                    onFocus={e => { const p = e.currentTarget.parentElement!; p.style.borderColor = 'rgba(138,21,56,.5)'; p.style.boxShadow = '0 0 0 3px rgba(138,21,56,.1)' }}
+                    onBlur={e => { const p = e.currentTarget.parentElement!; p.style.borderColor = 'rgba(255,255,255,.09)'; p.style.boxShadow = 'none' }}
+                  />
+                  {cTxt.length > 200 && <span style={{ fontSize: 11, color: cTxt.length > 280 ? '#f87171' : 'var(--text-muted)', flexShrink: 0 }}>{300 - cTxt.length}</span>}
+                  <button onClick={onComment} disabled={postingC || !cTxt.trim()} style={{
+                    padding: '7px 16px', borderRadius: 10, border: 'none', fontFamily: 'inherit', flexShrink: 0,
+                    background: cTxt.trim() ? 'linear-gradient(135deg,#8a1538,#c0185c)' : 'transparent',
+                    color: cTxt.trim() ? '#fff' : 'rgba(255,255,255,.25)',
+                    fontSize: 12.5, fontWeight: 700, cursor: cTxt.trim() ? 'pointer' : 'default',
+                    opacity: postingC ? .6 : 1, transition: 'all .15s',
+                    boxShadow: cTxt.trim() ? '0 2px 12px rgba(138,21,56,.45)' : 'none',
+                  }}>{postingC ? '…' : 'Reply'}</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Avatar ───────────────────────────────────────────────────────────────────
 function Av({ url, name, size, onClick, ring=false }: {
-  url:string|null; name:string|null; size:number; onClick?:()=>void; ring?:boolean
+  url:string|null; name:string|null; size:number; onClick?:(e:React.MouseEvent)=>void; ring?:boolean
 }) {
   const initials = (name??'?').trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase()
   return (

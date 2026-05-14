@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, type ChangeEvent } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
@@ -38,15 +38,12 @@ function timeAgo(iso: string): string {
 }
 
 interface Props {
-  searchPlaceholder?: string
-  onSearch?: (query: string) => void
   onMenuToggle?: () => void
 }
 
-export default function TopBar({ searchPlaceholder = 'Search...', onSearch, onMenuToggle }: Props) {
+export default function TopBar({ onMenuToggle }: Props) {
   const { profile, user } = useAuth()
   const navigate = useNavigate()
-  const [query, setQuery] = useState('')
   const [notifs, setNotifs] = useState<Notification[]>([])
   const [open, setOpen] = useState(false)
   const [toasts, setToasts] = useState<Toast[]>([])
@@ -116,11 +113,6 @@ export default function TopBar({ searchPlaceholder = 'Search...', onSearch, onMe
     }
     setOpen(false)
     if (n.link) navigate(n.link)
-  }
-
-  function handleChange(e: ChangeEvent<HTMLInputElement>) {
-    setQuery(e.target.value)
-    onSearch?.(e.target.value)
   }
 
   const toastPortal = createPortal(
@@ -213,16 +205,6 @@ export default function TopBar({ searchPlaceholder = 'Search...', onSearch, onMe
         }}>
           CLUBSYNQ
         </span>
-      </div>
-
-      {/* Search */}
-      <div className="top-bar-search" style={{ flex: 1, maxWidth: 480, position: 'relative' }}>
-        <svg style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', opacity: 0.4 }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-        <input type="text" placeholder={searchPlaceholder} value={query} onChange={handleChange}
-          style={{ width: '100%', background: 'rgba(52,39,40,0.5)', border: '1px solid rgba(87,65,68,0.3)', borderRadius: 9999, padding: '9px 16px 9px 40px', color: 'var(--text-primary)', fontSize: 14, outline: 'none' }}
-        />
       </div>
 
       {/* Right side */}
