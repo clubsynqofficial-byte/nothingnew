@@ -18,6 +18,13 @@ import PositionsPage from './pages/positions/PositionsPage'
 import MessagesPage from './pages/messages/MessagesPage'
 import EventsPage from './pages/events/EventsPage'
 
+function RootRoute() {
+  const { session, loading } = useAuth()
+  if (loading) return <LoadingScreen />
+  if (session) return <Navigate to="/home" replace />
+  return <LandingPage />
+}
+
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
   if (loading) return <LoadingScreen />
@@ -76,7 +83,7 @@ function ProfilePageWithKey() {
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<LandingPage />} />
+      <Route path="/" element={<RootRoute />} />
       <Route path="/signin" element={<PublicRoute><SignIn /></PublicRoute>} />
       <Route path="/signup" element={<PublicRoute><SignUp /></PublicRoute>} />
       <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />

@@ -184,8 +184,33 @@ export default function TopBar({ searchPlaceholder = 'Search...', onSearch, onMe
       </button>
 
       {/* Logo */}
-      <div className="top-bar-logo-space" style={{ width: 216, flexShrink: 0 }}>
-        <span style={{ fontSize: 18, fontWeight: 900, letterSpacing: '0.18em', color: '#fff', textTransform: 'uppercase' }}>
+      <div
+        className="top-bar-logo-space"
+        onClick={() => navigate('/home')}
+        style={{
+          width: 216, flexShrink: 0,
+          display: 'flex', alignItems: 'center', gap: 10,
+          cursor: 'pointer', userSelect: 'none',
+          transition: 'opacity 0.18s',
+        }}
+        onMouseEnter={e => (e.currentTarget.style.opacity = '0.8')}
+        onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+      >
+        <img
+          src="/clubsynqlogo.png"
+          alt="ClubSynq"
+          style={{
+            height: 32, width: 'auto', objectFit: 'contain', flexShrink: 0,
+            borderRadius: 6,
+            filter: 'drop-shadow(0 0 6px rgba(138,21,56,0.5))',
+          }}
+        />
+        <span style={{
+          fontSize: 17, fontWeight: 900, letterSpacing: '0.2em',
+          color: '#fff', textTransform: 'uppercase',
+          background: 'linear-gradient(135deg, #fff 0%, rgba(229,124,154,0.9) 100%)',
+          WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+        }}>
           CLUBSYNQ
         </span>
       </div>

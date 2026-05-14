@@ -126,6 +126,17 @@ const CSS = `
 @keyframes mp-msg-in  { from { opacity:0; transform:translateY(10px) scale(0.97); } to { opacity:1; transform:translateY(0) scale(1); } }
 @keyframes mp-shimmer { from{background-position:-600px 0} to{background-position:600px 0} }
 @keyframes mp-float   { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+@keyframes ic-glow    { 0%,100%{filter:drop-shadow(0 0 2px currentColor)} 50%{filter:drop-shadow(0 0 8px currentColor)} }
+@keyframes ic-draw    { 0%{stroke-dasharray:0 300;opacity:0.2} 100%{stroke-dasharray:300 0;opacity:1} }
+@keyframes ic-spin    { from{transform:rotate(-8deg)} to{transform:rotate(8deg)} }
+@keyframes ic-zap     { 0%,100%{opacity:1;transform:scale(1)} 45%{opacity:0.6;transform:scale(0.88)} 55%{opacity:1;transform:scale(1.15)} }
+@keyframes ic-crown   { 0%,100%{transform:translateY(0) scale(1)} 50%{transform:translateY(-3px) scale(1.08)} }
+
+.ic-glow-anim  { animation: ic-glow 2.5s ease-in-out infinite; }
+.ic-zap-anim   { animation: ic-zap  1.8s ease-in-out infinite; }
+.ic-crown-anim { animation: ic-crown 3s ease-in-out infinite; }
+.ic-float-anim { animation: mp-float 3.5s ease-in-out infinite; }
+.ic-draw-anim  { stroke-dasharray:300; stroke-dashoffset:0; animation: ic-draw 0.7s cubic-bezier(0.22,1,0.36,1) both; }
 
 .mp-shimmer { background:linear-gradient(90deg,rgba(41,28,30,.55) 25%,rgba(72,46,54,.8) 50%,rgba(41,28,30,.55) 75%); background-size:600px 100%; animation:mp-shimmer 1.4s ease-in-out infinite; border-radius:8px; }
 .mp-panel   { animation: mp-pop 0.28s cubic-bezier(0.22,1,0.36,1) both; }
@@ -154,6 +165,75 @@ const CSS = `
 @media (min-width: 769px) { .left-panel { display: flex !important; } .right-panel { display: flex !important; } .mobile-back-btn { display: none !important; } }
 @media (max-width: 768px) { .mobile-back-btn { display: flex !important; } }
 `
+
+// ── SVG Icons ────────────────────────────────────────────────────────────────
+
+function IcHandshake({ size = 14, active = false }: { size?: number; active?: boolean }) {
+  return (
+    <svg className={active ? 'ic-glow-anim' : ''} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20.42 4.58a5.4 5.4 0 0 0-7.65 0l-.77.78-.77-.78a5.4 5.4 0 0 0-7.65 7.65l1.06 1.06L12 21.23l7.77-7.77 1.06-1.06a5.4 5.4 0 0 0 -.41-7.82z"/>
+      <path d="M9 11l1.5 1.5L15 8"/>
+    </svg>
+  )
+}
+
+function IcUsers({ size = 14, active = false }: { size?: number; active?: boolean }) {
+  return (
+    <svg className={active ? 'ic-glow-anim' : ''} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+      <circle cx="9" cy="7" r="4"/>
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+      <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+    </svg>
+  )
+}
+
+function IcZap({ size = 14, active = false }: { size?: number; active?: boolean }) {
+  return (
+    <svg className={active ? 'ic-zap-anim' : ''} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+    </svg>
+  )
+}
+
+function IcCrown({ size = 14, active = false }: { size?: number; active?: boolean }) {
+  return (
+    <svg className={active ? 'ic-crown-anim' : ''} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7z"/>
+      <line x1="5" y1="20" x2="19" y2="20"/>
+    </svg>
+  )
+}
+
+function IcStar({ size = 11 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+    </svg>
+  )
+}
+
+
+function IcMessageBig({ size = 56, animated = false }: { size?: number; animated?: boolean }) {
+  return (
+    <svg className={animated ? 'ic-float-anim ic-draw-anim' : ''} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)', opacity: 0.7 }}>
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      <line x1="9" y1="10" x2="15" y2="10" strokeOpacity="0.5"/>
+      <line x1="9" y1="13" x2="13" y2="13" strokeOpacity="0.35"/>
+    </svg>
+  )
+}
+
+function IcUsersBig({ size = 56, animated = false }: { size?: number; animated?: boolean }) {
+  return (
+    <svg className={animated ? 'ic-float-anim ic-draw-anim' : ''} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)', opacity: 0.7 }}>
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+      <circle cx="9" cy="7" r="4"/>
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+      <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+    </svg>
+  )
+}
 
 // ── Page ──────────────────────────────────────────────────────────────────
 
@@ -551,12 +631,15 @@ export default function MessagesPage() {
           {/* Tabs */}
           <div style={{ display: 'flex', background: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: 3, marginBottom: 12, gap: 3 }}>
             {([
-              { key: 'collabs' as MsgTab, label: 'Collabs',  icon: '🤝', badge: totalCollabUnread },
-              { key: 'trades'  as MsgTab, label: 'Trades',   icon: '⚡', badge: totalTradeUnread  },
-              { key: 'leaders' as MsgTab, label: 'Leaders',  icon: '🏛️', badge: totalLeaderUnread  },
-            ]).map(({ key, label, icon, badge }) => (
-              <button key={key} className={`mp-tab${tab === key ? ' active' : ''}`} onClick={() => { setTab(key); setSearch(''); setCreatingGroup(false) }} style={{ flex: 1, padding: '7px 4px', borderRadius: 10, border: 'none', background: 'transparent', color: tab === key ? '#fff' : 'var(--text-muted)', fontSize: 10.5, fontWeight: tab === key ? 700 : 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                <span>{icon}</span>{label}
+              { key: 'collabs' as MsgTab, label: 'Collabs', badge: totalCollabUnread },
+              { key: 'trades'  as MsgTab, label: 'Trades',  badge: totalTradeUnread  },
+              { key: 'leaders' as MsgTab, label: 'Leaders', badge: totalLeaderUnread  },
+            ]).map(({ key, label, badge }) => (
+              <button key={key} className={`mp-tab${tab === key ? ' active' : ''}`} onClick={() => { setTab(key); setSearch(''); setCreatingGroup(false) }} style={{ flex: 1, padding: '7px 4px', borderRadius: 10, border: 'none', background: 'transparent', color: tab === key ? '#fff' : 'var(--text-muted)', fontSize: 10.5, fontWeight: tab === key ? 700 : 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                {key === 'collabs' && <IcUsers size={13} active={tab === 'collabs'} />}
+                {key === 'trades'  && <IcZap   size={13} active={tab === 'trades'}  />}
+                {key === 'leaders' && <IcCrown size={13} active={tab === 'leaders'} />}
+                {label}
                 {badge > 0 && <span style={{ minWidth: 16, height: 16, fontSize: 9, fontWeight: 900, background: 'var(--accent)', color: '#fff', borderRadius: 9999, padding: '0 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>{badge}</span>}
               </button>
             ))}
@@ -575,7 +658,7 @@ export default function MessagesPage() {
         <div className="mp-scroll" style={{ flex: 1, overflowY: 'auto' }}>
           {tab === 'collabs' && (
             loadingCollabs ? <ShimmerList /> :
-            shownCollabs.length === 0 ? <EmptyList icon="🤝" title={q ? 'No matches' : 'No collaborator matches yet'} sub={q ? `Nothing for "${search}"` : 'Match with founders in Collaboration.'} /> :
+            shownCollabs.length === 0 ? <EmptyList icon={<IcUsers size={38} />} title={q ? 'No matches' : 'No collaborator matches yet'} sub={q ? `Nothing for "${search}"` : 'Match with founders in Collaboration.'} /> :
             shownCollabs.map((t, i) => (
               <div key={t.matchUserId} className={`thread-row${activeCollab?.matchUserId === t.matchUserId ? ' active' : ''}`} onClick={() => openCollab(t)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', animationDelay: `${i * 0.04}s` }}>
                 <div style={{ position: 'relative', flexShrink: 0 }}><Av url={t.matchProfile.avatar_url} name={t.matchProfile.full_name} size={46} /><div style={{ position: 'absolute', bottom: 1, right: 1 }}><StatusDot userId={t.matchUserId} lastSeenAt={t.matchProfile.last_seen_at} connectedSet={connectedSet} statusMap={statusMap} size={12} /></div></div>
@@ -591,7 +674,7 @@ export default function MessagesPage() {
 
           {tab === 'trades' && (
             loadingTrades ? <ShimmerList /> :
-            shownTrades.length === 0 ? <EmptyList icon="⚡" title={q ? 'No trades found' : 'No active trades yet'} sub={q ? `Nothing for "${search}"` : 'Accept a skill trade in Talent.'} /> :
+            shownTrades.length === 0 ? <EmptyList icon={<IcZap size={38} />} title={q ? 'No trades found' : 'No active trades yet'} sub={q ? `Nothing for "${search}"` : 'Accept a skill trade in Talent.'} /> :
             shownTrades.map((t, i) => (
               <div key={t.requestId} className={`thread-row${activeTrade?.requestId === t.requestId ? ' active' : ''}`} onClick={() => openTrade(t)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', animationDelay: `${i * 0.04}s` }}>
                 <div style={{ position: 'relative', flexShrink: 0 }}><Av url={t.otherProfile.avatar_url} name={t.otherProfile.full_name} size={46} /><div style={{ position: 'absolute', bottom: 1, right: 1 }}><StatusDot userId={t.otherUserId} lastSeenAt={t.otherProfile.last_seen_at} connectedSet={connectedSet} statusMap={statusMap} size={12} /></div></div>
@@ -630,7 +713,7 @@ export default function MessagesPage() {
                           <Av url={l.profile.avatar_url} name={l.profile.full_name} size={24} />
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.profile.full_name ?? 'Leader'}</div>
-                            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{l.role === 'president' ? '👑' : '⭐'} {l.customRole ?? (l.role === 'president' ? 'President' : 'Officer')} · {l.clubName}</div>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 3 }}>{l.role === 'president' ? <IcCrown size={9} /> : <IcStar size={9} />} {l.customRole ?? (l.role === 'president' ? 'President' : 'Officer')} · {l.clubName}</div>
                           </div>
                         </label>
                       ))}
@@ -666,13 +749,13 @@ export default function MessagesPage() {
                 <div style={{ padding: '12px 16px 4px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Club Leaders</div>
               )}
               {loadingLeaders ? <ShimmerList /> : shownLeaders.length === 0 && shownGroups.length === 0 && !creatingGroup ? (
-                <EmptyList icon="🏛️" title={q ? 'No results' : 'No co-leaders found'} sub={q ? `Nothing for "${search}"` : 'This shows your fellow officers once you become a president or officer of a club.'} />
+                <EmptyList icon={<IcCrown size={38} />} title={q ? 'No results' : 'No co-leaders found'} sub={q ? `Nothing for "${search}"` : 'This shows your fellow officers once you become a president or officer of a club.'} />
               ) : shownLeaders.map((l, i) => (
                 <div key={l.userId} className={`thread-row${activeLeader?.userId === l.userId ? ' active' : ''}`} onClick={() => openLeader(l)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', animationDelay: `${i * 0.04}s` }}>
                   <div style={{ position: 'relative', flexShrink: 0 }}><Av url={l.profile.avatar_url} name={l.profile.full_name} size={44} /><div style={{ position: 'absolute', bottom: 1, right: 1 }}><StatusDot userId={l.userId} lastSeenAt={l.profile.last_seen_at} connectedSet={connectedSet} statusMap={statusMap} size={12} /></div></div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}><span style={{ fontSize: 13, fontWeight: l.unread > 0 ? 700 : 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 130 }}>{l.profile.full_name ?? 'Leader'}</span>{l.lastAt && <span style={{ fontSize: 10, color: 'var(--text-muted)', opacity: 0.7 }}>{reltime(l.lastAt)}</span>}</div>
-                    <div style={{ fontSize: 10.5, color: l.role === 'president' ? 'var(--gold)' : 'var(--accent)', fontWeight: 600, marginBottom: 2 }}>{l.role === 'president' ? '👑 President' : l.customRole ? `⭐ ${l.customRole}` : '⭐ Officer'} · {l.clubName}</div>
+                    <div style={{ fontSize: 10.5, color: l.role === 'president' ? 'var(--gold)' : 'var(--accent)', fontWeight: 600, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>{l.role === 'president' ? <IcCrown size={10} /> : <IcStar size={10} />}{l.role === 'president' ? 'President' : l.customRole ?? 'Officer'} · {l.clubName}</div>
                     <div style={{ fontSize: 12, color: l.unread > 0 ? 'var(--text-secondary)' : 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.lastMsg ?? <span style={{ fontStyle: 'italic', opacity: 0.5 }}>Send a message</span>}</div>
                   </div>
                   {l.unread > 0 && <span style={{ minWidth: 18, height: 18, fontSize: 10, fontWeight: 900, background: 'var(--accent)', color: '#fff', borderRadius: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px', flexShrink: 0 }}>{l.unread}</span>}
@@ -707,9 +790,9 @@ export default function MessagesPage() {
                     {[...activeGroup.memberProfiles.map(m => m.full_name?.split(' ')[0]).filter(Boolean)].join(', ')}{activeGroup.memberProfiles.length > 0 ? ' + you' : 'Just you'}
                   </div>
                 )}
-                {activeCollab && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--accent)', background: 'rgba(138,21,56,0.15)', border: '1px solid rgba(138,21,56,0.25)', borderRadius: 6, padding: '2px 8px' }}>🤝 Collaborator</span>{activeCollab.projectTitle && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{activeCollab.projectTitle}</span>}</div>}
-                {activeTrade && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 10.5, fontWeight: 700, color: '#4ade80', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 6, padding: '2px 8px' }}>⚡ {activeTrade.skillOffered}</span><span style={{ fontSize: 11, color: 'var(--text-muted)', opacity: 0.5 }}>→</span><span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{activeTrade.skillWanted}</span>{activeTrade.status === 'completed' && <span style={{ fontSize: 9.5, fontWeight: 700, color: '#a5b4fc', background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.22)', borderRadius: 6, padding: '2px 7px' }}>COMPLETED</span>}</div>}
-                {activeLeader && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 10.5, fontWeight: 700, color: activeLeader.role === 'president' ? 'var(--gold)' : 'var(--accent)', background: 'rgba(138,21,56,0.12)', border: '1px solid rgba(138,21,56,0.2)', borderRadius: 6, padding: '2px 8px' }}>{activeLeader.role === 'president' ? '👑 President' : activeLeader.customRole ? `⭐ ${activeLeader.customRole}` : '⭐ Officer'}</span><span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{activeLeader.clubName}</span></div>}
+                {activeCollab && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--accent)', background: 'rgba(138,21,56,0.15)', border: '1px solid rgba(138,21,56,0.25)', borderRadius: 6, padding: '2px 8px', display: 'flex', alignItems: 'center', gap: 5 }}><IcHandshake size={11} /> Collaborator</span>{activeCollab.projectTitle && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{activeCollab.projectTitle}</span>}</div>}
+                {activeTrade && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 10.5, fontWeight: 700, color: '#4ade80', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 6, padding: '2px 8px', display: 'flex', alignItems: 'center', gap: 5 }}><IcZap size={11} /> {activeTrade.skillOffered}</span><span style={{ fontSize: 11, color: 'var(--text-muted)', opacity: 0.5 }}>→</span><span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{activeTrade.skillWanted}</span>{activeTrade.status === 'completed' && <span style={{ fontSize: 9.5, fontWeight: 700, color: '#a5b4fc', background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.22)', borderRadius: 6, padding: '2px 7px' }}>COMPLETED</span>}</div>}
+                {activeLeader && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 10.5, fontWeight: 700, color: activeLeader.role === 'president' ? 'var(--gold)' : 'var(--accent)', background: 'rgba(138,21,56,0.12)', border: '1px solid rgba(138,21,56,0.2)', borderRadius: 6, padding: '2px 8px', display: 'flex', alignItems: 'center', gap: 5 }}>{activeLeader.role === 'president' ? <IcCrown size={11} /> : <IcStar size={11} />}{activeLeader.role === 'president' ? 'President' : activeLeader.customRole ?? 'Officer'}</span><span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{activeLeader.clubName}</span></div>}
               </div>
 
               {!activeGroup && (
@@ -723,9 +806,9 @@ export default function MessagesPage() {
             <div className="mp-scroll" style={{ flex: 1, overflowY: 'auto', padding: '20px 24px 12px' }}>
               {loadingMsgs ? <MsgSkeleton /> : messages.length === 0 ? (
                 <div className="mp-enter" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', textAlign: 'center', color: 'var(--text-muted)', paddingBottom: 40 }}>
-                  <div style={{ fontSize: 52, marginBottom: 16, animation: 'mp-float 3s ease-in-out infinite' }}>{activeGroup ? '👥' : '👋'}</div>
+                  <div style={{ marginBottom: 16 }}>{activeGroup ? <IcUsersBig size={56} animated /> : <IcMessageBig size={56} animated />}</div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>{activeGroup ? `Welcome to ${activeGroup.name}!` : `Say hello to ${activeProfile?.full_name?.split(' ')[0] ?? 'them'}!`}</div>
-                  <div style={{ fontSize: 13, lineHeight: 1.65, maxWidth: 240 }}>{activeGroup ? 'Start the conversation.' : 'Break the ice 🔥'}</div>
+                  <div style={{ fontSize: 13, lineHeight: 1.65, maxWidth: 240 }}>{activeGroup ? 'Start the conversation.' : 'Send the first message.'}</div>
                 </div>
               ) : (
                 <>
@@ -799,7 +882,9 @@ export default function MessagesPage() {
 function EmptyChat() {
   return (
     <div className="mp-enter" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 48 }}>
-      <div style={{ width: 80, height: 80, borderRadius: 24, background: 'rgba(138,21,56,0.08)', border: '1px solid rgba(138,21,56,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 36, marginBottom: 22, animation: 'mp-float 3.5s ease-in-out infinite', boxShadow: '0 0 40px rgba(138,21,56,0.1)' }}>💬</div>
+      <div style={{ width: 84, height: 84, borderRadius: 26, background: 'rgba(138,21,56,0.08)', border: '1px solid rgba(138,21,56,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 22, animation: 'mp-float 3.5s ease-in-out infinite', boxShadow: '0 0 40px rgba(138,21,56,0.1)' }}>
+        <IcMessageBig size={44} />
+      </div>
       <div style={{ fontSize: 19, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 10, letterSpacing: '-0.4px' }}>Your conversations</div>
       <div style={{ fontSize: 13.5, lineHeight: 1.8, maxWidth: 280, color: 'var(--text-muted)' }}>
         Pick a <span style={{ color: 'var(--accent)', fontWeight: 700 }}>Collaboration</span> match, an active <span style={{ color: '#4ade80', fontWeight: 700 }}>Trade</span>, or message a <span style={{ color: 'var(--gold)', fontWeight: 700 }}>Club Leader</span>.
@@ -837,10 +922,10 @@ function ShimmerList() {
   )
 }
 
-function EmptyList({ icon, title, sub }: { icon: string; title: string; sub: string }) {
+function EmptyList({ icon, title, sub }: { icon: React.ReactNode; title: string; sub: string }) {
   return (
     <div className="mp-enter" style={{ textAlign: 'center', padding: '48px 22px', color: 'var(--text-muted)' }}>
-      <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.7 }}>{icon}</div>
+      <div style={{ marginBottom: 14, opacity: 0.6, display: 'flex', justifyContent: 'center', animation: 'mp-float 3.5s ease-in-out infinite' }}>{icon}</div>
       <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>{title}</div>
       <div style={{ fontSize: 12, lineHeight: 1.7, maxWidth: 220, margin: '0 auto' }}>{sub}</div>
     </div>
