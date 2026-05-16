@@ -27,6 +27,7 @@ const CATEGORY_GRADIENTS: Record<string, string> = {
 
 interface ClubWithMeta extends Club {
   is_member?: boolean
+  has_form?: boolean
 }
 
 export default function DiscoveryPage() {
@@ -53,6 +54,13 @@ export default function DiscoveryPage() {
     const { data: clubsData } = await query
     if (!clubsData) { setLoading(false); return }
 
+    // Always fetch which clubs have an active application form
+    const { data: activeForms } = await supabase
+      .from('club_forms')
+      .select('club_id')
+      .eq('is_active', true)
+    const formClubIds = new Set((activeForms ?? []).map(f => f.club_id))
+
     if (user) {
       const [{ data: memberships }, { data: pending }] = await Promise.all([
         supabase.from('club_memberships').select('club_id').eq('user_id', user.id),
@@ -61,9 +69,9 @@ export default function DiscoveryPage() {
       const joinedIds = new Set((memberships ?? []).map(m => m.club_id))
       const pendingIds = new Set((pending ?? []).map(r => r.club_id))
       setPendingClubIds(pendingIds)
-      setClubs(clubsData.map(c => ({ ...c, is_member: joinedIds.has(c.id) })))
+      setClubs(clubsData.map(c => ({ ...c, is_member: joinedIds.has(c.id), has_form: formClubIds.has(c.id) })))
     } else {
-      setClubs(clubsData)
+      setClubs(clubsData.map(c => ({ ...c, has_form: formClubIds.has(c.id) })))
     }
     setLoading(false)
   }, [search, activeCategory, user])
@@ -384,6 +392,7 @@ export default function DiscoveryPage() {
                 onOpen={() => navigate(`/clubs/${club.id}`)}
                 joining={joiningId === club.id}
                 isPending={pendingClubIds.has(club.id)}
+                hasForm={club.has_form ?? false}
                 initials={initials}
               />
             ))}
@@ -406,13 +415,14 @@ export default function DiscoveryPage() {
   )
 }
 
-function ClubCard({ club, index, onJoin, onOpen, joining, isPending, initials }: {
+function ClubCard({ club, index, onJoin, onOpen, joining, isPending, hasForm, initials }: {
   club: ClubWithMeta
   index: number
   onJoin: () => void
   onOpen: () => void
   joining: boolean
   isPending: boolean
+  hasForm: boolean
   initials: (n: string) => string
 }) {
   const catColor = CATEGORY_COLORS[club.category ?? ''] ?? 'var(--accent)'
@@ -597,6 +607,39 @@ function ClubCard({ club, index, onJoin, onOpen, joining, isPending, initials }:
             </svg>
             {club.member_count.toLocaleString()}
           </span>
+          {/* Application form indicator */}
+          {hasForm ? (
+            <span style={{
+              display: 'flex', alignItems: 'center', gap: 4,
+              background: 'rgba(251,191,36,0.1)',
+              color: '#fbbf24',
+              border: '1px solid rgba(251,191,36,0.25)',
+              fontSize: 11, fontWeight: 700,
+              padding: '3px 10px', borderRadius: 7,
+              letterSpacing: '0.03em',
+            }}>
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+              </svg>
+              Apply to Join
+            </span>
+          ) : (
+            <span style={{
+              display: 'flex', alignItems: 'center', gap: 4,
+              background: 'rgba(34,197,94,0.08)',
+              color: '#4ade80',
+              border: '1px solid rgba(34,197,94,0.2)',
+              fontSize: 11, fontWeight: 700,
+              padding: '3px 10px', borderRadius: 7,
+              letterSpacing: '0.03em',
+            }}>
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              Open Join
+            </span>
+          )}
         </div>
       </div>
 
@@ -629,7 +672,7 @@ function ClubCard({ club, index, onJoin, onOpen, joining, isPending, initials }:
             boxShadow: club.is_member || isPending ? 'none' : '0 4px 18px rgba(138,21,56,0.32)',
           }}
         >
-          {joining ? '···' : club.is_member ? '✓  Joined' : isPending ? '⏳  Applied' : 'Join Club'}
+          {joining ? '···' : club.is_member ? '✓  Joined' : isPending ? '⏳  Applied' : hasForm ? '📋  Apply Now' : 'Join Club'}
         </button>
       </div>
     </div>

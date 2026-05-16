@@ -31,6 +31,25 @@ interface EventAnnouncementRow {
   profile: { full_name: string | null } | null
 }
 
+interface NoteRow {
+  id: string
+  title: string
+  content: string | null
+  created_by: string
+  created_at: string
+  profile?: { full_name: string | null } | null
+}
+
+interface BudgetEntry {
+  id: string
+  type: 'income' | 'expense'
+  description: string
+  amount: number
+  category: string | null
+  entry_date: string
+  created_by: string
+}
+
 interface MembershipRow {
   id: string
   user_id: string
@@ -40,13 +59,28 @@ interface MembershipRow {
   profile: { full_name: string | null; school: string | null; email: string | null } | null
 }
 
+interface AppFormField { id: string; label: string; type: string }
+interface ApplicationRow {
+  id: string
+  user_id: string
+  answers: Record<string, string>
+  status: 'pending' | 'approved' | 'rejected'
+  created_at: string
+  profile: { full_name: string | null; school: string | null; email: string | null } | null
+  form: { fields: AppFormField[] } | null
+}
+
 const PRIVILEGES = [
-  { key: 'remove_members',     label: 'Remove Members',     icon: '✕' },
-  { key: 'accept_members',     label: 'Accept Requests',    icon: '✓' },
-  { key: 'edit_appearance',    label: 'Edit Appearance',    icon: '🖼' },
-  { key: 'manage_events',      label: 'Manage Events',      icon: '📅' },
-  { key: 'post_announcements', label: 'Post Announcements', icon: '📢' },
+  { key: 'remove_members',     label: 'Remove Members',     icon: '🚫', desc: 'Remove members from the club',        group: 'Team'    },
+  { key: 'accept_members',     label: 'Accept Requests',    icon: '✅', desc: 'Approve pending join requests',       group: 'Team'    },
+  { key: 'post_announcements', label: 'Announcements',      icon: '📢', desc: 'Post club-wide announcements',        group: 'Content' },
+  { key: 'manage_notes',       label: 'Meeting Notes',      icon: '📝', desc: 'Create and manage meeting notes',     group: 'Content' },
+  { key: 'manage_events',      label: 'Manage Events',      icon: '📅', desc: 'Create, edit and go-live events',     group: 'Events'  },
+  { key: 'edit_appearance',    label: 'Edit Appearance',    icon: '🖼', desc: 'Update logo, banner & club info',     group: 'Club'    },
+  { key: 'manage_budget',      label: 'Budget Tracker',     icon: '💰', desc: 'Track income and expenses',           group: 'Finance' },
 ] as const
+
+const PRIVILEGE_GROUPS = ['Team', 'Content', 'Events', 'Club', 'Finance'] as const
 
 interface ProfileSearchRow {
   id: string
@@ -58,11 +92,12 @@ interface ProfileSearchRow {
 interface Props {
   club: Club
   onDeleted?: () => void
+  onPresidencyTransferred?: () => void
   userPermissions?: string[]
   clubSwitcher?: React.ReactNode
 }
 
-export default function CommandCenter({ club, onDeleted, userPermissions, clubSwitcher }: Props) {
+export default function CommandCenter({ club, onDeleted, onPresidencyTransferred, userPermissions, clubSwitcher }: Props) {
   const { user, profile } = useAuth()
   const isPresident = userPermissions === undefined
   const canDo = (perm: string) => isPresident || (userPermissions ?? []).includes(perm)
@@ -124,6 +159,36 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
   const [deleteConfirmName, setDeleteConfirmName] = useState('')
   const [deletingClub, setDeletingClub] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+
+  // Meeting notes state
+  const [notes, setNotes] = useState<NoteRow[]>([])
+  const [noteTitle, setNoteTitle] = useState('')
+  const [noteContent, setNoteContent] = useState('')
+  const [savingNote, setSavingNote] = useState(false)
+  const [showNoteForm, setShowNoteForm] = useState(false)
+  const [expandedNote, setExpandedNote] = useState<string | null>(null)
+
+  // Budget state
+  const [budgetEntries, setBudgetEntries] = useState<BudgetEntry[]>([])
+  const [budgetType, setBudgetType] = useState<'income' | 'expense'>('expense')
+  const [budgetDesc, setBudgetDesc] = useState('')
+  const [budgetAmount, setBudgetAmount] = useState('')
+  const [budgetCategory, setBudgetCategory] = useState('')
+  const [budgetDate, setBudgetDate] = useState(new Date().toISOString().split('T')[0])
+  const [savingBudget, setSavingBudget] = useState(false)
+  const [showBudgetForm, setShowBudgetForm] = useState(false)
+  const [budgetFilter, setBudgetFilter] = useState<'all' | 'income' | 'expense'>('all')
+
+  // Analytics state
+  interface MonthlyJoin { month: string; label: string; count: number }
+  const [monthlyJoins, setMonthlyJoins] = useState<MonthlyJoin[]>([])
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false)
+
+  // Applications state
+  const [applications, setApplications] = useState<ApplicationRow[]>([])
+  const [loadingApps, setLoadingApps] = useState(false)
+  const [appActionLoading, setAppActionLoading] = useState<string | null>(null)
+  const [expandedApp, setExpandedApp] = useState<string | null>(null)
 
   useEffect(() => { fetchAll() }, [club.id])
 
@@ -194,6 +259,42 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
     setAnnouncements((annRes.data as unknown as AnnouncementRow[]) ?? [])
     setTeamMembers((teamRes.data as unknown as MembershipRow[]) ?? [])
     setLoadingStats(false)
+    // Also keep app badge count fresh
+    fetchApplications()
+  }
+
+  async function fetchApplications() {
+    setLoadingApps(true)
+    const { data } = await supabase
+      .from('club_form_responses')
+      .select('id, user_id, answers, status, created_at, profile:profiles(full_name, school, email), form:club_forms(fields)')
+      .eq('club_id', club.id)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+    setApplications((data as unknown as ApplicationRow[]) ?? [])
+    setLoadingApps(false)
+  }
+
+  async function handleAcceptApplication(appId: string, userId: string) {
+    setAppActionLoading(appId)
+    // Insert membership — ignore conflict if already a member
+    await supabase.from('club_memberships').upsert({ club_id: club.id, user_id: userId }, { onConflict: 'club_id,user_id', ignoreDuplicates: true })
+    // Award Karak points
+    await supabase.from('karak_transactions').insert({ user_id: userId, points: 5, reason: `Joined club: ${club.name}` })
+    // Increment member count
+    await supabase.from('clubs').update({ member_count: club.member_count + 1 }).eq('id', club.id)
+    // Mark response approved
+    await supabase.from('club_form_responses').update({ status: 'approved' }).eq('id', appId)
+    setApplications(prev => prev.filter(a => a.id !== appId))
+    setAppActionLoading(null)
+    fetchAll()
+  }
+
+  async function handleRejectApplication(appId: string) {
+    setAppActionLoading(appId)
+    await supabase.from('club_form_responses').update({ status: 'rejected' }).eq('id', appId)
+    setApplications(prev => prev.filter(a => a.id !== appId))
+    setAppActionLoading(null)
   }
 
   async function handleCreateEvent(e: FormEvent) {
@@ -419,6 +520,20 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
     setActionLoading(null)
   }
 
+  async function handleTransferPresidency(membershipId: string, newPresidentUserId: string) {
+    setActionLoading(membershipId)
+    // Update the club's president_id
+    await supabase.from('clubs').update({ president_id: newPresidentUserId }).eq('id', club.id)
+    // Promote the new president's membership
+    await supabase.from('club_memberships').update({ role: 'president', custom_role: null, permissions: [] }).eq('id', membershipId)
+    // Demote the old president to member
+    if (user) {
+      await supabase.from('club_memberships').update({ role: 'member', custom_role: null, permissions: [] }).eq('club_id', club.id).eq('user_id', user.id).neq('id', membershipId)
+    }
+    setActionLoading(null)
+    onPresidencyTransferred?.()
+  }
+
   async function handleDeleteClub() {
     if (deleteConfirmName.trim() !== club.name) return
     setDeletingClub(true)
@@ -432,12 +547,89 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
     onDeleted?.()
   }
 
+  async function fetchNotes() {
+    const { data } = await supabase
+      .from('club_meeting_notes')
+      .select('id, title, content, created_by, created_at, profile:profiles!created_by(full_name)')
+      .eq('club_id', club.id)
+      .order('created_at', { ascending: false })
+      .limit(50)
+    setNotes((data as unknown as NoteRow[]) ?? [])
+  }
+
+  async function handleSaveNote() {
+    if (!user || !noteTitle.trim()) return
+    setSavingNote(true)
+    await supabase.from('club_meeting_notes').insert({ club_id: club.id, title: noteTitle.trim(), content: noteContent.trim() || null, created_by: user.id })
+    setNoteTitle(''); setNoteContent(''); setShowNoteForm(false); setSavingNote(false)
+    fetchNotes()
+  }
+
+  async function handleDeleteNote(noteId: string) {
+    await supabase.from('club_meeting_notes').delete().eq('id', noteId)
+    setNotes(prev => prev.filter(n => n.id !== noteId))
+  }
+
+  async function fetchBudget() {
+    const { data } = await supabase
+      .from('club_budget_entries')
+      .select('id, type, description, amount, category, entry_date, created_by')
+      .eq('club_id', club.id)
+      .order('entry_date', { ascending: false })
+      .limit(100)
+    setBudgetEntries((data as unknown as BudgetEntry[]) ?? [])
+  }
+
+  async function handleSaveBudget() {
+    if (!user || !budgetDesc.trim() || !budgetAmount) return
+    setSavingBudget(true)
+    await supabase.from('club_budget_entries').insert({ club_id: club.id, type: budgetType, description: budgetDesc.trim(), amount: parseFloat(budgetAmount), category: budgetCategory.trim() || null, entry_date: budgetDate, created_by: user.id })
+    setBudgetDesc(''); setBudgetAmount(''); setBudgetCategory(''); setShowBudgetForm(false); setSavingBudget(false)
+    fetchBudget()
+  }
+
+  async function handleDeleteBudgetEntry(id: string) {
+    await supabase.from('club_budget_entries').delete().eq('id', id)
+    setBudgetEntries(prev => prev.filter(e => e.id !== id))
+  }
+
   const defaultTab = isPresident || canDo('manage_events') ? 'events'
     : canDo('post_announcements') ? 'announcements'
     : canDo('remove_members') || canDo('accept_members') ? 'team'
     : canDo('edit_appearance') ? 'settings'
     : 'events'
   const [activeTab, setActiveTab] = useState<string>(defaultTab)
+
+  async function fetchAnalytics() {
+    setLoadingAnalytics(true)
+    const months: MonthlyJoin[] = []
+    const now = new Date()
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const start = d.toISOString()
+      const end = new Date(d.getFullYear(), d.getMonth() + 1, 1).toISOString()
+      const { count } = await supabase
+        .from('club_memberships')
+        .select('id', { count: 'exact', head: true })
+        .eq('club_id', club.id)
+        .gte('joined_at', start)
+        .lt('joined_at', end)
+      months.push({
+        month: start,
+        label: d.toLocaleString('default', { month: 'short' }),
+        count: count ?? 0,
+      })
+    }
+    setMonthlyJoins(months)
+    setLoadingAnalytics(false)
+  }
+
+  useEffect(() => {
+    if (activeTab === 'notes') fetchNotes()
+    if (activeTab === 'budget') fetchBudget()
+    if (activeTab === 'analytics') fetchAnalytics()
+    if (activeTab === 'applications') fetchApplications()
+  }, [activeTab, club.id])
 
   const avgAttendees = stats.eventCount > 0 ? (stats.totalAttendees / stats.eventCount).toFixed(1) : '—'
   const liveCount = events.filter(e => e.is_live).length
@@ -467,8 +659,12 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
   const TABS = [
     { key: 'events',        label: 'Events',        badge: events.length,        visible: isPresident || canDo('manage_events') },
     { key: 'team',          label: 'Team',           badge: teamMembers.length,   visible: isPresident || canDo('remove_members') || canDo('accept_members') },
+    { key: 'applications',  label: 'Applications',   badge: applications.length,  visible: isPresident || canDo('accept_members'), badgeColor: applications.length > 0 ? '#f87171' : undefined },
     { key: 'announcements', label: 'Announcements',  badge: announcements.length, visible: isPresident || canDo('post_announcements') },
     { key: 'positions',     label: 'Positions',      badge: null,                 visible: isPresident },
+    { key: 'analytics',     label: 'Analytics',      badge: null,                 visible: isPresident },
+    { key: 'notes',         label: 'Notes',          badge: null,                 visible: isPresident || canDo('post_announcements') || canDo('manage_notes') },
+    { key: 'budget',        label: 'Budget',         badge: null,                 visible: isPresident || canDo('manage_budget') },
     { key: 'settings',      label: 'Settings',       badge: null,                 visible: isPresident || canDo('edit_appearance') },
   ].filter(t => t.visible)
 
@@ -543,13 +739,17 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
             background: activeTab === t.key ? 'rgba(138,21,56,0.22)' : 'transparent',
             border: activeTab === t.key ? '1px solid rgba(138,21,56,0.32)' : '1px solid transparent',
             display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+            position: 'relative',
           }}>
             {t.label}
-            {t.badge !== null && (
+            {t.badge !== null && t.badge > 0 && (
               <span style={{
                 fontSize:11, fontWeight:700, padding:'1px 7px', borderRadius:99, minWidth:18,
-                background: activeTab === t.key ? 'rgba(138,21,56,0.35)' : 'rgba(255,255,255,0.07)',
-                color: activeTab === t.key ? '#f08' : 'var(--text-muted)',
+                background: (t as any).badgeColor
+                  ? `${(t as any).badgeColor}22`
+                  : activeTab === t.key ? 'rgba(138,21,56,0.35)' : 'rgba(255,255,255,0.07)',
+                color: (t as any).badgeColor ?? (activeTab === t.key ? '#f08' : 'var(--text-muted)'),
+                border: (t as any).badgeColor && activeTab !== t.key ? `1px solid ${(t as any).badgeColor}44` : 'none',
                 transition:'all 0.18s',
               }}>{t.badge}</span>
             )}
@@ -629,74 +829,268 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
       )}
 
       {/* ── Team tab ── */}
-      {activeTab === 'team' && (
-        <div key="team" className="cc-panel" style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:16, padding:24 }}>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:18 }}>
-            <div>
-              <h2 style={{ fontSize:16, fontWeight:700, color:'var(--text-primary)', marginBottom:3 }}>Manage Team</h2>
-              <p style={{ fontSize:12, color:'var(--text-muted)' }}>Search, add members and assign their roles</p>
-            </div>
-            <span style={{ background:'rgba(14,165,233,0.12)', border:'1px solid rgba(14,165,233,0.3)', borderRadius:9999, padding:'3px 10px', fontSize:10, fontWeight:700, color:'#38bdf8', letterSpacing:'0.06em', flexShrink:0 }}>
-              {stats.memberCount} MEMBER{stats.memberCount !== 1 ? 'S' : ''}
-            </span>
-          </div>
-          {isPresident && (
-            <div style={{ position:'relative', marginBottom:20 }}>
-              <span style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', fontSize:14, color:'var(--text-muted)', pointerEvents:'none' }}>🔍</span>
-              <input value={memberSearch} onChange={e => setMemberSearch(e.target.value)} placeholder="Search by name or email to find and add members…" style={{ ...fi, paddingLeft:36, fontSize:13 }} />
-              {memberSearch && <button onClick={() => { setMemberSearch(''); setSearchProfiles([]) }} style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:'transparent', border:'none', color:'var(--text-muted)', cursor:'pointer', fontSize:16, lineHeight:1, padding:'2px 4px' }}>✕</button>}
-            </div>
-          )}
-          {isPresident && memberSearch.trim() && (
-            <div style={{ marginBottom: teamMembers.length > 0 ? 20 : 0 }}>
-              <div style={{ fontSize:10, fontWeight:700, letterSpacing:'0.1em', color:'var(--text-muted)', textTransform:'uppercase', marginBottom:10 }}>
-                {searchLoading ? 'Searching…' : `${searchProfiles.length} result${searchProfiles.length !== 1 ? 's' : ''}`}
-              </div>
-              {!searchLoading && searchProfiles.length === 0 && (
-                <div style={{ fontSize:13, color:'var(--text-muted)', padding:'12px 0', textAlign:'center' }}>No users found matching "{memberSearch}"</div>
-              )}
-              {searchProfiles.map(p => {
-                const existing = teamMembers.find(m => m.user_id === p.id)
-                const isLoading = actionLoading === (existing?.id ?? p.id)
-                const isPres = p.id === club.president_id
-                return existing ? (
-                  <ExistingMemberRow key={p.id} profile={p} membership={existing} isLoading={isLoading} canRemove={isPresident || canDo('remove_members')} canEditRole={isPresident} onRoleChange={handleRoleChange} onRemove={handleRemoveMember} onPermissionsChange={handlePermissionsChange} />
-                ) : isPres ? (
-                  <div key={p.id} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 14px', borderRadius:10, marginBottom:6, background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.06)' }}>
-                    <TeamAvatar name={p.full_name} />
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontSize:13, fontWeight:600, color:'var(--text-primary)' }}>{p.full_name ?? 'Unknown'}</div>
-                      {p.school && <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:1 }}>{p.school}</div>}
+      {activeTab === 'team' && (() => {
+        const presidents = teamMembers.filter(m => m.role === 'president')
+        const officers   = teamMembers.filter(m => m.role !== 'president' && m.custom_role)
+        const members    = teamMembers.filter(m => m.role !== 'president' && !m.custom_role)
+        return (
+          <div key="team" className="cc-panel">
+            <style>{`
+              @keyframes tmCardIn    { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+              @keyframes crownGlow   { 0%,100%{filter:drop-shadow(0 0 2px #e9c17666)} 50%{filter:drop-shadow(0 0 6px #e9c176cc)} }
+              @keyframes privCheckIn { from{opacity:0;transform:scale(.5) rotate(-15deg)} to{opacity:1;transform:scale(1) rotate(0)} }
+              @keyframes confirmIn   { from{opacity:0;transform:scale(.88) translateX(6px)} to{opacity:1;transform:scale(1) translateX(0)} }
+              .tm-card { animation: tmCardIn .28s cubic-bezier(.22,1,.36,1) both }
+            `}</style>
+
+            {/* ── Header ── */}
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:20 }}>
+              <div>
+                <h2 style={{ fontSize:18, fontWeight:800, color:'var(--text-primary)', marginBottom:5 }}>Team</h2>
+                <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
+                  {[
+                    { label:'President', count: presidents.length },
+                    { label:'Admin',     count: officers.length   },
+                    { label:'Member',    count: members.length    },
+                  ].map(s => (
+                    <div key={s.label} style={{ display:'flex', alignItems:'center', gap:6 }}>
+                      <div style={{ width:6, height:6, borderRadius:'50%', background:'var(--accent)', opacity:.7 }}/>
+                      <span style={{ fontSize:12, color:'var(--text-muted)', fontWeight:600 }}>
+                        <span style={{ color:'var(--text-primary)', fontWeight:800 }}>{s.count}</span> {s.label}{s.count !== 1 ? 's' : ''}
+                      </span>
                     </div>
-                    <span style={{ fontSize:10, fontWeight:700, letterSpacing:'0.06em', padding:'3px 10px', borderRadius:9999, background:'rgba(233,193,118,0.15)', color:'var(--gold)', flexShrink:0 }}>PRESIDENT</span>
+                  ))}
+                </div>
+              </div>
+              <div style={{ background:'rgba(255,255,255,.05)', border:'1px solid rgba(255,255,255,.1)', borderRadius:12, padding:'8px 16px', textAlign:'center', flexShrink:0 }}>
+                <div style={{ fontSize:22, fontWeight:900, color:'#fff', lineHeight:1 }}>{stats.memberCount}</div>
+                <div style={{ fontSize:10, color:'rgba(255,255,255,.4)', fontWeight:700, letterSpacing:'.08em', marginTop:2 }}>TOTAL</div>
+              </div>
+            </div>
+
+            {/* ── Search ── */}
+            {isPresident && (
+              <div style={{ position:'relative', marginBottom:20 }}>
+                <svg style={{ position:'absolute', left:13, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', pointerEvents:'none' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input value={memberSearch} onChange={e => setMemberSearch(e.target.value)} placeholder="Search by name or email to add members…" style={{ ...fi, paddingLeft:36, fontSize:13 }}/>
+                {memberSearch && <button onClick={() => { setMemberSearch(''); setSearchProfiles([]) }} style={{ position:'absolute', right:11, top:'50%', transform:'translateY(-50%)', background:'transparent', border:'none', color:'var(--text-muted)', cursor:'pointer', fontSize:15, lineHeight:1, padding:'3px' }}>✕</button>}
+              </div>
+            )}
+
+            {/* ── Search results ── */}
+            {isPresident && memberSearch.trim() && (
+              <div style={{ marginBottom:24 }}>
+                <div style={{ fontSize:10, fontWeight:800, color:'rgba(255,255,255,.3)', letterSpacing:'.12em', textTransform:'uppercase', marginBottom:12 }}>
+                  {searchLoading ? 'Searching…' : `${searchProfiles.length} result${searchProfiles.length !== 1 ? 's' : ''}`}
+                </div>
+                {!searchLoading && searchProfiles.length === 0 && (
+                  <div style={{ fontSize:13, color:'var(--text-muted)', padding:'20px 0', textAlign:'center', background:'rgba(255,255,255,.02)', borderRadius:12, border:'1px solid rgba(255,255,255,.06)' }}>No users found matching "<strong style={{ color:'var(--text-primary)' }}>{memberSearch}</strong>"</div>
+                )}
+                <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                  {searchProfiles.map(p => {
+                    const existing = teamMembers.find(m => m.user_id === p.id)
+                    const isLoadingRow = actionLoading === (existing?.id ?? p.id)
+                    const isPres = p.id === club.president_id
+                    if (isPres) return (
+                      <div key={p.id} className="tm-card" style={{ display:'flex', alignItems:'center', gap:14, padding:'14px 16px', borderRadius:14, background:'rgba(233,193,118,.04)', border:'1px solid rgba(233,193,118,.15)' }}>
+                        <TeamAvatar name={p.full_name} size={40}/>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:14, fontWeight:700, color:'var(--text-primary)' }}>{p.full_name ?? 'Unknown'}</div>
+                          {p.school && <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:2 }}>{p.school}</div>}
+                        </div>
+                        <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:10, fontWeight:800, letterSpacing:'.08em', padding:'4px 12px', borderRadius:9999, background:'rgba(233,193,118,.12)', color:'#e9c176', border:'1px solid rgba(233,193,118,.25)' }}><IcoCrown size={11} style={{ animation:'crownGlow 2.5s ease-in-out infinite' }}/>President</span>
+                      </div>
+                    )
+                    if (existing) return <ExistingMemberRow key={p.id} profile={p} membership={existing} isLoading={isLoadingRow} canRemove={isPresident || canDo('remove_members')} canEditRole={isPresident} canMakePresident={isPresident} onRoleChange={handleRoleChange} onRemove={handleRemoveMember} onMakePresident={handleTransferPresidency} onPermissionsChange={handlePermissionsChange}/>
+                    return <NewMemberRow key={p.id} profile={p} isLoading={isLoadingRow} onAdd={handleAddMember}/>
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ── Current team ── */}
+            {teamMembers.length === 0 && !memberSearch.trim() ? (
+              <div style={{ textAlign:'center', padding:'60px 20px' }}>
+                <IcoUsers size={52} style={{ opacity:.18, color:'var(--text-muted)', marginBottom:14 }}/>
+                <div style={{ fontSize:15, fontWeight:700, color:'var(--text-primary)', marginBottom:6 }}>No team members yet</div>
+                <div style={{ fontSize:13, color:'var(--text-muted)' }}>{isPresident ? 'Search above to add your first team member' : 'No members found'}</div>
+              </div>
+            ) : teamMembers.length > 0 && !memberSearch.trim() && (
+              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                {/* President section */}
+                {presidents.length > 0 && (
+                  <div style={{ marginBottom:4 }}>
+                    <div style={{ fontSize:9, fontWeight:800, color:'rgba(255,255,255,.25)', letterSpacing:'.14em', textTransform:'uppercase', marginBottom:8 }}>President</div>
+                    {presidents.map((m, idx) => (
+                      <div key={m.id} className="tm-card" style={{ display:'flex', alignItems:'center', gap:14, padding:'16px 18px', borderRadius:16, background:'rgba(233,193,118,.04)', border:'1px solid rgba(233,193,118,.15)', animationDelay:`${idx*.05}s` }}>
+                        <TeamAvatar name={m.profile?.full_name} size={42}/>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:15, fontWeight:800, color:'var(--text-primary)', marginBottom:3 }}>{m.profile?.full_name ?? 'Unknown'}</div>
+                          {m.profile?.school && <div style={{ fontSize:11, color:'var(--text-muted)' }}>{m.profile.school}</div>}
+                          {m.profile?.email  && <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:1 }}>{m.profile.email}</div>}
+                        </div>
+                        <span style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, fontWeight:800, padding:'5px 14px', borderRadius:9999, background:'rgba(233,193,118,.12)', color:'#e9c176', border:'1px solid rgba(233,193,118,.25)', flexShrink:0 }}><IcoCrown size={12} style={{ animation:'crownGlow 2.5s ease-in-out infinite' }}/>President</span>
+                      </div>
+                    ))}
                   </div>
-                ) : (
-                  <NewMemberRow key={p.id} profile={p} isLoading={isLoading} onAdd={handleAddMember} />
+                )}
+
+                {/* Officers section */}
+                {officers.length > 0 && (
+                  <div style={{ marginBottom:4 }}>
+                    <div style={{ fontSize:9, fontWeight:800, color:'rgba(255,255,255,.25)', letterSpacing:'.14em', textTransform:'uppercase', marginBottom:8 }}>Admins</div>
+                    <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                      {officers.map((m, idx) => (
+                        <ExistingMemberRow key={m.id} profile={{ id:m.user_id, full_name:m.profile?.full_name??null, school:m.profile?.school??null, email:m.profile?.email??null }} membership={m} isLoading={actionLoading===m.id} canRemove={isPresident||canDo('remove_members')} canEditRole={isPresident} canMakePresident={isPresident} onRoleChange={handleRoleChange} onRemove={handleRemoveMember} onMakePresident={handleTransferPresidency} onPermissionsChange={handlePermissionsChange} animDelay={idx*.05}/>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Members section */}
+                {members.length > 0 && (
+                  <div>
+                    <div style={{ fontSize:9, fontWeight:800, color:'rgba(255,255,255,.25)', letterSpacing:'.14em', textTransform:'uppercase', marginBottom:8 }}>Members</div>
+                    <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                      {members.map((m, idx) => (
+                        <ExistingMemberRow key={m.id} profile={{ id:m.user_id, full_name:m.profile?.full_name??null, school:m.profile?.school??null, email:m.profile?.email??null }} membership={m} isLoading={actionLoading===m.id} canRemove={isPresident||canDo('remove_members')} canEditRole={isPresident} canMakePresident={isPresident} onRoleChange={handleRoleChange} onRemove={handleRemoveMember} onMakePresident={handleTransferPresidency} onPermissionsChange={handlePermissionsChange} animDelay={(officers.length+idx)*.05}/>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
+      {/* ── Applications tab ── */}
+      {activeTab === 'applications' && (
+        <div key="applications" className="cc-panel">
+          <style>{`
+            @keyframes appCardIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
+            @keyframes appExpand { from{opacity:0;max-height:0} to{opacity:1;max-height:600px} }
+            @keyframes spin { to{transform:rotate(360deg)} }
+            .app-card { animation: appCardIn .28s cubic-bezier(.22,1,.36,1) both; border-radius:16px; border:1px solid rgba(255,255,255,0.07); background:rgba(255,255,255,0.03); overflow:hidden; transition:border-color .18s; }
+            .app-card:hover { border-color:rgba(138,21,56,0.35); }
+          `}</style>
+
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:20 }}>
+            <div>
+              <h2 style={{ fontSize:18, fontWeight:800, color:'var(--text-primary)', marginBottom:4 }}>Pending Applications</h2>
+              <p style={{ fontSize:13, color:'var(--text-muted)' }}>
+                {applications.length === 0
+                  ? 'No pending applications right now.'
+                  : `${applications.length} applicant${applications.length !== 1 ? 's' : ''} waiting for review`
+                }
+              </p>
+            </div>
+            <button
+              onClick={fetchApplications}
+              disabled={loadingApps}
+              style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:9, padding:'7px 14px', color:'var(--text-muted)', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit', transition:'all .15s', opacity:loadingApps?0.5:1 }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor='rgba(255,255,255,0.22)'; e.currentTarget.style.color='var(--text-primary)' }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor='rgba(255,255,255,0.1)'; e.currentTarget.style.color='var(--text-muted)' }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.7"/></svg>
+              Refresh
+            </button>
+          </div>
+
+          {loadingApps ? (
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:'60px 0', gap:14, flexDirection:'column' }}>
+              <div style={{ width:32, height:32, borderRadius:'50%', border:'3px solid rgba(138,21,56,0.2)', borderTopColor:'var(--accent)', animation:'spin 0.8s linear infinite' }}/>
+              <span style={{ fontSize:13, color:'var(--text-muted)' }}>Loading applications…</span>
+            </div>
+          ) : applications.length === 0 ? (
+            <div style={{ textAlign:'center', padding:'60px 20px' }}>
+              <div style={{ fontSize:48, marginBottom:16, opacity:0.4 }}>📋</div>
+              <div style={{ fontSize:15, fontWeight:700, color:'var(--text-primary)', marginBottom:6 }}>No pending applications</div>
+              <div style={{ fontSize:13, color:'var(--text-muted)', lineHeight:1.6 }}>
+                When users apply to join your club, they'll appear here for review.
+                {!isPresident && <><br/>Make sure an active application form exists.</>}
+              </div>
+            </div>
+          ) : (
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              {applications.map((app, idx) => {
+                const isExpanded = expandedApp === app.id
+                const isLoading = appActionLoading === app.id
+                const fields = app.form?.fields ?? []
+                const name = app.profile?.full_name ?? 'Unknown'
+                const submittedAt = new Date(app.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+                return (
+                  <div key={app.id} className="app-card" style={{ animationDelay:`${idx*.06}s` }}>
+                    {/* Row header */}
+                    <div
+                      onClick={() => setExpandedApp(isExpanded ? null : app.id)}
+                      style={{ display:'flex', alignItems:'center', gap:14, padding:'16px 18px', cursor:'pointer' }}
+                    >
+                      {/* Avatar */}
+                      <div style={{ width:40, height:40, borderRadius:'50%', background:'linear-gradient(135deg,#8a1538,#c0185c)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, color:'#fff', flexShrink:0 }}>
+                        {name.split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase()}
+                      </div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:14, fontWeight:700, color:'var(--text-primary)', marginBottom:2 }}>{name}</div>
+                        <div style={{ fontSize:11, color:'var(--text-muted)' }}>
+                          {app.profile?.school && <span style={{ marginRight:10 }}>{app.profile.school}</span>}
+                          Applied {submittedAt}
+                        </div>
+                      </div>
+                      <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
+                        <span style={{ fontSize:10, fontWeight:700, color:'#fbbf24', background:'rgba(251,191,36,0.1)', border:'1px solid rgba(251,191,36,0.25)', borderRadius:9999, padding:'3px 9px', letterSpacing:'.06em' }}>PENDING</span>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color:'var(--text-muted)', transform:isExpanded?'rotate(180deg)':'none', transition:'transform .2s' }}>
+                          <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                      </div>
+                    </div>
+
+                    {/* Expanded answers */}
+                    {isExpanded && (
+                      <div style={{ padding:'0 18px 18px', borderTop:'1px solid rgba(255,255,255,0.06)', animation:'appExpand .22s ease both' }}>
+                        {/* Answers */}
+                        {fields.length > 0 ? (
+                          <div style={{ display:'flex', flexDirection:'column', gap:12, marginTop:16, marginBottom:18 }}>
+                            {fields.map(f => (
+                              <div key={f.id}>
+                                <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', letterSpacing:'.06em', textTransform:'uppercase', marginBottom:5 }}>{f.label}</div>
+                                <div style={{ fontSize:13, color:'var(--text-primary)', lineHeight:1.6, background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:10, padding:'10px 13px', whiteSpace:'pre-wrap' }}>
+                                  {app.answers[f.id] || <span style={{ color:'var(--text-muted)', fontStyle:'italic' }}>No answer</span>}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize:13, color:'var(--text-muted)', padding:'14px 0 10px', fontStyle:'italic' }}>No questions were in this form.</div>
+                        )}
+
+                        {/* Actions */}
+                        <div style={{ display:'flex', gap:10 }}>
+                          <button
+                            onClick={() => handleRejectApplication(app.id)}
+                            disabled={isLoading}
+                            style={{ flex:1, padding:'10px', background:'rgba(248,113,113,0.08)', border:'1px solid rgba(248,113,113,0.3)', borderRadius:10, color:'#f87171', fontSize:13, fontWeight:700, cursor:isLoading?'default':'pointer', fontFamily:'inherit', opacity:isLoading?0.5:1, transition:'all .15s' }}
+                            onMouseEnter={e => { if(!isLoading) { e.currentTarget.style.background='rgba(248,113,113,0.16)'; e.currentTarget.style.borderColor='rgba(248,113,113,0.5)' }}}
+                            onMouseLeave={e => { e.currentTarget.style.background='rgba(248,113,113,0.08)'; e.currentTarget.style.borderColor='rgba(248,113,113,0.3)' }}
+                          >
+                            {isLoading ? '…' : '✕  Reject'}
+                          </button>
+                          <button
+                            onClick={() => handleAcceptApplication(app.id, app.user_id)}
+                            disabled={isLoading}
+                            style={{ flex:2, padding:'10px', background:isLoading?'rgba(34,197,94,0.1)':'rgba(34,197,94,0.15)', border:'1px solid rgba(34,197,94,0.4)', borderRadius:10, color:'#4ade80', fontSize:13, fontWeight:700, cursor:isLoading?'default':'pointer', fontFamily:'inherit', opacity:isLoading?0.5:1, transition:'all .15s' }}
+                            onMouseEnter={e => { if(!isLoading) { e.currentTarget.style.background='rgba(34,197,94,0.25)'; e.currentTarget.style.borderColor='rgba(34,197,94,0.6)' }}}
+                            onMouseLeave={e => { e.currentTarget.style.background='rgba(34,197,94,0.15)'; e.currentTarget.style.borderColor='rgba(34,197,94,0.4)' }}
+                          >
+                            {isLoading ? '…' : '✓  Accept'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )
               })}
             </div>
-          )}
-          {teamMembers.length === 0 && !memberSearch.trim() ? (
-            <div style={{ textAlign:'center', padding:'28px 0', color:'var(--text-muted)', fontSize:13 }}>{isPresident ? 'No members yet — search above to add your first team member.' : 'No members found.'}</div>
-          ) : teamMembers.length > 0 && (
-            <>
-              {!memberSearch.trim() && <div style={{ fontSize:10, fontWeight:700, letterSpacing:'0.1em', color:'var(--text-muted)', textTransform:'uppercase', marginBottom:10 }}>Current Team</div>}
-              <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-                {teamMembers.map(m => {
-                  if (m.role === 'president') return (
-                    <div key={m.id} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 14px', borderRadius:10, background:'rgba(233,193,118,0.04)', border:'1px solid rgba(233,193,118,0.14)' }}>
-                      <TeamAvatar name={m.profile?.full_name} />
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:13, fontWeight:600, color:'var(--text-primary)' }}>{m.profile?.full_name ?? 'Unknown'}</div>
-                        {m.profile?.school && <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:1 }}>{m.profile.school}</div>}
-                      </div>
-                      <span style={{ fontSize:10, fontWeight:700, letterSpacing:'0.06em', padding:'3px 10px', borderRadius:9999, background:'rgba(233,193,118,0.15)', color:'var(--gold)', flexShrink:0 }}>PRESIDENT</span>
-                    </div>
-                  )
-                  return <ExistingMemberRow key={m.id} profile={{ id:m.user_id, full_name:m.profile?.full_name??null, school:m.profile?.school??null, email:m.profile?.email??null }} membership={m} isLoading={actionLoading===m.id} canRemove={isPresident || canDo('remove_members')} canEditRole={isPresident} onRoleChange={handleRoleChange} onRemove={handleRemoveMember} onPermissionsChange={handlePermissionsChange} />
-                })}
-              </div>
-            </>
           )}
         </div>
       )}
@@ -846,6 +1240,666 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
         </div>
       )}
 
+      {/* ── Analytics tab ── */}
+      {activeTab === 'analytics' && (() => {
+        const CAT_COLORS = ['#c0185c','#60a5fa','#4ade80','#f59e0b','#a78bfa','#fb923c','#f87171','#38bdf8']
+        const BAR_GRADS = [
+          'linear-gradient(90deg,#8a1538,#f472b6)',
+          'linear-gradient(90deg,#1d4ed8,#60a5fa)',
+          'linear-gradient(90deg,#7c3aed,#c084fc)',
+          'linear-gradient(90deg,#15803d,#4ade80)',
+          'linear-gradient(90deg,#b45309,#fbbf24)',
+          'linear-gradient(90deg,#0e7490,#38bdf8)',
+        ]
+        const engagementRate = stats.memberCount > 0 && stats.eventCount > 0
+          ? Math.min(100, Math.round((stats.totalAttendees / (stats.memberCount * stats.eventCount)) * 100))
+          : 0
+        const totalKarak = events.reduce((s, e) => s + e.karak_points_reward * e.attendee_count, 0)
+        const topEvent = [...events].sort((a, b) => b.attendee_count - a.attendee_count)[0] ?? null
+        const sortedEvents = [...events].sort((a, b) => b.attendee_count - a.attendee_count).slice(0, 6)
+        const maxAtt = Math.max(...events.map(e => e.attendee_count), 1)
+
+        const categoryMap: Record<string, { count: number; attendees: number }> = {}
+        events.forEach(e => {
+          const cat = e.category ?? 'Uncategorised'
+          if (!categoryMap[cat]) categoryMap[cat] = { count: 0, attendees: 0 }
+          categoryMap[cat].count++; categoryMap[cat].attendees += e.attendee_count
+        })
+        const categories = Object.entries(categoryMap).sort((a, b) => b[1].attendees - a[1].attendees)
+        const totalCatAtt = categories.reduce((s, [, v]) => s + v.attendees, 0) || 1
+
+        // SVG area line chart
+        const CW = 560, CH = 120, PL = 28, PR = 12, PT = 18, PB = 26
+        const IW = CW - PL - PR, IH = CH - PT - PB
+        const maxJoin = Math.max(...monthlyJoins.map(m => m.count), 1)
+        const pts = monthlyJoins.map((m, i) => ({
+          x: PL + (monthlyJoins.length > 1 ? i / (monthlyJoins.length - 1) : 0.5) * IW,
+          y: PT + IH - (m.count / maxJoin) * IH,
+          ...m,
+        }))
+        let linePath = '', areaPath = ''
+        if (pts.length >= 2) {
+          linePath = `M${pts[0].x},${pts[0].y}` + pts.slice(1).map((p, i) => {
+            const cpx = (pts[i].x + p.x) / 2
+            return ` C${cpx},${pts[i].y} ${cpx},${p.y} ${p.x},${p.y}`
+          }).join('')
+          areaPath = `${linePath} L${pts[pts.length-1].x},${PT+IH} L${pts[0].x},${PT+IH} Z`
+        }
+
+        // SVG donut chart
+        const DR = 52, DCX = 70, DCY = 70, DCIRC = 2 * Math.PI * DR
+        let cumAngle = -90
+        const donutSegs = categories.slice(0, 6).map(([cat, v], i) => {
+          const fraction = v.attendees / totalCatAtt
+          const seg = { cat, v, segLen: fraction * DCIRC, startAngle: cumAngle, color: CAT_COLORS[i] }
+          cumAngle += fraction * 360
+          return seg
+        })
+
+        // Engagement ring
+        const ER = 40, ECIRC = 2 * Math.PI * ER
+        const eFill = (engagementRate / 100) * ECIRC
+        const eColor = engagementRate >= 60 ? '#4ade80' : engagementRate >= 30 ? '#f59e0b' : '#c0185c'
+
+        return (
+          <div key="analytics" className="cc-panel">
+            <style>{`
+              @keyframes anBarIn { from{width:0} to{width:var(--w)} }
+              @keyframes anFadeUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
+              @keyframes anRingIn { from{stroke-dasharray:0 9999} }
+              @keyframes anSpin { to{transform:rotate(360deg)} }
+              .an-bar   { animation: anBarIn  .9s cubic-bezier(.22,1,.36,1) both }
+              .an-card  { animation: anFadeUp .4s cubic-bezier(.22,1,.36,1) both }
+              .an-ring  { animation: anRingIn 1.1s cubic-bezier(.22,1,.36,1) both; animation-delay:.15s }
+              .an-spin  { animation: anSpin .7s linear infinite }
+            `}</style>
+
+            {/* ── Hero banner ── */}
+            <div style={{ position:'relative', overflow:'hidden', borderRadius:20, marginBottom:20, background:'linear-gradient(135deg,rgba(138,21,56,.3) 0%,rgba(12,6,9,0) 55%)', border:'1px solid rgba(138,21,56,.35)', padding:'26px 28px' }}>
+              <div style={{ position:'absolute', top:-60, right:-60, width:260, height:260, borderRadius:'50%', background:'radial-gradient(circle,rgba(192,24,92,.18) 0%,transparent 68%)', pointerEvents:'none' }} />
+              <div style={{ position:'absolute', bottom:-40, left:80, width:160, height:160, borderRadius:'50%', background:'radial-gradient(circle,rgba(96,165,250,.07) 0%,transparent 70%)', pointerEvents:'none' }} />
+              <div style={{ fontSize:10, fontWeight:800, color:'var(--accent)', letterSpacing:'.14em', textTransform:'uppercase', marginBottom:8 }}>Analytics Dashboard</div>
+              <div style={{ fontSize:28, fontWeight:900, color:'#fff', letterSpacing:'-.6px', lineHeight:1.1, marginBottom:8 }}>{club.name}</div>
+              <div style={{ display:'flex', gap:20, flexWrap:'wrap' }}>
+                {[
+                  { n: stats.memberCount, l: 'Members' },
+                  { n: stats.eventCount,  l: 'Events'  },
+                  { n: stats.totalAttendees, l: 'Check-ins' },
+                  { n: stats.threadCount, l: 'Threads'  },
+                ].map(x => (
+                  <div key={x.l} style={{ display:'flex', alignItems:'baseline', gap:5 }}>
+                    <span style={{ fontSize:22, fontWeight:900, color:'#fff' }}>{x.n}</span>
+                    <span style={{ fontSize:11, color:'rgba(255,255,255,.45)', fontWeight:600 }}>{x.l}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── KPI row ── */}
+            <div style={{ display:'grid', gridTemplateColumns:'160px 1fr 1fr 1fr', gap:14, marginBottom:20 }}>
+
+              {/* Engagement ring */}
+              <div className="an-card" style={{ background:'rgba(255,255,255,.04)', border:`1px solid ${eColor}28`, borderRadius:18, padding:'18px 14px', display:'flex', flexDirection:'column', alignItems:'center', gap:8 }}>
+                <svg width="96" height="96" viewBox="0 0 96 96">
+                  <circle cx="48" cy="48" r={ER} fill="none" stroke="rgba(255,255,255,.07)" strokeWidth="10"/>
+                  <circle cx="48" cy="48" r={ER} fill="none" stroke={eColor} strokeWidth="10" strokeLinecap="round"
+                    strokeDasharray={`${eFill} ${ECIRC - eFill}`} transform="rotate(-90 48 48)"
+                    className="an-ring" style={{ filter:`drop-shadow(0 0 8px ${eColor}99)` }}/>
+                  <text x="48" y="44" textAnchor="middle" fill={eColor} fontSize="17" fontWeight="900" fontFamily="inherit">{engagementRate}%</text>
+                  <text x="48" y="57" textAnchor="middle" fill="rgba(255,255,255,.35)" fontSize="8" fontFamily="inherit">ENGAGE</text>
+                </svg>
+                <div style={{ textAlign:'center' }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:'var(--text-primary)' }}>Engagement</div>
+                  <div style={{ fontSize:10, color:'var(--text-muted)', marginTop:1 }}>attendance ÷ members</div>
+                </div>
+              </div>
+
+              {/* Karak Points */}
+              <div className="an-card" style={{ background:'rgba(255,255,255,.04)', border:'1px solid rgba(251,191,36,.2)', borderRadius:18, padding:'22px 22px', position:'relative', overflow:'hidden', animationDelay:'.06s' }}>
+                <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:'linear-gradient(90deg,#f59e0b,#fbbf24)' }}/>
+                <div style={{ fontSize:10, fontWeight:800, color:'#f59e0b', letterSpacing:'.12em', textTransform:'uppercase', marginBottom:10 }}>🏆 Karak Points</div>
+                <div style={{ fontSize:38, fontWeight:900, color:'#fff', letterSpacing:'-2.5px', lineHeight:1 }}>{totalKarak.toLocaleString()}</div>
+                <div style={{ fontSize:11, color:'rgba(255,255,255,.4)', marginTop:7, marginBottom:14 }}>rewarded across {stats.eventCount} events</div>
+                <div style={{ height:4, borderRadius:9999, background:'rgba(255,255,255,.07)', overflow:'hidden' }}>
+                  <div style={{ height:'100%', width:`${Math.min(100,(stats.totalAttendees/Math.max(stats.memberCount,1))*50)}%`, background:'linear-gradient(90deg,#f59e0b,#fbbf24)', borderRadius:9999 }}/>
+                </div>
+              </div>
+
+              {/* Top event */}
+              <div className="an-card" style={{ background:'rgba(255,255,255,.04)', border:'1px solid rgba(167,139,250,.2)', borderRadius:18, padding:'22px 22px', position:'relative', overflow:'hidden', animationDelay:'.12s' }}>
+                <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:'linear-gradient(90deg,#7c3aed,#c084fc)' }}/>
+                <div style={{ fontSize:10, fontWeight:800, color:'#a78bfa', letterSpacing:'.12em', textTransform:'uppercase', marginBottom:10 }}>🥇 Best Event</div>
+                <div style={{ fontSize:topEvent ? 15 : 13, fontWeight:800, color:'#fff', lineHeight:1.35, marginBottom:8, overflow:'hidden', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>
+                  {topEvent ? topEvent.title : 'No events yet'}
+                </div>
+                {topEvent && (
+                  <div style={{ display:'flex', alignItems:'baseline', gap:6 }}>
+                    <span style={{ fontSize:28, fontWeight:900, color:'#a78bfa', letterSpacing:'-1px' }}>{topEvent.attendee_count}</span>
+                    <span style={{ fontSize:11, color:'rgba(255,255,255,.4)' }}>check-ins</span>
+                  </div>
+                )}
+              </div>
+
+              {/* New members */}
+              <div className="an-card" style={{ background:'rgba(255,255,255,.04)', border:'1px solid rgba(96,165,250,.2)', borderRadius:18, padding:'22px 22px', position:'relative', overflow:'hidden', animationDelay:'.18s' }}>
+                <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:'linear-gradient(90deg,#1d4ed8,#38bdf8)' }}/>
+                <div style={{ fontSize:10, fontWeight:800, color:'#60a5fa', letterSpacing:'.12em', textTransform:'uppercase', marginBottom:10 }}>📈 New Members</div>
+                <div style={{ fontSize:38, fontWeight:900, color:'#fff', letterSpacing:'-2.5px', lineHeight:1 }}>+{stats.newMembersThisMonth}</div>
+                <div style={{ fontSize:11, color:'rgba(255,255,255,.4)', marginTop:7 }}>in the last 30 days</div>
+                {stats.memberCount > 0 && (
+                  <div style={{ fontSize:12, color:'#60a5fa', marginTop:6, fontWeight:700 }}>
+                    {Math.round((stats.newMembersThisMonth / stats.memberCount) * 100)}% of total
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── SVG Line Chart — Member Growth ── */}
+            <div style={{ background:'rgba(255,255,255,.03)', border:'1px solid rgba(255,255,255,.08)', borderRadius:18, padding:'22px 24px 18px', marginBottom:16 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+                <div>
+                  <div style={{ fontSize:14, fontWeight:700, color:'var(--text-primary)' }}>Member Growth</div>
+                  <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:2 }}>New joins per month — last 6 months</div>
+                </div>
+                {loadingAnalytics && <div className="an-spin" style={{ width:14, height:14, borderRadius:'50%', border:'2px solid rgba(138,21,56,.3)', borderTopColor:'var(--accent)' }}/>}
+              </div>
+              {pts.length > 0 ? (
+                <svg viewBox={`0 0 ${CW} ${CH}`} style={{ width:'100%', height:'auto', overflow:'visible', display:'block' }}>
+                  <defs>
+                    <linearGradient id="anAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#c0185c" stopOpacity="0.4"/>
+                      <stop offset="100%" stopColor="#c0185c" stopOpacity="0.02"/>
+                    </linearGradient>
+                    <filter id="anLineGlow" x="-10%" y="-40%" width="120%" height="180%">
+                      <feGaussianBlur stdDeviation="3" result="blur"/>
+                      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                    </filter>
+                  </defs>
+                  {/* Grid */}
+                  {[0.25,0.5,0.75,1].map(f => (
+                    <line key={f} x1={PL} y1={PT + IH*(1-f)} x2={PL+IW} y2={PT + IH*(1-f)} stroke="rgba(255,255,255,.05)" strokeWidth="1" strokeDasharray="3 4"/>
+                  ))}
+                  {/* Area + line */}
+                  {areaPath && <path d={areaPath} fill="url(#anAreaGrad)"/>}
+                  {linePath  && <path d={linePath} fill="none" stroke="#c0185c" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" filter="url(#anLineGlow)"/>}
+                  {/* Data points */}
+                  {pts.map((p, i) => (
+                    <g key={i}>
+                      <circle cx={p.x} cy={p.y} r="6" fill="rgba(18,18,18,.9)" stroke="#c0185c" strokeWidth="2.5"/>
+                      <circle cx={p.x} cy={p.y} r="2.5" fill="#c0185c"/>
+                      {p.count > 0 && <text x={p.x} y={p.y-11} textAnchor="middle" fill="rgba(255,255,255,.75)" fontSize="11" fontWeight="700" fontFamily="inherit">{p.count}</text>}
+                      <text x={p.x} y={PT+IH+18} textAnchor="middle" fill={i===pts.length-1?'#c0185c':'rgba(255,255,255,.35)'} fontSize="11" fontWeight={i===pts.length-1?'700':'400'} fontFamily="inherit">{p.label}</text>
+                    </g>
+                  ))}
+                </svg>
+              ) : (
+                <div style={{ height:80, display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)', fontSize:13 }}>
+                  {loadingAnalytics ? 'Loading chart…' : 'No membership data yet'}
+                </div>
+              )}
+            </div>
+
+            {/* ── Bottom row: Leaderboard + Donut ── */}
+            <div style={{ display:'grid', gridTemplateColumns: categories.length > 0 ? '1fr 260px' : '1fr', gap:16 }}>
+
+              {/* Event Leaderboard */}
+              {sortedEvents.length > 0 && (
+                <div style={{ background:'rgba(255,255,255,.03)', border:'1px solid rgba(255,255,255,.08)', borderRadius:18, padding:'22px 24px' }}>
+                  <div style={{ fontSize:14, fontWeight:700, color:'var(--text-primary)', marginBottom:4 }}>Event Leaderboard</div>
+                  <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:20 }}>Ranked by check-in count</div>
+                  <div style={{ display:'flex', flexDirection:'column', gap:18 }}>
+                    {sortedEvents.map((e, idx) => {
+                      const pct = Math.round((e.attendee_count / maxAtt) * 100)
+                      const medals = ['🥇','🥈','🥉']
+                      return (
+                        <div key={e.id} style={{ display:'grid', gridTemplateColumns:'28px 1fr', gap:10, alignItems:'start' }}>
+                          <div style={{ fontSize:idx < 3 ? 18 : 13, textAlign:'center', paddingTop:2, color:'rgba(255,255,255,.4)', fontWeight:700 }}>
+                            {idx < 3 ? medals[idx] : idx+1}
+                          </div>
+                          <div>
+                            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:7 }}>
+                              <span style={{ fontSize:13, fontWeight:600, color:'var(--text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1, marginRight:10 }}>{e.title}</span>
+                              <span style={{ fontSize:15, fontWeight:900, color:'#fff', flexShrink:0 }}>{e.attendee_count}</span>
+                            </div>
+                            <div style={{ height:9, borderRadius:5, background:'rgba(255,255,255,.06)', overflow:'hidden' }}>
+                              <div className="an-bar" style={{
+                                '--w':`${pct}%`, height:'100%', borderRadius:5,
+                                background: BAR_GRADS[idx % BAR_GRADS.length],
+                                boxShadow: idx===0 ? '0 0 14px rgba(244,114,182,.45)' : 'none',
+                              } as React.CSSProperties}/>
+                            </div>
+                            <div style={{ display:'flex', gap:12, marginTop:4 }}>
+                              {e.start_time && (
+                                <span style={{ fontSize:10, color:'var(--text-muted)' }}>
+                                  {new Date(e.start_time).toLocaleDateString('default',{month:'short',day:'numeric',year:'numeric'})}
+                                </span>
+                              )}
+                              {e.karak_points_reward > 0 && (
+                                <span style={{ fontSize:10, color:'#f59e0b', fontWeight:700 }}>+{e.karak_points_reward} pts</span>
+                              )}
+                              <span style={{ fontSize:10, color:'rgba(255,255,255,.25)' }}>{pct}%</span>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Category Donut */}
+              {categories.length > 0 && (
+                <div style={{ background:'rgba(255,255,255,.03)', border:'1px solid rgba(255,255,255,.08)', borderRadius:18, padding:'22px 22px', display:'flex', flexDirection:'column' }}>
+                  <div style={{ fontSize:14, fontWeight:700, color:'var(--text-primary)', marginBottom:4 }}>Categories</div>
+                  <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:16 }}>Attendees by type</div>
+                  <div style={{ display:'flex', justifyContent:'center', marginBottom:16 }}>
+                    <svg width="140" height="140" viewBox="0 0 140 140">
+                      <circle cx={DCX} cy={DCY} r={DR} fill="none" stroke="rgba(255,255,255,.07)" strokeWidth="18"/>
+                      {donutSegs.map(seg => (
+                        <circle key={seg.cat} cx={DCX} cy={DCY} r={DR} fill="none"
+                          stroke={seg.color} strokeWidth="18" strokeLinecap="butt"
+                          strokeDasharray={`${seg.segLen - 1.5} ${DCIRC - seg.segLen + 1.5}`}
+                          transform={`rotate(${seg.startAngle} ${DCX} ${DCY})`}
+                          style={{ filter:`drop-shadow(0 0 5px ${seg.color}66)` }}/>
+                      ))}
+                      <text x={DCX} y={DCY-7} textAnchor="middle" fill="#fff" fontSize="22" fontWeight="900" fontFamily="inherit">{totalCatAtt}</text>
+                      <text x={DCX} y={DCY+11} textAnchor="middle" fill="rgba(255,255,255,.35)" fontSize="9" fontFamily="inherit" fontWeight="600" letterSpacing="1">ATTENDEES</text>
+                    </svg>
+                  </div>
+                  <div style={{ display:'flex', flexDirection:'column', gap:9 }}>
+                    {donutSegs.map(seg => (
+                      <div key={seg.cat} style={{ display:'flex', alignItems:'center', gap:9 }}>
+                        <div style={{ width:10, height:10, borderRadius:3, background:seg.color, flexShrink:0, boxShadow:`0 0 6px ${seg.color}99` }}/>
+                        <span style={{ fontSize:12, color:'var(--text-secondary)', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{seg.cat}</span>
+                        <span style={{ fontSize:12, fontWeight:800, color:seg.color }}>{Math.round((seg.v.attendees/totalCatAtt)*100)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── Meeting Notes tab ── */}
+      {activeTab === 'notes' && (() => {
+        const NOTE_ACCENTS = ['#c0185c','#60a5fa','#4ade80','#f59e0b','#a78bfa','#fb923c','#38bdf8','#f472b6']
+        const accentFor = (id: string) => NOTE_ACCENTS[id.charCodeAt(0) % NOTE_ACCENTS.length]
+        const wordCount = (s: string | null) => s ? s.trim().split(/\s+/).filter(Boolean).length : 0
+
+        return (
+          <div key="notes" className="cc-panel">
+            <style>{`
+              @keyframes ntSlideIn { from{opacity:0;transform:translateY(-10px)} to{opacity:1;transform:none} }
+              @keyframes ntCardIn  { from{opacity:0;transform:translateY(8px)}  to{opacity:1;transform:none} }
+              @keyframes ntExpand  { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:none} }
+              .nt-form { animation: ntSlideIn .22s cubic-bezier(.22,1,.36,1) both }
+              .nt-card { animation: ntCardIn  .3s  cubic-bezier(.22,1,.36,1) both }
+              .nt-body { animation: ntExpand  .2s  cubic-bezier(.22,1,.36,1) both }
+            `}</style>
+
+            {/* ── Header ── */}
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:22 }}>
+              <div>
+                <h2 style={{ fontSize:18, fontWeight:800, color:'var(--text-primary)', marginBottom:4 }}>Meeting Notes</h2>
+                <p style={{ fontSize:13, color:'var(--text-muted)' }}>
+                  {notes.length > 0 ? `${notes.length} note${notes.length !== 1 ? 's' : ''} — shared with all members` : 'Document decisions, action items, and discussions'}
+                </p>
+              </div>
+              {(isPresident || canDo('post_announcements')) && (
+                <button
+                  onClick={() => setShowNoteForm(v => !v)}
+                  style={{ background: showNoteForm ? 'rgba(255,255,255,.06)' : 'var(--accent)', border: showNoteForm ? '1px solid rgba(255,255,255,.15)' : 'none', borderRadius:12, padding:'10px 20px', color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer', fontFamily:'inherit', transition:'all .15s', flexShrink:0 }}
+                >
+                  {showNoteForm ? '✕ Cancel' : '+ New Note'}
+                </button>
+              )}
+            </div>
+
+            {/* ── Compose form ── */}
+            {showNoteForm && (
+              <div className="nt-form" style={{ background:'linear-gradient(135deg,rgba(24,14,18,.9),rgba(16,14,24,.9))', border:'1px solid rgba(138,21,56,.3)', borderRadius:20, padding:'22px 22px', marginBottom:22, boxShadow:'0 16px 40px rgba(0,0,0,.4)' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:18 }}>
+                  <div style={{ width:34, height:34, borderRadius:10, background:'rgba(138,21,56,.2)', border:'1px solid rgba(138,21,56,.35)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, flexShrink:0 }}>📝</div>
+                  <div>
+                    <div style={{ fontSize:13, fontWeight:700, color:'var(--text-primary)' }}>New Meeting Note</div>
+                    <div style={{ fontSize:11, color:'var(--text-muted)' }}>{new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</div>
+                  </div>
+                </div>
+
+                <input
+                  value={noteTitle}
+                  onChange={e => setNoteTitle(e.target.value)}
+                  placeholder="Meeting title or topic…"
+                  style={{ ...fi, fontSize:16, fontWeight:700, padding:'12px 14px', marginBottom:12, background:'rgba(255,255,255,.05)', border:'1px solid rgba(255,255,255,.1)' }}
+                />
+
+                <div style={{ position:'relative', marginBottom:16 }}>
+                  <textarea
+                    value={noteContent}
+                    onChange={e => setNoteContent(e.target.value)}
+                    placeholder="Write your notes here — decisions made, action items, key discussions…"
+                    rows={7}
+                    style={{ ...fi, resize:'vertical', lineHeight:1.75, padding:'13px 14px', background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.08)', fontSize:13 }}
+                  />
+                  {noteContent.trim() && (
+                    <div style={{ position:'absolute', bottom:10, right:12, fontSize:10, color:'rgba(255,255,255,.25)', fontWeight:600, pointerEvents:'none' }}>
+                      {wordCount(noteContent)} words
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                  <div style={{ fontSize:11, color:'rgba(255,255,255,.3)' }}>
+                    {noteTitle.trim() ? '' : 'Title is required'}
+                  </div>
+                  <button
+                    onClick={handleSaveNote}
+                    disabled={savingNote || !noteTitle.trim()}
+                    style={{ background:'linear-gradient(135deg,#8a1538,#c0185c)', border:'none', borderRadius:12, padding:'10px 26px', color:'#fff', fontSize:13, fontWeight:800, cursor: savingNote||!noteTitle.trim() ? 'default':'pointer', opacity: savingNote||!noteTitle.trim() ? .45:1, fontFamily:'inherit', boxShadow:'0 4px 16px rgba(138,21,56,.4)', transition:'opacity .15s' }}
+                  >
+                    {savingNote ? 'Saving…' : 'Save Note'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── Notes list ── */}
+            {notes.length === 0 ? (
+              <div style={{ textAlign:'center', padding:'70px 20px' }}>
+                <div style={{ fontSize:52, marginBottom:14, opacity:.2 }}>📋</div>
+                <div style={{ fontSize:15, fontWeight:700, color:'var(--text-primary)', marginBottom:6 }}>No notes yet</div>
+                <div style={{ fontSize:13, color:'var(--text-muted)' }}>Start documenting your meetings — decisions, action items, and discussions</div>
+              </div>
+            ) : (
+              <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                {notes.map((n, idx) => {
+                  const accent = accentFor(n.id)
+                  const isOpen = expandedNote === n.id
+                  const preview = n.content ? n.content.slice(0, 140).trimEnd() + (n.content.length > 140 ? '…' : '') : null
+                  const wc = wordCount(n.content)
+                  const initial = n.profile?.full_name?.[0]?.toUpperCase() ?? '?'
+
+                  return (
+                    <div key={n.id} className="nt-card" style={{ background:'rgba(255,255,255,.03)', border:'1px solid rgba(255,255,255,.07)', borderRadius:18, overflow:'hidden', transition:'border-color .15s, box-shadow .15s', animationDelay:`${idx * 0.05}s` }}
+                      onMouseEnter={ev => { ev.currentTarget.style.borderColor = `${accent}30`; ev.currentTarget.style.boxShadow = `0 4px 24px rgba(0,0,0,.3)` }}
+                      onMouseLeave={ev => { ev.currentTarget.style.borderColor = 'rgba(255,255,255,.07)'; ev.currentTarget.style.boxShadow = 'none' }}>
+
+                      {/* Accent top strip */}
+                      <div style={{ height:3, background:`linear-gradient(90deg,${accent},${accent}66)` }}/>
+
+                      {/* Card header — always visible */}
+                      <div style={{ display:'flex', alignItems:'flex-start', gap:14, padding:'16px 18px', cursor:'pointer' }} onClick={() => setExpandedNote(isOpen ? null : n.id)}>
+
+                        {/* Author avatar */}
+                        <div style={{ width:36, height:36, borderRadius:12, background:`${accent}22`, border:`1px solid ${accent}44`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, color:accent, flexShrink:0, marginTop:2 }}>
+                          {initial}
+                        </div>
+
+                        {/* Text */}
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:15, fontWeight:700, color:'var(--text-primary)', marginBottom:4, lineHeight:1.3 }}>{n.title}</div>
+                          {!isOpen && preview && (
+                            <div style={{ fontSize:12, color:'var(--text-muted)', lineHeight:1.6, overflow:'hidden', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>{preview}</div>
+                          )}
+                          <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:6, flexWrap:'wrap' }}>
+                            <span style={{ fontSize:10, color:'rgba(255,255,255,.35)', fontWeight:600 }}>
+                              {new Date(n.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}
+                            </span>
+                            {n.profile?.full_name && (
+                              <span style={{ fontSize:10, color:'rgba(255,255,255,.35)' }}>· {n.profile.full_name}</span>
+                            )}
+                            {wc > 0 && (
+                              <span style={{ fontSize:10, fontWeight:700, color:accent, background:`${accent}15`, borderRadius:6, padding:'2px 8px' }}>{wc}w</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
+                          {isPresident && (
+                            <button
+                              onClick={e => { e.stopPropagation(); handleDeleteNote(n.id) }}
+                              style={{ background:'transparent', border:'none', color:'rgba(255,255,255,.18)', cursor:'pointer', fontSize:15, padding:'4px 6px', borderRadius:8, fontFamily:'inherit', lineHeight:1, transition:'color .12s' }}
+                              onMouseEnter={e => e.currentTarget.style.color='#f87171'}
+                              onMouseLeave={e => e.currentTarget.style.color='rgba(255,255,255,.18)'}
+                            >✕</button>
+                          )}
+                          <div style={{ width:28, height:28, borderRadius:8, background:'rgba(255,255,255,.06)', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)', fontSize:11, transition:'background .12s' }}>
+                            {isOpen ? '▲' : '▼'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Expanded body */}
+                      {isOpen && (
+                        <div className="nt-body" style={{ borderTop:'1px solid rgba(255,255,255,.06)', margin:'0 18px', paddingBottom:20 }}>
+                          {n.content ? (
+                            <pre style={{ fontSize:13.5, color:'rgba(255,255,255,.75)', lineHeight:1.85, whiteSpace:'pre-wrap', wordBreak:'break-word', margin:'18px 0 0', fontFamily:'inherit', padding:'16px 18px', background:'rgba(0,0,0,.18)', borderRadius:12, border:'1px solid rgba(255,255,255,.05)' }}>{n.content}</pre>
+                          ) : (
+                            <div style={{ padding:'20px 0', fontSize:13, color:'rgba(255,255,255,.3)', fontStyle:'italic' }}>No content added.</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
+      {/* ── Budget tab ── */}
+      {activeTab === 'budget' && (() => {
+        const income  = budgetEntries.filter(e => e.type === 'income' ).reduce((s, e) => s + Number(e.amount), 0)
+        const expense = budgetEntries.filter(e => e.type === 'expense').reduce((s, e) => s + Number(e.amount), 0)
+        const balance = income - expense
+        const total   = income + expense || 1
+        const incomePct = Math.round((income / total) * 100)
+        const balColor = balance >= 0 ? '#4ade80' : '#f87171'
+
+        const catTotals: Record<string, { income: number; expense: number }> = {}
+        budgetEntries.forEach(e => {
+          const cat = e.category ?? 'Other'
+          if (!catTotals[cat]) catTotals[cat] = { income: 0, expense: 0 }
+          catTotals[cat][e.type] += Number(e.amount)
+        })
+        const topCats = Object.entries(catTotals).sort((a, b) => (b[1].income + b[1].expense) - (a[1].income + a[1].expense)).slice(0, 5)
+
+        const filtered = budgetFilter === 'all' ? budgetEntries : budgetEntries.filter(e => e.type === budgetFilter)
+
+        return (
+          <div key="budget" className="cc-panel">
+            <style>{`
+              @keyframes bdSlideIn { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:none} }
+              @keyframes bdRowIn { from{opacity:0;transform:translateX(-6px)} to{opacity:1;transform:none} }
+              .bd-form { animation: bdSlideIn .22s cubic-bezier(.22,1,.36,1) both }
+              .bd-row  { animation: bdRowIn .25s cubic-bezier(.22,1,.36,1) both }
+            `}</style>
+
+            {/* ── Hero summary card ── */}
+            <div style={{ position:'relative', overflow:'hidden', borderRadius:20, marginBottom:18, background:'linear-gradient(135deg,rgba(16,22,12,.9),rgba(12,16,22,.9))', border:`1px solid ${balColor}28`, padding:'24px 26px' }}>
+              <div style={{ position:'absolute', top:-50, right:-50, width:200, height:200, borderRadius:'50%', background:`radial-gradient(circle,${balColor}18 0%,transparent 70%)`, pointerEvents:'none' }}/>
+
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:20 }}>
+                <div>
+                  <div style={{ fontSize:10, fontWeight:800, color:'rgba(255,255,255,.4)', letterSpacing:'.14em', textTransform:'uppercase', marginBottom:6 }}>Current Balance</div>
+                  <div style={{ fontSize:40, fontWeight:900, color:balColor, letterSpacing:'-2px', lineHeight:1 }}>
+                    {balance < 0 ? '-' : ''}${Math.abs(balance).toFixed(2)}
+                  </div>
+                  <div style={{ fontSize:11, color:'rgba(255,255,255,.35)', marginTop:6 }}>
+                    {budgetEntries.length} entr{budgetEntries.length !== 1 ? 'ies' : 'y'} recorded
+                  </div>
+                </div>
+                {(isPresident || canDo('manage_budget')) && (
+                  <button
+                    onClick={() => setShowBudgetForm(v => !v)}
+                    style={{ background: showBudgetForm ? 'rgba(255,255,255,.06)' : 'var(--accent)', border: showBudgetForm ? '1px solid rgba(255,255,255,.15)' : 'none', borderRadius:12, padding:'10px 20px', color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer', fontFamily:'inherit', flexShrink:0, transition:'all .15s' }}
+                  >
+                    {showBudgetForm ? '✕ Cancel' : '+ Add Entry'}
+                  </button>
+                )}
+              </div>
+
+              {/* Income/Expense split bar */}
+              <div style={{ marginBottom:16 }}>
+                <div style={{ display:'flex', height:6, borderRadius:9999, overflow:'hidden', background:'rgba(255,255,255,.07)', marginBottom:10 }}>
+                  <div style={{ width:`${incomePct}%`, background:'linear-gradient(90deg,#16a34a,#4ade80)', transition:'width .8s cubic-bezier(.22,1,.36,1)', borderRadius:'9999px 0 0 9999px' }}/>
+                  <div style={{ flex:1, background:'linear-gradient(90deg,#f87171,#dc2626)', borderRadius:'0 9999px 9999px 0' }}/>
+                </div>
+                <div style={{ display:'flex', gap:20 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <div style={{ width:8, height:8, borderRadius:'50%', background:'#4ade80', boxShadow:'0 0 6px #4ade8088', flexShrink:0 }}/>
+                    <span style={{ fontSize:11, color:'rgba(255,255,255,.45)' }}>Income</span>
+                    <span style={{ fontSize:14, fontWeight:800, color:'#4ade80' }}>${income.toFixed(2)}</span>
+                  </div>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <div style={{ width:8, height:8, borderRadius:'50%', background:'#f87171', boxShadow:'0 0 6px #f8717188', flexShrink:0 }}/>
+                    <span style={{ fontSize:11, color:'rgba(255,255,255,.45)' }}>Expenses</span>
+                    <span style={{ fontSize:14, fontWeight:800, color:'#f87171' }}>${expense.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Top categories */}
+              {topCats.length > 0 && (
+                <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                  {topCats.map(([cat, v]) => (
+                    <div key={cat} style={{ background:'rgba(255,255,255,.06)', border:'1px solid rgba(255,255,255,.1)', borderRadius:9999, padding:'3px 12px', fontSize:11, color:'rgba(255,255,255,.6)', fontWeight:600 }}>
+                      {cat} · <span style={{ color: v.expense > v.income ? '#f87171' : '#4ade80' }}>${(v.income + v.expense).toFixed(0)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ── Add Entry Form ── */}
+            {showBudgetForm && (
+              <div className="bd-form" style={{ background:'rgba(20,28,20,.7)', border:'1px solid rgba(74,222,128,.18)', borderRadius:18, padding:'22px 22px', marginBottom:18 }}>
+                <div style={{ fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:16 }}>New Entry</div>
+
+                {/* Type toggle */}
+                <div style={{ display:'flex', background:'rgba(0,0,0,.25)', borderRadius:12, padding:4, marginBottom:16, gap:4 }}>
+                  {(['income','expense'] as const).map(t => (
+                    <button key={t} onClick={() => setBudgetType(t)} style={{
+                      flex:1, padding:'9px 0', borderRadius:9, border:'none', fontFamily:'inherit', fontSize:13, fontWeight:700, cursor:'pointer', transition:'all .15s',
+                      background: budgetType===t ? (t==='income' ? 'rgba(74,222,128,.18)' : 'rgba(248,113,113,.18)') : 'transparent',
+                      color: budgetType===t ? (t==='income' ? '#4ade80' : '#f87171') : 'rgba(255,255,255,.35)',
+                      boxShadow: budgetType===t ? `0 0 0 1px ${t==='income'?'rgba(74,222,128,.3)':'rgba(248,113,113,.3)'}` : 'none',
+                    }}>
+                      {t === 'income' ? '↑ Income' : '↓ Expense'}
+                    </button>
+                  ))}
+                </div>
+
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:14 }}>
+                  <div>
+                    <label style={{ fontSize:10, fontWeight:700, color:'rgba(255,255,255,.4)', textTransform:'uppercase', letterSpacing:'.1em', display:'block', marginBottom:6 }}>Amount</label>
+                    <div style={{ position:'relative' }}>
+                      <span style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:'rgba(255,255,255,.35)', fontSize:14, fontWeight:700 }}>$</span>
+                      <input type="number" min="0" step="0.01" value={budgetAmount} onChange={e => setBudgetAmount(e.target.value)} placeholder="0.00" style={{ ...fi, paddingLeft:28 }}/>
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ fontSize:10, fontWeight:700, color:'rgba(255,255,255,.4)', textTransform:'uppercase', letterSpacing:'.1em', display:'block', marginBottom:6 }}>Date</label>
+                    <input type="date" value={budgetDate} onChange={e => setBudgetDate(e.target.value)} style={fi}/>
+                  </div>
+                  <div>
+                    <label style={{ fontSize:10, fontWeight:700, color:'rgba(255,255,255,.4)', textTransform:'uppercase', letterSpacing:'.1em', display:'block', marginBottom:6 }}>Description</label>
+                    <input value={budgetDesc} onChange={e => setBudgetDesc(e.target.value)} placeholder="What's this for?" style={fi}/>
+                  </div>
+                  <div>
+                    <label style={{ fontSize:10, fontWeight:700, color:'rgba(255,255,255,.4)', textTransform:'uppercase', letterSpacing:'.1em', display:'block', marginBottom:6 }}>Category</label>
+                    <input value={budgetCategory} onChange={e => setBudgetCategory(e.target.value)} placeholder="Food, Printing, Venue…" style={fi}/>
+                  </div>
+                </div>
+
+                <div style={{ display:'flex', justifyContent:'flex-end' }}>
+                  <button
+                    onClick={handleSaveBudget}
+                    disabled={savingBudget || !budgetDesc.trim() || !budgetAmount}
+                    style={{ background: budgetType==='income' ? 'linear-gradient(135deg,#15803d,#4ade80)' : 'linear-gradient(135deg,#dc2626,#f87171)', border:'none', borderRadius:12, padding:'10px 28px', color:'#fff', fontSize:13, fontWeight:800, cursor: savingBudget||!budgetDesc.trim()||!budgetAmount ? 'default':'pointer', opacity: savingBudget||!budgetDesc.trim()||!budgetAmount ? .45:1, fontFamily:'inherit', boxShadow: budgetType==='income' ? '0 4px 16px rgba(74,222,128,.3)':'0 4px 16px rgba(248,113,113,.3)', transition:'opacity .15s' }}
+                  >
+                    {savingBudget ? 'Saving…' : `Add ${budgetType === 'income' ? 'Income' : 'Expense'}`}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── Entry list ── */}
+            {budgetEntries.length === 0 ? (
+              <div style={{ textAlign:'center', padding:'70px 20px' }}>
+                <div style={{ fontSize:48, marginBottom:14, opacity:.25 }}>💳</div>
+                <div style={{ fontSize:15, fontWeight:700, color:'var(--text-primary)', marginBottom:6 }}>No entries yet</div>
+                <div style={{ fontSize:13, color:'var(--text-muted)' }}>Add your first income or expense to get started</div>
+              </div>
+            ) : (
+              <>
+                {/* Filter pills */}
+                <div style={{ display:'flex', gap:8, marginBottom:14, alignItems:'center' }}>
+                  <span style={{ fontSize:11, color:'rgba(255,255,255,.35)', fontWeight:600, marginRight:4 }}>SHOW</span>
+                  {(['all','income','expense'] as const).map(f => (
+                    <button key={f} onClick={() => setBudgetFilter(f)} style={{
+                      padding:'5px 14px', borderRadius:9999, fontSize:12, fontWeight:700, fontFamily:'inherit', cursor:'pointer', transition:'all .15s',
+                      background: budgetFilter===f ? (f==='income'?'rgba(74,222,128,.15)':f==='expense'?'rgba(248,113,113,.15)':'rgba(255,255,255,.08)') : 'transparent',
+                      border: `1px solid ${budgetFilter===f?(f==='income'?'rgba(74,222,128,.4)':f==='expense'?'rgba(248,113,113,.4)':'rgba(255,255,255,.18)'):'rgba(255,255,255,.08)'}`,
+                      color: budgetFilter===f ? (f==='income'?'#4ade80':f==='expense'?'#f87171':'#fff') : 'rgba(255,255,255,.4)',
+                    }}>
+                      {f === 'all' ? `All (${budgetEntries.length})` : f === 'income' ? `↑ Income (${budgetEntries.filter(e=>e.type==='income').length})` : `↓ Expenses (${budgetEntries.filter(e=>e.type==='expense').length})`}
+                    </button>
+                  ))}
+                </div>
+
+                <div style={{ background:'rgba(255,255,255,.02)', border:'1px solid rgba(255,255,255,.07)', borderRadius:16, overflow:'hidden' }}>
+                  {filtered.length === 0 ? (
+                    <div style={{ padding:'32px 20px', textAlign:'center', color:'var(--text-muted)', fontSize:13 }}>No {budgetFilter} entries</div>
+                  ) : filtered.map((e, i) => {
+                    const isInc = e.type === 'income'
+                    const col = isInc ? '#4ade80' : '#f87171'
+                    return (
+                      <div key={e.id} className="bd-row" style={{ display:'grid', gridTemplateColumns:'44px 1fr auto auto', gap:0, alignItems:'center', borderBottom: i < filtered.length-1 ? '1px solid rgba(255,255,255,.05)':'none', transition:'background .12s', animationDelay:`${i*0.04}s` }}
+                        onMouseEnter={ev => ev.currentTarget.style.background='rgba(255,255,255,.03)'}
+                        onMouseLeave={ev => ev.currentTarget.style.background='transparent'}>
+                        {/* Icon */}
+                        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100%', padding:'14px 0 14px 14px' }}>
+                          <div style={{ width:32, height:32, borderRadius:10, background:`${col}14`, border:`1px solid ${col}28`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, color:col, fontWeight:900, flexShrink:0 }}>
+                            {isInc ? '↑' : '↓'}
+                          </div>
+                        </div>
+                        {/* Description + meta */}
+                        <div style={{ padding:'14px 14px', minWidth:0 }}>
+                          <div style={{ fontSize:13, fontWeight:600, color:'var(--text-primary)', marginBottom:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{e.description}</div>
+                          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                            {e.category && (
+                              <span style={{ fontSize:10, fontWeight:700, color:'rgba(255,255,255,.4)', background:'rgba(255,255,255,.07)', borderRadius:6, padding:'2px 8px' }}>{e.category}</span>
+                            )}
+                            <span style={{ fontSize:11, color:'rgba(255,255,255,.3)' }}>
+                              {new Date(e.entry_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}
+                            </span>
+                          </div>
+                        </div>
+                        {/* Amount */}
+                        <div style={{ padding:'14px 10px 14px 0', fontSize:15, fontWeight:900, color:col, letterSpacing:'-.3px', flexShrink:0 }}>
+                          {isInc ? '+' : '-'}${Number(e.amount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
+                        </div>
+                        {/* Delete */}
+                        {(isPresident || canDo('manage_budget')) && (
+                          <button onClick={() => handleDeleteBudgetEntry(e.id)} style={{ padding:'14px 14px 14px 4px', background:'transparent', border:'none', color:'rgba(255,255,255,.15)', cursor:'pointer', fontSize:16, fontFamily:'inherit', flexShrink:0, transition:'color .12s', lineHeight:1 }}
+                            onMouseEnter={ev => ev.currentTarget.style.color='#f87171'}
+                            onMouseLeave={ev => ev.currentTarget.style.color='rgba(255,255,255,.15)'}>✕</button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        )
+      })()}
+
       {/* ── Modals (always rendered) ── */}
       {showDeleteConfirm && createPortal(
         <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(14px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -926,14 +1980,107 @@ const fi: React.CSSProperties = {
   fontFamily: 'inherit',
 }
 
-function TeamAvatar({ name }: { name?: string | null }) {
+// ─── SVG Icon primitives ─────────────────────────────────────────────────────
+
+const IcoCrown = ({ size = 14, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" style={style}>
+    <path d="M2 19.5h20v2H2v-2zM12 2L8 9 2 6l3 11.5h14L22 6l-6 3-4-7z"/>
+  </svg>
+)
+
+const IcoKey = ({ size = 15, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style}>
+    <circle cx="7.5" cy="15.5" r="5.5"/>
+    <path d="M21 2L11 12"/>
+    <path d="M15 7l3 3"/>
+  </svg>
+)
+
+const IcoUsers = ({ size = 44, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" style={style}>
+    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+    <circle cx="9" cy="7" r="4"/>
+    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+  </svg>
+)
+
+const IcoCheck = ({ size = 13, style }: { size?: number; style?: React.CSSProperties }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" style={style}>
+    <polyline points="20 6 9 17 4 12"/>
+  </svg>
+)
+
+function PrivIcon({ pKey, size = 14, style }: { pKey: string; size?: number; style?: React.CSSProperties }) {
+  const s: React.CSSProperties = { ...style, width: size, height: size, flexShrink: 0 }
+  const p = { fill: 'none' as const, stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
+  switch (pKey) {
+    case 'remove_members': return (
+      <svg viewBox="0 0 24 24" style={s} {...p}>
+        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+        <circle cx="8.5" cy="7" r="4"/>
+        <line x1="18" y1="8" x2="23" y2="13"/><line x1="23" y1="8" x2="18" y2="13"/>
+      </svg>
+    )
+    case 'accept_members': return (
+      <svg viewBox="0 0 24 24" style={s} {...p}>
+        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+        <circle cx="8.5" cy="7" r="4"/>
+        <polyline points="17 11 19 13 23 9"/>
+      </svg>
+    )
+    case 'post_announcements': return (
+      <svg viewBox="0 0 24 24" style={s} {...p}>
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+      </svg>
+    )
+    case 'manage_notes': return (
+      <svg viewBox="0 0 24 24" style={s} {...p}>
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+      </svg>
+    )
+    case 'manage_events': return (
+      <svg viewBox="0 0 24 24" style={s} {...p}>
+        <rect x="3" y="4" width="18" height="18" rx="2"/>
+        <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
+        <line x1="3" y1="10" x2="21" y2="10"/>
+      </svg>
+    )
+    case 'edit_appearance': return (
+      <svg viewBox="0 0 24 24" style={s} {...p}>
+        <rect x="3" y="3" width="18" height="18" rx="2"/>
+        <circle cx="8.5" cy="8.5" r="1.5"/>
+        <polyline points="21 15 16 10 5 21"/>
+      </svg>
+    )
+    case 'manage_budget': return (
+      <svg viewBox="0 0 24 24" style={s} {...p}>
+        <line x1="12" y1="1" x2="12" y2="23"/>
+        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+      </svg>
+    )
+    default: return (
+      <svg viewBox="0 0 24 24" style={s} {...p}>
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+    )
+  }
+}
+
+function TeamAvatar({ name, size = 38 }: { name?: string | null; size?: number }) {
   const l = (name ?? '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
   return (
     <div style={{
-      width: 34, height: 34, borderRadius: '50%', background: 'var(--accent)',
+      width: size, height: size, borderRadius: '50%', flexShrink: 0,
+      background: 'linear-gradient(135deg,#8a1538,#c0185c)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: 12, fontWeight: 800, color: '#fff', flexShrink: 0,
-      border: '2px solid rgba(255,255,255,0.08)',
+      fontSize: Math.round(size * 0.33), fontWeight: 800, color: '#fff',
+      border: '2px solid rgba(255,255,255,0.1)',
+      boxShadow: '0 2px 10px rgba(138,21,56,0.4)',
     }}>{l}</div>
   )
 }
@@ -950,7 +2097,7 @@ function RoleTags({
   onChange: (role: 'officer' | 'member', customRole?: string) => void
   disabled?: boolean
 }) {
-  const initCustom = customRole ?? (role === 'officer' ? 'Officer' : '')
+  const initCustom = customRole ?? (role === 'officer' ? 'Admin' : '')
   const initTag: 'member' | 'custom' = initCustom ? 'custom' : 'member'
 
   const [activeTag, setActiveTag] = useState<'member' | 'custom'>(initTag)
@@ -1059,33 +2206,23 @@ function NewMemberRow({
   }
 
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 12,
-      padding: '10px 14px', borderRadius: 10, marginBottom: 6,
-      background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
-    }}>
-      <TeamAvatar name={profile.full_name} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{profile.full_name ?? 'Unknown'}</div>
-        {profile.school && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.school}</div>}
-        {profile.email && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.email}</div>}
+    <div className="tm-card" style={{ display:'flex', alignItems:'center', gap:14, padding:'14px 16px', borderRadius:14, background:'rgba(255,255,255,.03)', border:'1px solid rgba(255,255,255,.07)', transition:'border-color .15s' }}
+      onMouseEnter={e => e.currentTarget.style.borderColor='rgba(255,255,255,.14)'}
+      onMouseLeave={e => e.currentTarget.style.borderColor='rgba(255,255,255,.07)'}>
+      <TeamAvatar name={profile.full_name} size={40}/>
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ fontSize:14, fontWeight:700, color:'var(--text-primary)', marginBottom:2 }}>{profile.full_name ?? 'Unknown'}</div>
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+          {profile.school && <span style={{ fontSize:11, color:'var(--text-muted)' }}>{profile.school}</span>}
+          {profile.email  && <span style={{ fontSize:11, color:'rgba(255,255,255,.3)' }}>{profile.email}</span>}
+        </div>
       </div>
-      <RoleTags
-        key={`new-${profile.id}`}
-        role={role}
-        customRole={customRole ?? null}
-        onChange={handleChange}
-      />
+      <RoleTags key={`new-${profile.id}`} role={role} customRole={customRole ?? null} onChange={handleChange}/>
       <button
         onMouseDown={e => e.preventDefault()}
         onClick={() => onAdd(profile.id, pendingRef.current.role, pendingRef.current.customRole)}
         disabled={isLoading}
-        style={{
-          padding: '5px 14px', borderRadius: 7,
-          background: isLoading ? 'rgba(138,21,56,0.3)' : 'var(--accent)',
-          border: 'none', color: '#fff', fontSize: 12, fontWeight: 700,
-          cursor: isLoading ? 'default' : 'pointer', flexShrink: 0, transition: 'background 0.15s',
-        }}
+        style={{ padding:'7px 16px', borderRadius:10, background: isLoading ? 'rgba(138,21,56,.3)' : 'var(--accent)', border:'none', color:'#fff', fontSize:12, fontWeight:800, cursor: isLoading ? 'default' : 'pointer', flexShrink:0, fontFamily:'inherit', boxShadow: isLoading ? 'none' : '0 0 14px rgba(138,21,56,.4)', transition:'all .15s' }}
       >{isLoading ? '…' : '+ Add'}</button>
     </div>
   )
@@ -1094,19 +2231,25 @@ function NewMemberRow({
 // ─── ExistingMemberRow ──────────────────────────────────────────────────────
 
 function ExistingMemberRow({
-  profile, membership, isLoading, canRemove = true, canEditRole = true, onRoleChange, onRemove, onPermissionsChange,
+  profile, membership, isLoading, canRemove = true, canEditRole = true, canMakePresident = false, onRoleChange, onRemove, onMakePresident, onPermissionsChange, animDelay = 0,
 }: {
   profile: ProfileSearchRow
   membership: MembershipRow
   isLoading: boolean
   canRemove?: boolean
   canEditRole?: boolean
+  canMakePresident?: boolean
+  animDelay?: number
   onRoleChange: (membershipId: string, role: 'officer' | 'member', customRole?: string) => void
   onRemove: (membershipId: string) => void
+  onMakePresident?: (membershipId: string, userId: string) => void
   onPermissionsChange: (membershipId: string, permissions: string[]) => void
 }) {
   const [hasCustomRole, setHasCustomRole] = useState(!!membership.custom_role)
   const [perms, setPerms] = useState<string[]>(membership.permissions ?? [])
+  const [showPerms, setShowPerms] = useState(false)
+  const [confirmRemove, setConfirmRemove] = useState(false)
+  const [confirmTransfer, setConfirmTransfer] = useState(false)
 
   const togglePerm = (key: string) => {
     const next = perms.includes(key) ? perms.filter(p => p !== key) : [...perms, key]
@@ -1114,20 +2257,30 @@ function ExistingMemberRow({
     onPermissionsChange(membership.id, next)
   }
 
+  const roleLabel = membership.custom_role ?? (membership.role === 'officer' ? 'Admin' : 'Member')
+  const hasRole   = !!membership.custom_role
+
   return (
-    <div style={{
-      borderRadius: 10, marginBottom: 6,
-      background: 'rgba(138,21,56,0.06)', border: '1px solid rgba(138,21,56,0.2)',
-      overflow: 'hidden',
-    }}>
+    <div className="tm-card" style={{ borderRadius:16, background:'rgba(255,255,255,.03)', border:'1px solid rgba(255,255,255,.07)', overflow:'hidden', transition:'border-color .15s', animationDelay:`${animDelay}s` }}
+      onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.borderColor='rgba(255,255,255,.12)'}
+      onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.borderColor='rgba(255,255,255,.07)'}>
       {/* Main row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px' }}>
-        <TeamAvatar name={profile.full_name} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{profile.full_name ?? 'Unknown'}</div>
-          {profile.school && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.school}</div>}
-          {profile.email && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.email}</div>}
+      <div style={{ display:'flex', alignItems:'center', gap:14, padding:'14px 16px' }}>
+        <TeamAvatar name={profile.full_name} size={40}/>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ fontSize:14, fontWeight:700, color:'var(--text-primary)', marginBottom:3 }}>{profile.full_name ?? 'Unknown'}</div>
+          <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+            {profile.school && <span style={{ fontSize:11, color:'rgba(255,255,255,.4)' }}>{profile.school}</span>}
+            {profile.email  && <span style={{ fontSize:11, color:'rgba(255,255,255,.25)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:160 }}>{profile.email}</span>}
+            {perms.length > 0 && (
+              <span style={{ fontSize:10, fontWeight:700, color:'var(--text-muted)', background:'rgba(255,255,255,.06)', border:'1px solid rgba(255,255,255,.1)', borderRadius:9999, padding:'1px 8px' }}>
+                {perms.length} permission{perms.length !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
         </div>
+
+        {/* Role badge / editor */}
         {canEditRole ? (
           <RoleTags
             key={`${membership.id}-${membership.role}-${membership.custom_role}`}
@@ -1137,52 +2290,135 @@ function ExistingMemberRow({
             onChange={(r, c) => {
               const gaining = !!c && !hasCustomRole
               setHasCustomRole(!!c)
-              if (!c) { setPerms([]); }
+              if (!c) { setPerms([]); onPermissionsChange(membership.id, []) }
               if (gaining) setPerms([])
               onRoleChange(membership.id, r, c)
             }}
           />
         ) : (
-          <span style={{ fontSize: 11, fontWeight: 600, color: membership.custom_role ? 'var(--accent)' : 'var(--text-muted)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 9999, padding: '3px 10px', flexShrink: 0 }}>
-            {membership.custom_role ?? 'Member'}
+          <span style={{ fontSize:11, fontWeight:700, color: hasRole ? '#a78bfa' : 'rgba(255,255,255,.4)', background: hasRole ? 'rgba(167,139,250,.12)' : 'rgba(255,255,255,.05)', border:`1px solid ${hasRole?'rgba(167,139,250,.3)':'rgba(255,255,255,.08)'}`, borderRadius:9999, padding:'4px 12px', flexShrink:0 }}>
+            {roleLabel}
           </span>
         )}
-        {canRemove && (
-          <button
-            onClick={() => onRemove(membership.id)}
-            disabled={isLoading}
-            title="Remove from club"
-            style={{ background: 'transparent', border: '1px solid rgba(87,65,68,0.3)', borderRadius: 6, padding: '4px 9px', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', flexShrink: 0, opacity: isLoading ? 0.5 : 1 }}
+
+        {/* Permissions toggle (only for custom-role members) */}
+        {hasCustomRole && canEditRole && (
+          <button onClick={() => setShowPerms(v => !v)} title="Edit permissions"
+            style={{ width:32, height:32, borderRadius:9, background: showPerms ? 'rgba(138,21,56,.2)' : 'rgba(255,255,255,.06)', border:`1px solid ${showPerms?'rgba(138,21,56,.45)':'rgba(255,255,255,.1)'}`, color: showPerms ? 'var(--accent)' : 'var(--text-muted)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, transition:'all .15s' }}>
+            <IcoKey size={14} style={{ transition:'transform .3s cubic-bezier(.22,1,.36,1)', transform: showPerms ? 'rotate(-30deg)' : 'rotate(0deg)' }}/>
+          </button>
+        )}
+
+        {/* Make President */}
+        {canMakePresident && !confirmTransfer && !confirmRemove && (
+          <button onClick={() => setConfirmTransfer(true)} disabled={isLoading} title="Transfer presidency"
+            style={{ width:32, height:32, borderRadius:9, background:'transparent', border:'1px solid rgba(255,255,255,.08)', color:'rgba(255,255,255,.3)', cursor: isLoading ? 'default':'pointer', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', opacity: isLoading ? .5:1, transition:'all .15s' }}
+            onMouseEnter={e => { e.currentTarget.style.background='rgba(233,193,118,.1)'; e.currentTarget.style.borderColor='rgba(233,193,118,.4)'; e.currentTarget.style.color='#e9c176' }}
+            onMouseLeave={e => { e.currentTarget.style.background='transparent'; e.currentTarget.style.borderColor='rgba(255,255,255,.08)'; e.currentTarget.style.color='rgba(255,255,255,.3)' }}
+          ><IcoCrown size={13}/></button>
+        )}
+        {canMakePresident && confirmTransfer && (
+          <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0, animation:'confirmIn .18s cubic-bezier(.22,1,.36,1) both' }}>
+            <span style={{ fontSize:11, fontWeight:700, color:'#e9c176', whiteSpace:'nowrap' }}>Make president?</span>
+            <button onClick={() => { onMakePresident?.(membership.id, membership.user_id); setConfirmTransfer(false) }} disabled={isLoading}
+              style={{ padding:'5px 12px', borderRadius:8, background:'rgba(233,193,118,.15)', border:'1px solid rgba(233,193,118,.45)', color:'#e9c176', fontSize:11, fontWeight:800, cursor:'pointer', fontFamily:'inherit', transition:'all .12s', lineHeight:1 }}
+              onMouseEnter={e => { e.currentTarget.style.background='rgba(233,193,118,.28)' }}
+              onMouseLeave={e => { e.currentTarget.style.background='rgba(233,193,118,.15)' }}
+            >Yes</button>
+            <button onClick={() => setConfirmTransfer(false)}
+              style={{ padding:'5px 10px', borderRadius:8, background:'transparent', border:'1px solid rgba(255,255,255,.12)', color:'rgba(255,255,255,.45)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit', transition:'all .12s', lineHeight:1 }}
+              onMouseEnter={e => { e.currentTarget.style.background='rgba(255,255,255,.07)' }}
+              onMouseLeave={e => { e.currentTarget.style.background='transparent' }}
+            >No</button>
+          </div>
+        )}
+
+        {/* Remove */}
+        {canRemove && !confirmRemove && !confirmTransfer && (
+          <button onClick={() => setConfirmRemove(true)} disabled={isLoading} title="Remove from club"
+            style={{ width:32, height:32, borderRadius:9, background:'transparent', border:'1px solid rgba(255,255,255,.08)', color:'rgba(255,255,255,.3)', fontSize:14, cursor: isLoading ? 'default':'pointer', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', opacity: isLoading ? .5:1, transition:'all .15s', lineHeight:1 }}
+            onMouseEnter={e => { e.currentTarget.style.background='rgba(248,113,113,.1)'; e.currentTarget.style.borderColor='rgba(248,113,113,.35)'; e.currentTarget.style.color='#f87171' }}
+            onMouseLeave={e => { e.currentTarget.style.background='transparent'; e.currentTarget.style.borderColor='rgba(255,255,255,.08)'; e.currentTarget.style.color='rgba(255,255,255,.3)' }}
           >{isLoading ? '…' : '✕'}</button>
+        )}
+        {canRemove && confirmRemove && (
+          <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0, animation:'confirmIn .18s cubic-bezier(.22,1,.36,1) both' }}>
+            <span style={{ fontSize:11, fontWeight:700, color:'#f87171', whiteSpace:'nowrap' }}>Sure?</span>
+            <button onClick={() => { onRemove(membership.id); setConfirmRemove(false) }} disabled={isLoading}
+              style={{ padding:'5px 12px', borderRadius:8, background:'rgba(248,113,113,.15)', border:'1px solid rgba(248,113,113,.4)', color:'#f87171', fontSize:11, fontWeight:800, cursor:'pointer', fontFamily:'inherit', transition:'all .12s', lineHeight:1 }}
+              onMouseEnter={e => { e.currentTarget.style.background='rgba(248,113,113,.28)' }}
+              onMouseLeave={e => { e.currentTarget.style.background='rgba(248,113,113,.15)' }}
+            >Yes</button>
+            <button onClick={() => setConfirmRemove(false)}
+              style={{ padding:'5px 10px', borderRadius:8, background:'transparent', border:'1px solid rgba(255,255,255,.12)', color:'rgba(255,255,255,.45)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit', transition:'all .12s', lineHeight:1 }}
+              onMouseEnter={e => { e.currentTarget.style.background='rgba(255,255,255,.07)' }}
+              onMouseLeave={e => { e.currentTarget.style.background='transparent' }}
+            >No</button>
+          </div>
         )}
       </div>
 
-      {/* Privileges panel — only for custom-role members, editable by president */}
+      {/* Privileges panel — grid-row animation for smooth expand/collapse */}
       {hasCustomRole && canEditRole && (
-        <div style={{ padding: '10px 14px 12px', borderTop: '1px solid rgba(138,21,56,0.15)', background: 'rgba(0,0,0,0.12)' }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>Privileges</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {PRIVILEGES.map(p => {
-              const active = perms.includes(p.key)
+        <div style={{ display:'grid', gridTemplateRows: showPerms ? '1fr' : '0fr', transition:'grid-template-rows .35s cubic-bezier(.22,1,.36,1)' }}>
+        <div style={{ overflow:'hidden' }}>
+        <div style={{ padding: '16px 16px 18px', borderTop: '1px solid rgba(138,21,56,0.18)', background: 'rgba(0,0,0,0.18)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,.4)', letterSpacing: '.13em', textTransform: 'uppercase' }}>Permissions</div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,.25)', fontWeight: 600 }}>
+              {perms.length}/{PRIVILEGES.length} granted
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {PRIVILEGE_GROUPS.map(group => {
+              const groupPrivs = PRIVILEGES.filter(p => p.group === group)
               return (
-                <button
-                  key={p.key}
-                  onClick={() => togglePerm(p.key)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 5,
-                    padding: '4px 11px', borderRadius: 9999, fontSize: 11, fontWeight: 600,
-                    border: active ? '1px solid rgba(74,222,128,0.45)' : '1px solid rgba(87,65,68,0.3)',
-                    background: active ? 'rgba(74,222,128,0.1)' : 'transparent',
-                    color: active ? '#4ade80' : 'var(--text-muted)',
-                    cursor: 'pointer', transition: 'all 0.15s', fontFamily: 'inherit',
-                  }}
-                >
-                  <span style={{ fontSize: 10 }}>{active ? '✓' : '+'}</span>
-                  {p.label}
-                </button>
+                <div key={group}>
+                  <div style={{ fontSize: 9, fontWeight: 800, color: 'rgba(255,255,255,.22)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 8 }}>{group}</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(190px,1fr))', gap: 7 }}>
+                    {groupPrivs.map(p => {
+                      const active = perms.includes(p.key)
+                      return (
+                        <button
+                          key={p.key}
+                          onClick={() => togglePerm(p.key)}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 10,
+                            padding: '10px 12px', borderRadius: 12, border: `1px solid ${active ? 'rgba(74,222,128,.35)' : 'rgba(255,255,255,.07)'}`,
+                            background: active ? 'rgba(74,222,128,.07)' : 'rgba(255,255,255,.03)',
+                            cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+                            transition: 'all .15s', boxShadow: active ? '0 0 0 1px rgba(74,222,128,.12)' : 'none',
+                          }}
+                          onMouseEnter={e => { if (!active) e.currentTarget.style.borderColor = 'rgba(255,255,255,.14)' }}
+                          onMouseLeave={e => { if (!active) e.currentTarget.style.borderColor = 'rgba(255,255,255,.07)' }}
+                        >
+                          <div style={{
+                            width: 32, height: 32, borderRadius: 9, flexShrink: 0,
+                            background: active ? 'rgba(74,222,128,.15)' : 'rgba(255,255,255,.06)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            transition: 'all .2s',
+                            border: active ? '1px solid rgba(74,222,128,.3)' : '1px solid transparent',
+                            color: active ? '#4ade80' : 'var(--text-muted)',
+                          }}>
+                            {active
+                              ? <IcoCheck size={13} style={{ animation:'privCheckIn .2s cubic-bezier(.22,1,.36,1) both' }}/>
+                              : <PrivIcon pKey={p.key} size={14}/>
+                            }
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: active ? '#4ade80' : 'var(--text-primary)', lineHeight: 1.2, marginBottom: 2 }}>{p.label}</div>
+                            <div style={{ fontSize: 10, color: 'rgba(255,255,255,.3)', lineHeight: 1.4 }}>{p.desc}</div>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
               )
             })}
           </div>
+        </div>
+        </div>
         </div>
       )}
     </div>

@@ -108,6 +108,17 @@ export default function CreateClub({ onCreated }: Props) {
 
     setLoading(true)
 
+    // Enforce max 2 founded clubs
+    const { count: foundedCount } = await supabase
+      .from('clubs')
+      .select('id', { count: 'exact', head: true })
+      .eq('created_by', user.id)
+    if ((foundedCount ?? 0) >= 2) {
+      setError('You can found at most 2 clubs.')
+      setLoading(false)
+      return
+    }
+
     const prefix = `${user.id}/${Date.now()}`
     let bannerUrl: string | null = null
     let logoUrl: string | null = null

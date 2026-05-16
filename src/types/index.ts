@@ -15,7 +15,9 @@ export interface Profile {
   role: 'student' | 'club_leader' | 'admin'
   bio: string | null
   skills: string[]
+  interests: string[]
   karak_points: number
+  onboarded: boolean
   created_at: string
   university?: University
 }

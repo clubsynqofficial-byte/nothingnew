@@ -64,6 +64,14 @@ export default function ClubApplicationModal({ clubId, clubName, onClose, onSubm
     setSubmitting(true)
     setError('')
 
+    // Remove any stale approved/rejected response so a returning member can re-apply
+    await supabase
+      .from('club_form_responses')
+      .delete()
+      .eq('club_id', clubId)
+      .eq('user_id', user.id)
+      .in('status', ['approved', 'rejected'])
+
     const { error: insertErr } = await supabase.from('club_form_responses').insert({
       form_id: form.id,
       club_id: clubId,

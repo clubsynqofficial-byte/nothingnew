@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { PresenceProvider } from './contexts/PresenceContext'
 import AppLayout from './components/layout/AppLayout'
+import OnboardingModal from './components/OnboardingModal'
 import LandingPage from './pages/landing/LandingPage'
 import SignIn from './pages/auth/SignIn'
 import SignUp from './pages/auth/SignUp'
@@ -26,10 +28,17 @@ function RootRoute() {
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { session, loading } = useAuth()
+  const { session, loading, profile } = useAuth()
+  const [dismissed, setDismissed] = useState(false)
   if (loading) return <LoadingScreen />
   if (!session) return <Navigate to="/" replace />
-  return <AppLayout>{children}</AppLayout>
+  const showOnboarding = profile && profile.onboarded === false && !dismissed
+  return (
+    <AppLayout>
+      {showOnboarding && <OnboardingModal onDone={() => setDismissed(true)} />}
+      {children}
+    </AppLayout>
+  )
 }
 
 function ProtectedRouteRaw({ children }: { children: React.ReactNode }) {
@@ -99,7 +108,7 @@ function AppRoutes() {
       <Route path="/profile/:userId" element={<ProtectedRoute><ProfilePageWithKey /></ProtectedRoute>} />
       <Route path="/messages" element={<ProtectedRoute><MessagesPage /></ProtectedRoute>} />
       <Route path="/events" element={<ProtectedRoute><EventsPage /></ProtectedRoute>} />
-      <Route path="*" element={<Navigate to="/home" replace />} />
+<Route path="*" element={<Navigate to="/home" replace />} />
     </Routes>
   )
 }

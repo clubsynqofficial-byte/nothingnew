@@ -18,6 +18,8 @@ interface CommentRow {
   id: string; post_id: string; user_id: string; content: string; created_at: string
   profile: { full_name: string | null; avatar_url: string | null } | null
 }
+interface PollOption { id: string; text: string; position: number; voteCount: number }
+interface PollData { question: string; options: PollOption[]; userVote: string | null; pollId: string }
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 const Heart = ({ on }: { on?: boolean }) => (
@@ -78,6 +80,20 @@ export default function HomePage() {
   const [reposting, setReposting]   = useState<string | null>(null)
   const [menuId, setMenuId]         = useState<string | null>(null)
   const [openPostId, setOpenPostId] = useState<string | null>(null)
+
+  // Poll compose state
+  const [showPoll, setShowPoll]     = useState(false)
+  const [pollQuestion, setPollQuestion] = useState('')
+  const [pollOptions, setPollOptions] = useState(['', ''])
+
+  // Poll data per post: postId → { options with vote counts, userVote }
+  const [pollData, setPollData] = useState<Record<string, PollData>>({})
+
+  // Notification helper
+  async function sendNotif(userId: string, type: string, title: string, body: string, link?: string) {
+    if (userId === user?.id) return
+    await supabase.from('notifications').insert({ user_id: userId, type, title, body, link: link ?? null })
+  }
 
   const h = new Date().getHours()
   const greeting = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
@@ -177,8 +193,13 @@ export default function HomePage() {
     setPreviews(prev => prev.filter((_, i) => i !== idx))
   }
   async function doPost() {
-    if (!user || (!txt.trim() && imgs.length === 0)) return
+    if (!user || (!txt.trim() && imgs.length === 0 && !showPoll)) return
     if (txt.length > 500) { setCompErr('Max 500 chars'); return }
+    if (showPoll) {
+      if (!pollQuestion.trim()) { setCompErr('Poll needs a question'); return }
+      const validOpts = pollOptions.filter(o => o.trim())
+      if (validOpts.length < 2) { setCompErr('Add at least 2 poll options'); return }
+    }
     setPosting(true); setCompErr('')
     let imageUrls: string[] = []
     if (imgs.length > 0) {
@@ -192,20 +213,35 @@ export default function HomePage() {
       }))
       imageUrls = uploads.filter(Boolean) as string[]
     }
-    await supabase.from('posts').insert({
+    const { data: newPost } = await supabase.from('posts').insert({
       user_id: user.id, content: txt.trim() || null,
       image_url: imageUrls[0] ?? null,
       image_urls: imageUrls.length > 0 ? imageUrls : null,
-    })
+    }).select('id').single()
+
+    if (showPoll && newPost) {
+      const validOpts = pollOptions.map(o => o.trim()).filter(Boolean)
+      const { data: poll } = await supabase.from('post_polls').insert({ post_id: newPost.id, question: pollQuestion.trim() }).select('id').single()
+      if (poll) {
+        await supabase.from('poll_options').insert(validOpts.map((text, i) => ({ poll_id: poll.id, text, position: i })))
+      }
+    }
+
     setTxt(''); setImgs([]); setPreviews([]); setFocused(false)
+    setShowPoll(false); setPollQuestion(''); setPollOptions(['', ''])
     if (taRef.current) taRef.current.style.height = 'auto'
     setPosting(false); fetchFeed()
   }
   async function doLike(pid: string, liked: boolean) {
     if (!user) return
     setPosts(prev => prev.map(p => p.id === pid ? { ...p, isLiked: !liked, likeCount: p.likeCount + (liked ? -1 : 1) } : p))
-    liked ? await supabase.from('post_likes').delete().eq('post_id', pid).eq('user_id', user.id)
-           : await supabase.from('post_likes').insert({ post_id: pid, user_id: user.id })
+    if (!liked) {
+      await supabase.from('post_likes').insert({ post_id: pid, user_id: user.id })
+      const post = posts.find(p => p.id === pid)
+      if (post) sendNotif(post.user_id, 'match', `${profile?.full_name ?? 'Someone'} liked your post`, post.content?.slice(0, 60) ?? 'They liked your post', '/home')
+    } else {
+      await supabase.from('post_likes').delete().eq('post_id', pid).eq('user_id', user.id)
+    }
   }
   async function doRepost(pid: string) {
     if (!user || reposting) return
@@ -244,10 +280,41 @@ export default function HomePage() {
     await supabase.from('post_comments').insert({ post_id: pid, user_id: user.id, content: text })
     setCTxts(prev => ({ ...prev, [pid]: '' }))
     setPosts(prev => prev.map(p => p.id === pid ? { ...p, commentCount: p.commentCount + 1 } : p))
+    const post = posts.find(p => p.id === pid)
+    if (post) sendNotif(post.user_id, 'message', `${profile?.full_name ?? 'Someone'} replied to your post`, text.slice(0, 60), '/home')
     await loadComments(pid); setPostingC(null)
   }
 
-  const canPost = !posting && (!!txt.trim() || imgs.length > 0)
+  async function loadPoll(pid: string) {
+    const { data: poll } = await supabase.from('post_polls').select('id, question').eq('post_id', pid).maybeSingle()
+    if (!poll) return
+    const [{ data: opts }, { data: votes }] = await Promise.all([
+      supabase.from('poll_options').select('id, text, position').eq('poll_id', poll.id).order('position'),
+      supabase.from('poll_votes').select('option_id, user_id').eq('poll_id', poll.id),
+    ])
+    const voteCounts: Record<string, number> = {}
+    let userVote: string | null = null
+    for (const v of votes ?? []) {
+      voteCounts[v.option_id] = (voteCounts[v.option_id] ?? 0) + 1
+      if (v.user_id === user?.id) userVote = v.option_id
+    }
+    setPollData(prev => ({ ...prev, [pid]: { pollId: poll.id, question: poll.question, userVote, options: (opts ?? []).map(o => ({ ...o, voteCount: voteCounts[o.id] ?? 0 })) } }))
+  }
+
+  async function doPollVote(pid: string, optionId: string) {
+    if (!user) return
+    const pd = pollData[pid]; if (!pd) return
+    const wasVoted = pd.userVote === optionId
+    setPollData(prev => ({ ...prev, [pid]: { ...pd, userVote: wasVoted ? null : optionId, options: pd.options.map(o => ({ ...o, voteCount: o.id === optionId ? o.voteCount + (wasVoted ? -1 : 1) : o.id === pd.userVote && !wasVoted ? o.voteCount - 1 : o.voteCount })) } }))
+    if (wasVoted) {
+      await supabase.from('poll_votes').delete().eq('poll_id', pd.pollId).eq('user_id', user.id)
+    } else {
+      await supabase.from('poll_votes').delete().eq('poll_id', pd.pollId).eq('user_id', user.id)
+      await supabase.from('poll_votes').insert({ poll_id: pd.pollId, option_id: optionId, user_id: user.id })
+    }
+  }
+
+  const canPost = !posting && (!!txt.trim() || imgs.length > 0 || (showPoll && !!pollQuestion.trim() && pollOptions.filter(o => o.trim()).length >= 2))
   const myPosts = posts.filter(p => p.user_id === user?.id)
   const myLikes = myPosts.reduce((s, p) => s + p.likeCount, 0)
 
@@ -381,9 +448,25 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
+            {/* Poll builder */}
+            {showPoll && (
+              <div style={{ padding: '0 18px 14px 74px' }}>
+                <div style={{ background: 'rgba(96,165,250,.06)', border: '1px solid rgba(96,165,250,.15)', borderRadius: 14, padding: '14px 16px' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#60a5fa', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10 }}>Poll</div>
+                  <input value={pollQuestion} onChange={e => setPollQuestion(e.target.value)} placeholder="Ask a question…" style={{ width: '100%', background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 9, padding: '8px 12px', color: 'var(--text-primary)', fontSize: 13, outline: 'none', fontFamily: 'inherit', marginBottom: 10, boxSizing: 'border-box' }} />
+                  {pollOptions.map((opt, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 7 }}>
+                      <input value={opt} onChange={e => setPollOptions(prev => prev.map((o, j) => j === i ? e.target.value : o))} placeholder={`Option ${i + 1}`} style={{ flex: 1, background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.09)', borderRadius: 8, padding: '7px 11px', color: 'var(--text-primary)', fontSize: 13, outline: 'none', fontFamily: 'inherit' }} />
+                      {pollOptions.length > 2 && <button onClick={() => setPollOptions(prev => prev.filter((_, j) => j !== i))} style={{ background: 'transparent', border: 'none', color: 'rgba(248,113,113,.6)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>✕</button>}
+                    </div>
+                  ))}
+                  {pollOptions.length < 4 && <button onClick={() => setPollOptions(prev => [...prev, ''])} style={{ fontSize: 12, color: '#60a5fa', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit', fontWeight: 600 }}>+ Add option</button>}
+                </div>
+              </div>
+            )}
             {/* toolbar */}
             <div className="compose-toolbar" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 18px 14px 74px', borderTop:'1px solid rgba(255,255,255,.05)', marginTop:10 }}>
-              <div>
+              <div style={{ display: 'flex', gap: 4 }}>
                 <input ref={imgRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple style={{ display:'none' }} onChange={onImgSel}/>
                 <button onClick={() => imgs.length < 4 && imgRef.current?.click()} disabled={imgs.length >= 4} style={{
                   display:'inline-flex', alignItems:'center', gap:6, padding:'6px 12px', borderRadius:9999,
@@ -396,6 +479,12 @@ export default function HomePage() {
                   onMouseLeave={e => { e.currentTarget.style.background=imgs.length>0?'rgba(138,21,56,.18)':'transparent'; e.currentTarget.style.color=imgs.length>0?'var(--accent)':'var(--text-muted)' }}
                 >
                   <Img/>{imgs.length > 0 ? <span style={{ fontSize:11 }}>{imgs.length}/4</span> : <span>Photo</span>}
+                </button>
+                {/* Poll toggle */}
+                <button onClick={() => setShowPoll(v => !v)} style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'6px 12px', borderRadius:9999, border:'none', cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:600, background: showPoll ? 'rgba(96,165,250,.18)' : 'transparent', color: showPoll ? '#60a5fa' : 'var(--text-muted)', transition:'all .15s' }}
+                  onMouseEnter={e => { e.currentTarget.style.background='rgba(96,165,250,.12)'; e.currentTarget.style.color='#60a5fa' }}
+                  onMouseLeave={e => { e.currentTarget.style.background=showPoll?'rgba(96,165,250,.18)':'transparent'; e.currentTarget.style.color=showPoll?'#60a5fa':'var(--text-muted)' }}>
+                  <span style={{ fontSize:15 }}>📊</span><span>Poll</span>
                 </button>
               </div>
               <div style={{ display:'flex', alignItems:'center', gap:10 }}>
@@ -441,6 +530,7 @@ export default function HomePage() {
                   postingC={postingC===p.id}
                   reposting={reposting===p.id}
                   menuOpen={menuId===p.id}
+                  poll={pollData[p.id] ?? null}
                   onMenu={e=>{e.stopPropagation();setMenuId(menuId===p.id?null:p.id)}}
                   onLike={() => doLike(p.id, p.isLiked)}
                   onRepost={() => doRepost(p.id)}
@@ -450,6 +540,8 @@ export default function HomePage() {
                   onComment={() => doComment(p.id)}
                   onProfile={uid => nav(`/profile/${uid}`)}
                   onOpen={() => setOpenPostId(p.id)}
+                  onLoadPoll={() => loadPoll(p.id)}
+                  onPollVote={optId => doPollVote(p.id, optId)}
                 />
               ))}
             </div>
@@ -654,17 +746,18 @@ function ImageCarousel({ urls }: { urls: string[] }) {
 // ─── Post Card ────────────────────────────────────────────────────────────────
 function Card({
   post, idx, uid, myProfile, threadOpen, comments, cTxt, postingC,
-  reposting, menuOpen, onMenu, onLike, onRepost, onDelete, onThread,
-  onCChange, onComment, onProfile, onOpen,
+  reposting, menuOpen, poll, onMenu, onLike, onRepost, onDelete, onThread,
+  onCChange, onComment, onProfile, onOpen, onLoadPoll, onPollVote,
 }: {
   post: FeedPost; idx: number; uid: string | null
   myProfile: {full_name?:string|null;avatar_url?:string|null}|null
   threadOpen: boolean; comments: CommentRow[]; cTxt: string
   postingC: boolean; reposting: boolean; menuOpen: boolean
+  poll: PollData | null
   onMenu:(e:React.MouseEvent)=>void
   onLike:()=>void; onRepost:()=>void; onDelete:()=>void; onThread:()=>void
   onCChange:(t:string)=>void; onComment:()=>void; onProfile:(uid:string)=>void
-  onOpen:()=>void
+  onOpen:()=>void; onLoadPoll:()=>void; onPollVote:(optId:string)=>void
 }) {
   const cinRef = useRef<HTMLInputElement>(null)
   const effectiveImgs = (p: PostRow) => (p.image_urls && p.image_urls.length > 0) ? p.image_urls : (p.image_url ? [p.image_url] : [])
@@ -679,12 +772,14 @@ function Card({
 
   const [lPop, setLPop] = useState(false)
   const prevLiked = useRef(post.isLiked)
+  const pollLoaded = useRef(false)
   useEffect(() => {
     if (!prevLiked.current && post.isLiked) { setLPop(true); setTimeout(()=>setLPop(false),380) }
     prevLiked.current = post.isLiked
   }, [post.isLiked])
 
   useEffect(() => { if (threadOpen) setTimeout(()=>cinRef.current?.focus(),80) }, [threadOpen])
+  useEffect(() => { if (!pollLoaded.current) { pollLoaded.current = true; onLoadPoll() } }, [])
 
   return (
     <div className="pcard" style={{ animation:`fadeUp .36s cubic-bezier(.22,1,.36,1) both`, animationDelay:`${Math.min(idx,6)*50}ms` }} onClick={onOpen}>
@@ -748,6 +843,28 @@ function Card({
             </div>
             {post.repostSource.content && <p style={{ fontSize:13, color:'var(--text-secondary)', lineHeight:1.65, margin:0, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{post.repostSource.content}</p>}
             {effectiveImgs(post.repostSource).length > 0 && <div style={{ marginTop:8 }}><ImageCarousel urls={effectiveImgs(post.repostSource)}/></div>}
+          </div>
+        )}
+
+        {/* Poll */}
+        {poll && (
+          <div onClick={e => e.stopPropagation()} style={{ marginBottom: 12, background: 'rgba(96,165,250,.05)', border: '1px solid rgba(96,165,250,.15)', borderRadius: 12, padding: '12px 14px' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 10 }}>{poll.question}</div>
+            {poll.options.map(opt => {
+              const total = poll.options.reduce((s, o) => s + o.voteCount, 0)
+              const pct = total > 0 ? Math.round((opt.voteCount / total) * 100) : 0
+              const isVoted = poll.userVote === opt.id
+              return (
+                <div key={opt.id} onClick={() => onPollVote(opt.id)} style={{ marginBottom: 7, cursor: 'pointer', borderRadius: 8, overflow: 'hidden', position: 'relative', border: `1px solid ${isVoted ? 'rgba(96,165,250,.4)' : 'rgba(255,255,255,.08)'}`, transition: 'border-color .15s' }}>
+                  <div style={{ position: 'absolute', top: 0, left: 0, height: '100%', width: `${pct}%`, background: isVoted ? 'rgba(96,165,250,.18)' : 'rgba(255,255,255,.05)', transition: 'width .4s ease' }} />
+                  <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', padding: '7px 11px' }}>
+                    <span style={{ fontSize: 12.5, fontWeight: isVoted ? 700 : 500, color: isVoted ? '#60a5fa' : 'var(--text-primary)' }}>{opt.text}</span>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>{pct}%</span>
+                  </div>
+                </div>
+              )
+            })}
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{poll.options.reduce((s, o) => s + o.voteCount, 0)} votes</div>
           </div>
         )}
 
