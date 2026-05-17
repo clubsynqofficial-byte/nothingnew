@@ -19,6 +19,10 @@ export interface Profile {
   karak_points: number
   onboarded: boolean
   created_at: string
+  school: string | null
+  email: string | null
+  manual_status: string | null
+  notification_prefs: Record<string, boolean>
   university?: University
 }
 

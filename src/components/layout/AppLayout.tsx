@@ -1,6 +1,7 @@
 import { useState, useEffect, type ReactNode } from 'react'
 import SideNav from './SideNav'
 import TopBar from './TopBar'
+import FloatingChat from '../FloatingChat'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 
@@ -27,6 +28,7 @@ export default function AppLayout({ children }: Props) {
       <main className="main-content">
         {children}
       </main>
+      <FloatingChat />
     </div>
   )
 }

@@ -138,6 +138,12 @@ export default function CommandCenter({ club, onDeleted, onPresidencyTransferred
   const annImgRef = useRef<HTMLInputElement>(null)
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
 
+  // AI state
+  const [showAnnAI, setShowAnnAI] = useState(false)
+  const [annAiPrompt, setAnnAiPrompt] = useState('')
+  const [annAiLoading, setAnnAiLoading] = useState(false)
+  const [annAiResult, setAnnAiResult] = useState('')
+
   // Club appearance state
   const [logoPreview, setLogoPreview] = useState<string | null>(club.logo_url ?? null)
   const [bannerPreview, setBannerPreview] = useState<string | null>(club.banner_url ?? null)
@@ -343,6 +349,22 @@ export default function CommandCenter({ club, onDeleted, onPresidencyTransferred
   function clearAnnImage() {
     setAnnImageFile(null)
     setAnnImagePreview(null)
+  }
+
+  async function generateAnnAI(mode?: 'improve', instruction?: string) {
+    if (annAiLoading) return
+    setAnnAiLoading(true)
+    setAnnAiResult('')
+    const prompt = instruction ?? annAiPrompt.trim()
+    const { data, error } = await supabase.functions.invoke('ai-write', {
+      body: {
+        prompt,
+        draft: (mode === 'improve' || !prompt) ? annContent.trim() : '',
+      },
+    })
+    setAnnAiLoading(false)
+    if (error || !data?.text) { setAnnAiResult('Could not generate — please try again.'); return }
+    setAnnAiResult(data.text)
   }
 
   async function handlePostAnnouncement() {
@@ -1113,11 +1135,80 @@ export default function CommandCenter({ club, onDeleted, onPresidencyTransferred
                 <button onClick={clearAnnImage} style={{ position:'absolute', top:8, right:8, width:28, height:28, borderRadius:'50%', background:'rgba(0,0,0,0.7)', border:'1px solid rgba(255,255,255,0.2)', color:'#fff', fontSize:14, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1, fontFamily:'inherit' }}>✕</button>
               </div>
             )}
+
+            {/* AI Panel */}
+            {showAnnAI && (
+              <div style={{ marginBottom:10 }}>
+                <div style={{ borderRadius:12, border:'1px solid rgba(168,85,247,.22)', background:'rgba(168,85,247,.04)', overflow:'hidden' }}>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 14px', borderBottom:'1px solid rgba(168,85,247,.1)' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:7 }}>
+                      <span style={{ fontSize:14 }}>✨</span>
+                      <span style={{ fontSize:12, fontWeight:700, color:'#c084fc' }}>Write with AI</span>
+                    </div>
+                    <button onClick={() => { setShowAnnAI(false); setAnnAiResult(''); setAnnAiPrompt('') }}
+                      style={{ background:'none', border:'none', color:'var(--text-muted)', cursor:'pointer', fontSize:15, lineHeight:1, padding:'2px 4px' }}>✕</button>
+                  </div>
+                  <div style={{ padding:'12px 14px' }}>
+                    {annAiResult && !annAiLoading && (
+                      <div style={{ marginBottom:10, background:'rgba(255,255,255,.05)', border:'1px solid rgba(168,85,247,.18)', borderRadius:10, padding:'11px 13px' }}>
+                        <p style={{ fontSize:13.5, color:'var(--text-primary)', lineHeight:1.7, margin:'0 0 10px', whiteSpace:'pre-wrap' }}>{annAiResult}</p>
+                        <div style={{ display:'flex', gap:7 }}>
+                          <button onClick={() => { setAnnContent(annAiResult); setShowAnnAI(false); setAnnAiResult(''); setAnnAiPrompt('') }}
+                            style={{ flex:1, padding:'7px 0', borderRadius:8, border:'none', background:'linear-gradient(135deg,#7c3aed,#a855f7)', color:'#fff', fontSize:12, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
+                            Use this
+                          </button>
+                          <button onClick={() => generateAnnAI(annContent.trim() ? 'improve' : undefined)}
+                            style={{ padding:'7px 14px', borderRadius:8, border:'1px solid rgba(168,85,247,.3)', background:'transparent', color:'#a855f7', fontSize:12, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
+                            Retry
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {annAiLoading && (
+                      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 0', marginBottom:8 }}>
+                        <div style={{ display:'flex', gap:4 }}>
+                          {(['ai-dot-1 1.2s ease infinite','ai-dot-2 1.2s ease .18s infinite','ai-dot-3 1.2s ease .36s infinite'] as const).map((anim,i) => (
+                            <span key={i} style={{ width:5, height:5, borderRadius:'50%', background:'#a855f7', display:'block', animation:anim }} />
+                          ))}
+                        </div>
+                        <span style={{ fontSize:12, color:'#c084fc', fontWeight:600 }}>Writing…</span>
+                      </div>
+                    )}
+                    {!annAiLoading && annContent.trim() && (
+                      <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:8 }}>
+                        <button onClick={() => generateAnnAI('improve','Polish the writing and fix any grammar')}
+                          style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'5px 12px', borderRadius:9999, fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit', transition:'all .15s', background:'rgba(168,85,247,.1)', border:'1px solid rgba(168,85,247,.2)', color:'#c084fc' }}>✨ Polish</button>
+                        <button onClick={() => generateAnnAI('improve','Make this shorter and more concise')}
+                          style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'5px 12px', borderRadius:9999, fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit', transition:'all .15s', background:'rgba(168,85,247,.1)', border:'1px solid rgba(168,85,247,.2)', color:'#c084fc' }}>Shorter</button>
+                        <button onClick={() => generateAnnAI('improve','Make this more engaging and exciting')}
+                          style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'5px 12px', borderRadius:9999, fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit', transition:'all .15s', background:'rgba(168,85,247,.1)', border:'1px solid rgba(168,85,247,.2)', color:'#c084fc' }}>More engaging</button>
+                      </div>
+                    )}
+                    <div style={{ position:'relative' }}>
+                      <input value={annAiPrompt} onChange={e => setAnnAiPrompt(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter' && !annAiLoading && (annAiPrompt.trim() || annContent.trim())) generateAnnAI(annContent.trim() ? 'improve' : undefined) }}
+                        placeholder={annContent.trim() ? 'Any specific instructions? (optional)' : 'What should the announcement say?'}
+                        style={{ width:'100%', background:'rgba(255,255,255,.06)', border:'1px solid rgba(168,85,247,.2)', borderRadius:9, padding:'8px 42px 8px 12px', color:'var(--text-primary)', fontSize:13, outline:'none', fontFamily:'inherit', boxSizing:'border-box', caretColor:'#a855f7' }} />
+                      <button onClick={() => generateAnnAI(annContent.trim() ? 'improve' : undefined)}
+                        disabled={annAiLoading || (!annAiPrompt.trim() && !annContent.trim())}
+                        style={{ position:'absolute', right:7, top:'50%', transform:'translateY(-50%)', width:26, height:26, borderRadius:'50%', border:'none', background:(annAiLoading||(!annAiPrompt.trim()&&!annContent.trim()))?'rgba(168,85,247,.2)':'linear-gradient(135deg,#7c3aed,#a855f7)', color:'#fff', cursor:(annAiLoading||(!annAiPrompt.trim()&&!annContent.trim()))?'default':'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700 }}>
+                        ↑
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:10 }}>
               <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                 <input ref={annImgRef} type="file" accept="image/*" style={{ display:'none' }} onChange={handleAnnImageSelect} />
                 <button onClick={() => annImgRef.current?.click()} title="Attach image" style={{ padding:'6px 12px', borderRadius:7, background:annImageFile?'rgba(138,21,56,0.2)':'rgba(255,255,255,0.05)', border:annImageFile?'1px solid rgba(138,21,56,0.4)':'1px solid rgba(255,255,255,0.1)', color:annImageFile?'var(--accent)':'var(--text-muted)', fontSize:13, cursor:'pointer', transition:'all 0.15s', display:'flex', alignItems:'center', gap:5, fontFamily:'inherit' }}>
                   🖼 {annImageFile ? 'Image added' : 'Add image'}
+                </button>
+                <button onClick={() => { setShowAnnAI(v => !v); setAnnAiResult('') }}
+                  style={{ padding:'6px 12px', borderRadius:7, background:showAnnAI?'rgba(168,85,247,.2)':'rgba(168,85,247,.08)', border:`1px solid ${showAnnAI?'rgba(168,85,247,.5)':'rgba(168,85,247,.25)'}`, color:showAnnAI?'#a855f7':'rgba(168,85,247,.8)', fontSize:13, fontWeight:700, cursor:'pointer', transition:'all 0.15s', display:'flex', alignItems:'center', gap:5, fontFamily:'inherit' }}>
+                  ✨ AI
                 </button>
                 <span style={{ fontSize:11, color:'var(--text-muted)' }}>{annContent.length} / 600</span>
               </div>

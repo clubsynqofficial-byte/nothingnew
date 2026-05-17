@@ -19,6 +19,7 @@ import ProfilePage from './pages/profile/ProfilePage'
 import PositionsPage from './pages/positions/PositionsPage'
 import MessagesPage from './pages/messages/MessagesPage'
 import EventsPage from './pages/events/EventsPage'
+import SettingsPage from './pages/settings/SettingsPage'
 
 function RootRoute() {
   const { session, loading } = useAuth()
@@ -108,6 +109,7 @@ function AppRoutes() {
       <Route path="/profile/:userId" element={<ProtectedRoute><ProfilePageWithKey /></ProtectedRoute>} />
       <Route path="/messages" element={<ProtectedRoute><MessagesPage /></ProtectedRoute>} />
       <Route path="/events" element={<ProtectedRoute><EventsPage /></ProtectedRoute>} />
+      <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
 <Route path="*" element={<Navigate to="/home" replace />} />
     </Routes>
   )

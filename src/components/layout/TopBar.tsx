@@ -46,12 +46,14 @@ interface Props {
 }
 
 export default function TopBar({ onMenuToggle }: Props) {
-  const { profile, user } = useAuth()
+  const { profile, user, signOut } = useAuth()
   const navigate = useNavigate()
   const [notifs, setNotifs] = useState<Notification[]>([])
   const [open, setOpen] = useState(false)
   const [toasts, setToasts] = useState<Toast[]>([])
   const panelRef = useRef<HTMLDivElement>(null)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const profileRef = useRef<HTMLDivElement>(null)
 
   // Search state
   const [sq, setSq] = useState('')
@@ -100,7 +102,21 @@ export default function TopBar({ onMenuToggle }: Props) {
   const hasResults = srClubs.length + srPeople.length + srPosts.length > 0
   const showDropdown = searchFocused && sq.trim().length > 0
 
-  const unread = notifs.filter(n => !n.read).length
+  const TYPE_TO_PREF: Partial<Record<Notification['type'], string>> = {
+    message:           'direct_messages',
+    announcement:      'club_announcements',
+    match:             'skill_matches',
+    accepted:          'skill_matches',
+    end_trade_request: 'skill_matches',
+  }
+
+  function notifAllowed(n: Notification) {
+    const prefKey = TYPE_TO_PREF[n.type]
+    if (!prefKey) return true
+    return profile?.notification_prefs?.[prefKey] !== false
+  }
+
+  const unread = notifs.filter(n => !n.read && notifAllowed(n)).length
 
   const fetchNotifs = useCallback(async () => {
     if (!user) return
@@ -126,16 +142,20 @@ export default function TopBar({ onMenuToggle }: Props) {
       }, (payload) => {
         fetchNotifs()
         const n = payload.new as Notification
-        const toast: Toast = { id: `t-${Date.now()}`, notif: n }
-        setToasts(prev => [...prev, toast])
-        setTimeout(() => setToasts(prev => prev.filter(t => t.id !== toast.id)), 4500)
+        const prefKey = TYPE_TO_PREF[n.type]
+        const allowed = !prefKey || profile?.notification_prefs?.[prefKey] !== false
+        if (allowed) {
+          const toast: Toast = { id: `t-${Date.now()}`, notif: n }
+          setToasts(prev => [...prev, toast])
+          setTimeout(() => setToasts(prev => prev.filter(t => t.id !== toast.id)), 4500)
+        }
       })
       .subscribe()
 
     return () => { supabase.removeChannel(ch) }
   }, [user, fetchNotifs])
 
-  // Close panel on outside click
+  // Close notification panel on outside click
   useEffect(() => {
     if (!open) return
     const handler = (e: MouseEvent) => {
@@ -146,6 +166,24 @@ export default function TopBar({ onMenuToggle }: Props) {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
+
+  // Close profile dropdown on outside click
+  useEffect(() => {
+    if (!profileOpen) return
+    const handler = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setProfileOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [profileOpen])
+
+  const handleSignOut = async () => {
+    setProfileOpen(false)
+    await signOut()
+    navigate('/')
+  }
 
   const markAllRead = async () => {
     if (!user) return
@@ -330,7 +368,7 @@ export default function TopBar({ onMenuToggle }: Props) {
         {/* ── Notification Bell ── */}
         <div ref={panelRef} style={{ position: 'relative' }}>
           <button
-            onClick={() => setOpen(o => !o)}
+            onClick={() => { setOpen(o => { if (!o) markAllRead(); return !o }) }}
             style={{
               position: 'relative', width: 36, height: 36, borderRadius: '50%',
               background: open ? 'rgba(138,21,56,0.2)' : 'rgba(255,255,255,0.05)',
@@ -444,18 +482,138 @@ export default function TopBar({ onMenuToggle }: Props) {
           )}
         </div>
 
-        {/* User avatar */}
-        <div
-          onClick={() => navigate('/profile')}
-          title="View profile"
-          style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: '#fff', border: '1px solid rgba(255,255,255,0.1)', flexShrink: 0, cursor: 'pointer', transition: 'opacity 0.15s' }}
-          onMouseEnter={e => (e.currentTarget.style.opacity = '0.8')}
-          onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
-        >
-          {profile?.avatar_url
-            ? <img src={profile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-            : profile?.full_name?.[0]?.toUpperCase() ?? '?'
-          }
+        {/* User avatar + profile dropdown */}
+        <div ref={profileRef} style={{ position: 'relative' }}>
+          <button
+            onClick={() => setProfileOpen(o => !o)}
+            style={{
+              width: 36, height: 36, borderRadius: '50%',
+              background: profileOpen ? 'rgba(138,21,56,0.25)' : 'var(--accent)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 13, fontWeight: 700, color: '#fff',
+              border: `2px solid ${profileOpen ? 'rgba(192,24,92,0.6)' : 'rgba(255,255,255,0.12)'}`,
+              flexShrink: 0, cursor: 'pointer', padding: 0,
+              transition: 'border-color 0.15s, box-shadow 0.15s',
+              boxShadow: profileOpen ? '0 0 0 3px rgba(138,21,56,0.2)' : 'none',
+              overflow: 'hidden',
+            }}
+            aria-label="Profile menu"
+          >
+            {profile?.avatar_url
+              ? <img src={profile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              : profile?.full_name?.[0]?.toUpperCase() ?? '?'
+            }
+          </button>
+
+          {/* Dropdown */}
+          {profileOpen && (
+            <div className="profile-dropdown" style={{
+              position: 'absolute', top: 'calc(100% + 10px)', right: 0,
+              width: 220,
+              background: 'rgba(20,10,14,0.98)', backdropFilter: 'blur(24px)',
+              border: '1px solid rgba(87,65,68,0.35)', borderRadius: 14,
+              boxShadow: '0 20px 56px rgba(0,0,0,0.65)',
+              overflow: 'hidden', zIndex: 9999,
+            }}>
+              {/* User info header */}
+              <div style={{
+                padding: '14px 16px 12px',
+                borderBottom: '1px solid rgba(255,255,255,0.06)',
+                display: 'flex', alignItems: 'center', gap: 10,
+              }}>
+                <div style={{
+                  width: 38, height: 38, borderRadius: '50%', flexShrink: 0,
+                  background: 'linear-gradient(135deg,#8a1538,#c0185c)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 14, fontWeight: 800, color: '#fff', overflow: 'hidden',
+                }}>
+                  {profile?.avatar_url
+                    ? <img src={profile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : profile?.full_name?.[0]?.toUpperCase() ?? '?'
+                  }
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {profile?.full_name ?? 'User'}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {user?.email}
+                  </div>
+                </div>
+              </div>
+
+              {/* Menu items */}
+              <div style={{ padding: '6px 0' }}>
+                {/* Profile */}
+                <button
+                  className="pd-item"
+                  onClick={() => { setProfileOpen(false); navigate('/profile') }}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 11,
+                    padding: '10px 16px', background: 'none', border: 'none',
+                    cursor: 'pointer', color: 'rgba(255,255,255,0.8)',
+                    fontSize: 13, fontFamily: 'inherit', textAlign: 'left',
+                    transition: 'background 0.12s, color 0.12s',
+                    borderRadius: 0,
+                  }}
+                >
+                  <div style={{ width: 30, height: 30, borderRadius: 9, background: 'rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                      <circle cx="12" cy="7" r="4"/>
+                    </svg>
+                  </div>
+                  Profile
+                </button>
+
+                {/* Account Settings */}
+                <button
+                  className="pd-item"
+                  onClick={() => { setProfileOpen(false); navigate('/settings') }}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 11,
+                    padding: '10px 16px', background: 'none', border: 'none',
+                    cursor: 'pointer', color: 'rgba(255,255,255,0.8)',
+                    fontSize: 13, fontFamily: 'inherit', textAlign: 'left',
+                    transition: 'background 0.12s, color 0.12s',
+                  }}
+                >
+                  <div style={{ width: 30, height: 30, borderRadius: 9, background: 'rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="3"/>
+                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                  </div>
+                  Account Settings
+                </button>
+
+                {/* Divider */}
+                <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '4px 0' }} />
+
+                {/* Sign Out */}
+                <button
+                  className="pd-item pd-signout"
+                  onClick={handleSignOut}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 11,
+                    padding: '10px 16px', background: 'none', border: 'none',
+                    cursor: 'pointer', color: 'rgba(255,90,90,0.85)',
+                    fontSize: 13, fontFamily: 'inherit', textAlign: 'left',
+                    transition: 'background 0.12s, color 0.12s',
+                  }}
+                >
+                  <div style={{ width: 30, height: 30, borderRadius: 9, background: 'rgba(255,80,80,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                      <polyline points="16 17 21 12 16 7"/>
+                      <line x1="21" y1="12" x2="9" y2="12"/>
+                    </svg>
+                  </div>
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -486,6 +644,10 @@ export default function TopBar({ onMenuToggle }: Props) {
         .notif-toast { animation: notif-toast-in 0.3s cubic-bezier(0.34,1.56,0.64,1) both; }
         .notif-toast.leaving { animation: notif-toast-out 0.25s ease forwards; }
         @media(max-width:600px) { .tb-search { display:none!important; } }
+        @keyframes pd-in { from{opacity:0;transform:translateY(-8px) scale(0.96)} to{opacity:1;transform:none} }
+        .profile-dropdown { animation: pd-in 0.2s cubic-bezier(0.22,1,0.36,1) both; }
+        .pd-item:hover { background: rgba(255,255,255,0.05) !important; color: #fff !important; }
+        .pd-signout:hover { background: rgba(255,60,60,0.08) !important; color: rgba(255,100,100,1) !important; }
       `}</style>
 
     </header>

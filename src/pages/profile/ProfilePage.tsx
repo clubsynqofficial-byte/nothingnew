@@ -17,6 +17,14 @@ interface Review {
   id: string; rating: number; comment: string | null; created_at: string
   reviewer: { full_name: string | null } | null
 }
+interface ProfilePost {
+  id: string; content: string | null; image_url: string | null; image_urls: string[] | null
+  repost_of: string | null; created_at: string
+  likeCount: number; commentCount: number; repostCount: number
+  pollQuestion: string | null
+  pollOptions: string[]
+  repostSource: { content: string | null; image_url: string | null; profile: { full_name: string | null } | null } | null
+}
 interface ViewedProfile {
   id: string; full_name: string | null; avatar_url: string | null
   bio: string | null; skills: string[]; karak_points: number
@@ -114,6 +122,9 @@ const CSS = `
   .pf-tab  { font-family:inherit; cursor:pointer; transition:all 0.18s; border:none; }
   .pf-tab:hover { color:var(--text-primary) !important; }
 
+  .pf-post { transition: transform 0.18s, border-color 0.18s, box-shadow 0.18s; }
+  .pf-post:hover { transform:translateY(-2px); border-color:rgba(138,21,56,0.3) !important; box-shadow:0 8px 24px rgba(0,0,0,0.3) !important; }
+
   input:focus, textarea:focus { border-color:rgba(138,21,56,0.55) !important; outline:none; }
 `
 
@@ -144,7 +155,9 @@ export default function ProfilePage() {
   const [avatarError, setAvatarError]         = useState('')
 
   const [togglingId, setTogglingId] = useState<string | null>(null)
-  const [tab, setTab] = useState<'clubs' | 'listings' | 'reviews'>('clubs')
+  const [tab, setTab] = useState<'clubs' | 'listings' | 'reviews' | 'posts'>('posts')
+  const [profilePosts, setProfilePosts] = useState<ProfilePost[]>([])
+  const [loadingPosts, setLoadingPosts] = useState(false)
 
   const fetchAll = useCallback(async (targetId: string) => {
     setLoading(true)
@@ -168,18 +181,79 @@ export default function ProfilePage() {
     setLoading(false)
   }, [])
 
+  const fetchProfilePosts = useCallback(async (targetId: string) => {
+    setLoadingPosts(true)
+    const { data: raw } = await supabase
+      .from('posts')
+      .select('id, content, image_url, image_urls, repost_of, created_at')
+      .eq('user_id', targetId)
+      .order('created_at', { ascending: false })
+      .limit(40)
+    if (!raw?.length) { setProfilePosts([]); setLoadingPosts(false); return }
+
+    const ids = raw.map(p => p.id)
+    const repostIds = raw.flatMap(p => p.repost_of ? [p.repost_of as string] : [])
+
+    const [lk, cm, rp, src, polls] = await Promise.all([
+      supabase.from('post_likes').select('post_id').in('post_id', ids),
+      supabase.from('post_comments').select('post_id').in('post_id', ids),
+      supabase.from('posts').select('repost_of').in('repost_of', ids).is('content', null).is('image_url', null),
+      repostIds.length
+        ? supabase.from('posts').select('id, content, image_url, profile:profiles!user_id(full_name)').in('id', repostIds)
+        : { data: [] as any[] },
+      supabase.from('post_polls').select('id, post_id, question').in('post_id', ids),
+    ])
+
+    const likeMap: Record<string, number> = {}
+    for (const l of lk.data ?? []) likeMap[l.post_id] = (likeMap[l.post_id] ?? 0) + 1
+    const cmMap: Record<string, number> = {}
+    for (const c of cm.data ?? []) cmMap[c.post_id] = (cmMap[c.post_id] ?? 0) + 1
+    const rpMap: Record<string, number> = {}
+    for (const r of rp.data ?? []) { if (r.repost_of) rpMap[r.repost_of] = (rpMap[r.repost_of] ?? 0) + 1 }
+    const srcMap: Record<string, any> = {}
+    for (const s of src.data ?? []) srcMap[s.id] = s
+    const pollIdMap: Record<string, { id: string; question: string }> = {}
+    for (const poll of polls.data ?? []) if (poll.post_id) pollIdMap[poll.post_id] = { id: poll.id, question: poll.question }
+
+    const pollIds = Object.values(pollIdMap).map(p => p.id)
+    let optionsMap: Record<string, string[]> = {}
+    if (pollIds.length > 0) {
+      const { data: opts } = await supabase
+        .from('poll_options').select('poll_id, text, position').in('poll_id', pollIds).order('position')
+      for (const o of opts ?? []) {
+        if (!optionsMap[o.poll_id]) optionsMap[o.poll_id] = []
+        optionsMap[o.poll_id].push(o.text)
+      }
+    }
+
+    setProfilePosts(raw.map(p => {
+      const pollEntry = pollIdMap[p.id] ?? null
+      return {
+        ...p,
+        likeCount: likeMap[p.id] ?? 0,
+        commentCount: cmMap[p.id] ?? 0,
+        repostCount: rpMap[p.id] ?? 0,
+        pollQuestion: pollEntry?.question ?? null,
+        pollOptions: pollEntry ? (optionsMap[pollEntry.id] ?? []) : [],
+        repostSource: p.repost_of ? (srcMap[p.repost_of] ?? null) : null,
+      }
+    }))
+    setLoadingPosts(false)
+  }, [])
+
   useEffect(() => {
     if (isOwnProfile) {
-      if (user) fetchAll(user.id)
+      if (user) { fetchAll(user.id); fetchProfilePosts(user.id) }
     } else if (paramUserId) {
       supabase.from('profiles').select('id, full_name, avatar_url, bio, skills, karak_points, role, university:universities(name)').eq('id', paramUserId).maybeSingle()
         .then(({ data }) => {
           if (!data) { setNotFound(true); setLoading(false); return }
           setViewedProfile(data as unknown as ViewedProfile)
           fetchAll(paramUserId)
+          fetchProfilePosts(paramUserId)
         })
     }
-  }, [user, paramUserId, isOwnProfile, fetchAll])
+  }, [user, paramUserId, isOwnProfile, fetchAll, fetchProfilePosts])
 
   // Realtime: refetch completed trade count + reviews when trades finish or reviews are posted
   useEffect(() => {
@@ -508,9 +582,10 @@ export default function ProfilePage() {
         border:'1px solid rgba(255,255,255,0.055)', borderRadius:15, padding:4, marginBottom:14,
       }}>
         {([
-          { key:'clubs',    label:'Clubs Joined',     count:clubs.length },
-          { key:'listings', label:'Skill Listings',   count:listings.length },
-          { key:'reviews',  label:'Reviews Received', count:reviews.length },
+          { key:'posts',    label:'Posts',             count:profilePosts.length },
+          { key:'clubs',    label:'Clubs Joined',      count:clubs.length },
+          { key:'listings', label:'Skill Listings',    count:listings.length },
+          { key:'reviews',  label:'Reviews Received',  count:reviews.length },
         ] as const).map(t => (
           <button key={t.key} className="pf-tab" onClick={() => setTab(t.key)} style={{
             flex:1, padding:'9px 10px', borderRadius:12, fontSize:13,
@@ -533,6 +608,117 @@ export default function ProfilePage() {
 
       {/* ── Tab panel (key forces remount → animation plays) ── */}
       <div key={tab} className="pf-panel" style={{ marginBottom:36 }}>
+
+        {/* Posts */}
+        {tab === 'posts' && (
+          loadingPosts
+            ? (
+              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                {[0,1,2].map(i => <div key={i} className="pf-shimmer" style={{ height:90, borderRadius:14 }} />)}
+              </div>
+            )
+            : profilePosts.length === 0
+              ? <EmptyCard icon="✏️" text="No posts yet." />
+              : (
+                <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                  {profilePosts.map((p, i) => {
+                    const isRepost = !!p.repost_of && !p.content && !p.image_url && !(p.image_urls?.length)
+                    const imgs = p.image_urls?.length ? p.image_urls : p.image_url ? [p.image_url] : []
+                    return (
+                      <div key={p.id} className="pf-post" style={{
+                        background:'rgba(22,13,17,0.7)', border:'1px solid rgba(87,65,68,0.18)',
+                        borderRadius:14, padding:'16px 18px',
+                        boxShadow:'0 2px 14px rgba(0,0,0,0.2)',
+                        animation:`pf-up 0.38s cubic-bezier(0.22,1,0.36,1) ${Math.min(i,8)*0.045}s both`,
+                      }}>
+                        {/* Repost badge */}
+                        {p.repost_of && (
+                          <div style={{ fontSize:11, color:'#4ade80', fontWeight:700, marginBottom:8, display:'flex', alignItems:'center', gap:5, opacity:0.75 }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                              <polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+                            </svg>
+                            Repost
+                          </div>
+                        )}
+
+                        {/* Content */}
+                        {p.content && (
+                          <p style={{ fontSize:14, color:'var(--text-primary)', lineHeight:1.72, margin:'0 0 10px', whiteSpace:'pre-wrap', wordBreak:'break-word' }}>
+                            {p.content}
+                          </p>
+                        )}
+
+                        {/* Poll */}
+                        {p.pollQuestion && (
+                          <div style={{ background:'rgba(96,165,250,0.05)', border:'1px solid rgba(96,165,250,0.18)', borderRadius:12, padding:'12px 14px', marginBottom:10 }}>
+                            <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:10 }}>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink:0 }}>
+                                <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+                              </svg>
+                              <span style={{ fontSize:11, fontWeight:800, color:'#60a5fa', letterSpacing:'0.06em', textTransform:'uppercase' }}>Poll</span>
+                            </div>
+                            <div style={{ fontSize:13.5, fontWeight:700, color:'var(--text-primary)', marginBottom:10, lineHeight:1.4 }}>{p.pollQuestion}</div>
+                            {p.pollOptions.map((opt, oi) => (
+                              <div key={oi} style={{ marginBottom:6, borderRadius:8, border:'1px solid rgba(255,255,255,0.08)', padding:'7px 11px', background:'rgba(255,255,255,0.03)', fontSize:12.5, color:'var(--text-secondary)' }}>
+                                {opt}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Images */}
+                        {imgs.length > 0 && (
+                          <div style={{ display:'flex', gap:6, marginBottom:10, flexWrap:'wrap' }}>
+                            {imgs.slice(0,4).map((url, j) => (
+                              <div key={j} style={{ width:72, height:72, borderRadius:10, overflow:'hidden', flexShrink:0, border:'1px solid rgba(255,255,255,0.08)' }}>
+                                <img src={url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Quoted repost source */}
+                        {isRepost && p.repostSource && (
+                          <div style={{ background:'rgba(0,0,0,0.25)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:10, padding:'10px 13px', marginBottom:10, borderLeft:'3px solid rgba(138,21,56,0.4)' }}>
+                            <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', marginBottom:5 }}>
+                              {p.repostSource.profile?.full_name ?? 'User'}
+                            </div>
+                            {p.repostSource.content && (
+                              <p style={{ fontSize:13, color:'var(--text-secondary)', lineHeight:1.65, margin:0, overflow:'hidden', display:'-webkit-box', WebkitLineClamp:3, WebkitBoxOrient:'vertical' }}>
+                                {p.repostSource.content}
+                              </p>
+                            )}
+                            {p.repostSource.image_url && (
+                              <div style={{ width:60, height:60, borderRadius:8, overflow:'hidden', marginTop:7, border:'1px solid rgba(255,255,255,0.07)' }}>
+                                <img src={p.repostSource.image_url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Footer: stats + time */}
+                        <div style={{ display:'flex', alignItems:'center', gap:16, marginTop: (p.content || imgs.length || isRepost) ? 6 : 0 }}>
+                          <span style={{ fontSize:11, color:'var(--text-muted)', marginRight:'auto' }}>{timeAgo(p.created_at)}</span>
+                          <span style={{ fontSize:12, color:'rgba(248,113,113,0.6)', display:'flex', alignItems:'center', gap:4 }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill={p.likeCount>0?'currentColor':'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                            {p.likeCount}
+                          </span>
+                          <span style={{ fontSize:12, color:'rgba(96,165,250,0.6)', display:'flex', alignItems:'center', gap:4 }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                            {p.commentCount}
+                          </span>
+                          <span style={{ fontSize:12, color:'rgba(74,222,128,0.6)', display:'flex', alignItems:'center', gap:4 }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                            {p.repostCount}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+        )}
 
         {/* Clubs */}
         {tab === 'clubs' && (

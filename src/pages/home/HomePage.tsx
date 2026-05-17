@@ -86,6 +86,12 @@ export default function HomePage() {
   const [pollQuestion, setPollQuestion] = useState('')
   const [pollOptions, setPollOptions] = useState(['', ''])
 
+  // AI writing assistant state
+  const [showAI, setShowAI]       = useState(false)
+  const [aiPrompt, setAiPrompt]   = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiResult, setAiResult]   = useState('')
+
   // Poll data per post: postId → { options with vote counts, userVote }
   const [pollData, setPollData] = useState<Record<string, PollData>>({})
 
@@ -192,6 +198,31 @@ export default function HomePage() {
     setImgs(prev => prev.filter((_, i) => i !== idx))
     setPreviews(prev => prev.filter((_, i) => i !== idx))
   }
+  async function generateAI(mode?: 'improve', instruction?: string) {
+    if (aiLoading) return
+    setAiLoading(true)
+    setAiResult('')
+    const prompt = instruction ?? aiPrompt.trim()
+    const { data, error } = await supabase.functions.invoke('ai-write', {
+      body: {
+        prompt,
+        draft: (mode === 'improve' || !prompt) ? txt.trim() : '',
+      },
+    })
+    setAiLoading(false)
+    if (error || !data?.text) { setAiResult('Could not generate — please try again.'); return }
+    setAiResult(data.text)
+  }
+
+  function useAIResult() {
+    setTxt(aiResult)
+    if (taRef.current) {
+      taRef.current.style.height = 'auto'
+      taRef.current.style.height = Math.min(taRef.current.scrollHeight, 260) + 'px'
+    }
+    setShowAI(false); setAiResult(''); setAiPrompt('')
+  }
+
   async function doPost() {
     if (!user || (!txt.trim() && imgs.length === 0 && !showPoll)) return
     if (txt.length > 500) { setCompErr('Max 500 chars'); return }
@@ -325,6 +356,17 @@ export default function HomePage() {
       @keyframes pop { 0%{transform:scale(1)} 40%{transform:scale(1.55)} 70%{transform:scale(0.88)} 100%{transform:scale(1)} }
       @keyframes shimmer { from{background-position:-200% 0} to{background-position:200% 0} }
       @keyframes menuIn { from{opacity:0;transform:scale(.9) translateY(-6px)} to{opacity:1;transform:none} }
+      @keyframes ai-in { from{opacity:0;transform:translateY(-6px) scale(0.98)} to{opacity:1;transform:none} }
+      @keyframes ai-gradient { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+      @keyframes ai-dot-1 { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-5px)} }
+      @keyframes ai-dot-2 { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-5px)} }
+      @keyframes ai-dot-3 { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-5px)} }
+      @keyframes ai-shimmer { from{background-position:-400px 0} to{background-position:400px 0} }
+      @keyframes ai-result-in { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+      .ai-chip { display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:9999px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s;white-space:nowrap }
+      .ai-chip:hover { transform:translateY(-1px); }
+      .ai-send:hover:not(:disabled) { opacity:0.85!important; transform:scale(1.05); }
+      .ai-use:hover { opacity:0.9!important; transform:translateY(-1px); }
       .hgrid { display:grid; grid-template-columns:1fr 300px; gap:22px; align-items:start }
       @media(max-width:860px){ .hgrid{grid-template-columns:1fr} .sidebar{display:none!important} }
       .card { background:#231518; border:1px solid rgba(255,255,255,0.08); border-radius:18px; overflow:hidden }
@@ -418,18 +460,20 @@ export default function HomePage() {
                 <Av url={profile?.avatar_url??null} name={profile?.full_name??null} size={44}
                   onClick={() => nav('/profile')} ring />
                 <div style={{ flex:1, minWidth:0 }}>
-                  <textarea ref={taRef} value={txt} onChange={onTaChange}
-                    onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
-                    onKeyDown={e => { if (e.key==='Enter'&&(e.metaKey||e.ctrlKey)) doPost() }}
-                    placeholder={`What's on your mind, ${firstName}?`}
-                    maxLength={500}
-                    style={{
-                      width:'100%', background:'transparent', border:'none', outline:'none',
-                      resize:'none', fontSize:15.5, color:'var(--text-primary)',
-                      fontFamily:'inherit', lineHeight:1.72, overflow:'hidden',
-                      minHeight: focused ? 72 : 46, paddingTop:4,
-                      transition:'min-height .2s', caretColor:'var(--accent)',
-                    }}/>
+                  {!showPoll && (
+                    <textarea ref={taRef} value={txt} onChange={onTaChange}
+                      onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+                      onKeyDown={e => { if (e.key==='Enter'&&(e.metaKey||e.ctrlKey)) doPost() }}
+                      placeholder={`What's on your mind, ${firstName}?`}
+                      maxLength={500}
+                      style={{
+                        width:'100%', background:'transparent', border:'none', outline:'none',
+                        resize:'none', fontSize:15.5, color:'var(--text-primary)',
+                        fontFamily:'inherit', lineHeight:1.72, overflow:'hidden',
+                        minHeight: focused ? 72 : 46, paddingTop:4,
+                        transition:'min-height .2s', caretColor:'var(--accent)',
+                      }}/>
+                  )}
                   {previews.length > 0 && (
                     <div style={{ marginTop:10, display:'grid', gridTemplateColumns: previews.length === 1 ? '1fr' : previews.length === 2 ? '1fr 1fr' : previews.length === 3 ? '1fr 1fr 1fr' : '1fr 1fr', gap:6 }}>
                       {previews.map((src, i) => (
@@ -464,6 +508,95 @@ export default function HomePage() {
                 </div>
               </div>
             )}
+            {/* AI Writing Assistant */}
+            {showAI && (
+              <div style={{ padding: '0 18px 16px', animation: 'ai-in .18s ease both' }}>
+                <div style={{ borderRadius: 14, border: '1px solid rgba(168,85,247,.22)', background: 'rgba(168,85,247,.04)', overflow: 'hidden' }}>
+
+                  {/* Header */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px 10px 16px', borderBottom: '1px solid rgba(168,85,247,.1)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                      <span style={{ fontSize: 15 }}>✨</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#c084fc' }}>Write with AI</span>
+                    </div>
+                    <button onClick={() => { setShowAI(false); setAiResult(''); setAiPrompt('') }}
+                      style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '2px 4px', borderRadius: 6, transition: 'color .12s' }}
+                      onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-primary)' }}
+                      onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)' }}>✕</button>
+                  </div>
+
+                  <div style={{ padding: '12px 14px' }}>
+
+                    {/* Result card — shown above input when we have a result */}
+                    {aiResult && !aiLoading && (
+                      <div style={{ animation: 'ai-result-in .2s ease both', marginBottom: 12, background: 'rgba(255,255,255,.05)', border: '1px solid rgba(168,85,247,.18)', borderRadius: 10, padding: '12px 14px' }}>
+                        <p style={{ fontSize: 13.5, color: 'var(--text-primary)', lineHeight: 1.7, margin: '0 0 10px', whiteSpace: 'pre-wrap' }}>{aiResult}</p>
+                        <div style={{ display: 'flex', gap: 7 }}>
+                          <button className="ai-use" onClick={useAIResult}
+                            style={{ flex: 1, padding: '7px 0', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s' }}>
+                            Use this
+                          </button>
+                          <button className="ai-use" onClick={() => generateAI(txt.trim() ? 'improve' : undefined)}
+                            style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid rgba(168,85,247,.3)', background: 'transparent', color: '#a855f7', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s' }}>
+                            Retry
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Loading */}
+                    {aiLoading && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 0', marginBottom: 10 }}>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          {(['ai-dot-1 1.2s ease infinite', 'ai-dot-2 1.2s ease .18s infinite', 'ai-dot-3 1.2s ease .36s infinite'] as const).map((anim, i) => (
+                            <span key={i} style={{ width: 5, height: 5, borderRadius: '50%', background: '#a855f7', display: 'block', animation: anim }} />
+                          ))}
+                        </div>
+                        <span style={{ fontSize: 12.5, color: '#c084fc', fontWeight: 600 }}>Writing…</span>
+                      </div>
+                    )}
+
+                    {/* Quick chips — hide while loading or after result */}
+                    {!aiLoading && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                        {txt.trim() && (
+                          <>
+                            <button className="ai-chip" onClick={() => generateAI('improve', 'Polish the writing and fix any grammar')} disabled={aiLoading}
+                              style={{ background: 'rgba(168,85,247,.1)', border: '1px solid rgba(168,85,247,.2)', color: '#c084fc' }}>✨ Polish</button>
+                            <button className="ai-chip" onClick={() => generateAI('improve', 'Make this shorter and punchier')} disabled={aiLoading}
+                              style={{ background: 'rgba(168,85,247,.1)', border: '1px solid rgba(168,85,247,.2)', color: '#c084fc' }}>Shorter</button>
+                            <button className="ai-chip" onClick={() => generateAI('improve', 'Make this more engaging and exciting')} disabled={aiLoading}
+                              style={{ background: 'rgba(168,85,247,.1)', border: '1px solid rgba(168,85,247,.2)', color: '#c084fc' }}>More engaging</button>
+                            <button className="ai-chip" onClick={() => generateAI('improve', 'Fix grammar and improve clarity')} disabled={aiLoading}
+                              style={{ background: 'rgba(168,85,247,.1)', border: '1px solid rgba(168,85,247,.2)', color: '#c084fc' }}>Fix grammar</button>
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Input with inline send */}
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        value={aiPrompt}
+                        onChange={e => setAiPrompt(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter' && !aiLoading && (aiPrompt.trim() || txt.trim())) generateAI(txt.trim() ? 'improve' : undefined) }}
+                        placeholder={txt.trim() ? 'Any specific instructions? (optional)' : 'What do you want to write about?'}
+                        style={{ width: '100%', background: 'rgba(255,255,255,.06)', border: '1px solid rgba(168,85,247,.2)', borderRadius: 10, padding: '9px 44px 9px 13px', color: 'var(--text-primary)', fontSize: 13, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', caretColor: '#a855f7', transition: 'border-color .15s' }}
+                        onFocus={e => { e.currentTarget.style.borderColor = 'rgba(168,85,247,.5)' }}
+                        onBlur={e => { e.currentTarget.style.borderColor = 'rgba(168,85,247,.2)' }}
+                      />
+                      <button className="ai-send" onClick={() => generateAI(txt.trim() ? 'improve' : undefined)}
+                        disabled={aiLoading || (!aiPrompt.trim() && !txt.trim())}
+                        style={{ position: 'absolute', right: 7, top: '50%', transform: 'translateY(-50%)', width: 28, height: 28, borderRadius: '50%', border: 'none', background: (aiLoading || (!aiPrompt.trim() && !txt.trim())) ? 'rgba(168,85,247,.2)' : 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', cursor: (aiLoading || (!aiPrompt.trim() && !txt.trim())) ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all .15s', fontSize: 12, fontWeight: 700 }}>
+                        ↑
+                      </button>
+                    </div>
+
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* toolbar */}
             <div className="compose-toolbar" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 18px 14px 74px', borderTop:'1px solid rgba(255,255,255,.05)', marginTop:10 }}>
               <div style={{ display: 'flex', gap: 4 }}>
@@ -484,7 +617,20 @@ export default function HomePage() {
                 <button onClick={() => setShowPoll(v => !v)} style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'6px 12px', borderRadius:9999, border:'none', cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:600, background: showPoll ? 'rgba(96,165,250,.18)' : 'transparent', color: showPoll ? '#60a5fa' : 'var(--text-muted)', transition:'all .15s' }}
                   onMouseEnter={e => { e.currentTarget.style.background='rgba(96,165,250,.12)'; e.currentTarget.style.color='#60a5fa' }}
                   onMouseLeave={e => { e.currentTarget.style.background=showPoll?'rgba(96,165,250,.18)':'transparent'; e.currentTarget.style.color=showPoll?'#60a5fa':'var(--text-muted)' }}>
-                  <span style={{ fontSize:15 }}>📊</span><span>Poll</span>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                  <span>Poll</span>
+                </button>
+                {/* AI button */}
+                <button onClick={() => { setShowAI(v => !v); setAiResult(''); }}
+                  style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'6px 14px', borderRadius:9999, cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:700, transition:'all .15s',
+                    background: showAI ? 'rgba(168,85,247,.2)' : 'rgba(168,85,247,.08)',
+                    border: `1px solid ${showAI ? 'rgba(168,85,247,.5)' : 'rgba(168,85,247,.25)'}`,
+                    color: showAI ? '#a855f7' : 'rgba(168,85,247,.8)',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background='rgba(168,85,247,.18)'; e.currentTarget.style.borderColor='rgba(168,85,247,.5)'; e.currentTarget.style.color='#a855f7' }}
+                  onMouseLeave={e => { e.currentTarget.style.background=showAI?'rgba(168,85,247,.2)':'rgba(168,85,247,.08)'; e.currentTarget.style.borderColor=showAI?'rgba(168,85,247,.5)':'rgba(168,85,247,.25)'; e.currentTarget.style.color=showAI?'#a855f7':'rgba(168,85,247,.8)' }}>
+                  <span style={{ fontSize: 13 }}>✨</span>
+                  <span>AI</span>
                 </button>
               </div>
               <div style={{ display:'flex', alignItems:'center', gap:10 }}>
