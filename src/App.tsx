@@ -7,6 +7,8 @@ import OnboardingModal from './components/OnboardingModal'
 import LandingPage from './pages/landing/LandingPage'
 import SignIn from './pages/auth/SignIn'
 import SignUp from './pages/auth/SignUp'
+import ForgotPassword from './pages/auth/ForgotPassword'
+import ResetPassword from './pages/auth/ResetPassword'
 import HomePage from './pages/home/HomePage'
 import DiscoveryPage from './pages/discovery/DiscoveryPage'
 import LeadershipPage from './pages/leadership/LeadershipPage'
@@ -96,6 +98,8 @@ function AppRoutes() {
       <Route path="/" element={<RootRoute />} />
       <Route path="/signin" element={<PublicRoute><SignIn /></PublicRoute>} />
       <Route path="/signup" element={<PublicRoute><SignUp /></PublicRoute>} />
+      <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
       <Route path="/discovery" element={<ProtectedRoute><DiscoveryPage /></ProtectedRoute>} />
       <Route path="/leadership" element={<ProtectedRoute><LeadershipPage /></ProtectedRoute>} />
