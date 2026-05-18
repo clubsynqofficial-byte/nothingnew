@@ -334,7 +334,7 @@ export default function MessagesPage() {
     const [{ data: profiles }, { data: founderCards }, { data: convs }] = await Promise.all([
       supabase.from('profiles').select('id, full_name, avatar_url, last_seen_at').in('id', matchIds),
       supabase.from('founder_profiles').select('user_id, project_title').in('user_id', matchIds),
-      supabase.from('conversations').select('id, participant_1, participant_2, last_message_at').or(`participant_1.eq.${user.id},participant_2.eq.${user.id}`).order('last_message_at', { ascending: false }),
+      supabase.from('conversations').select('id, participant_1, participant_2, last_message_at').eq('type','collab').or(`participant_1.eq.${user.id},participant_2.eq.${user.id}`).order('last_message_at', { ascending: false }),
     ])
     const profileMap: Record<string, Profile> = {}
     for (const p of profiles ?? []) profileMap[p.id] = p as Profile
@@ -399,7 +399,7 @@ export default function MessagesPage() {
       .neq('user_id', user.id)
     const leaderUserIds = [...new Set((leaderMems ?? []).map(m => m.user_id as string))]
     const { data: convs } = leaderUserIds.length > 0
-      ? await supabase.from('conversations').select('id, participant_1, participant_2, last_message_at').or(`participant_1.eq.${user.id},participant_2.eq.${user.id}`)
+      ? await supabase.from('conversations').select('id, participant_1, participant_2, last_message_at').eq('type','leader').or(`participant_1.eq.${user.id},participant_2.eq.${user.id}`)
       : { data: [] }
     const convMap: Record<string, { id: string; last_message_at: string }> = {}
     for (const c of convs ?? []) {
@@ -462,7 +462,7 @@ export default function MessagesPage() {
     setLoadingDms(true)
     const [{ data: reqs }, { data: convs }] = await Promise.all([
       supabase.from('message_requests').select('id, from_user_id, to_user_id, status, created_at, from_profile:profiles!from_user_id(full_name, avatar_url, username)').eq('to_user_id', user.id).eq('status', 'pending'),
-      supabase.from('conversations').select('id, participant_1, participant_2, last_message_at').or(`participant_1.eq.${user.id},participant_2.eq.${user.id}`).order('last_message_at', { ascending: false, nullsFirst: false }),
+      supabase.from('conversations').select('id, participant_1, participant_2, last_message_at').eq('type','dm').or(`participant_1.eq.${user.id},participant_2.eq.${user.id}`).order('last_message_at', { ascending: false, nullsFirst: false }),
     ])
     setDmRequests((reqs ?? []) as unknown as MsgRequest[])
     if (!convs?.length) { setDmConvs([]); setLoadingDms(false); return }
@@ -507,7 +507,7 @@ export default function MessagesPage() {
 
   async function acceptRequest(req: MsgRequest) {
     await supabase.from('message_requests').update({ status: 'accepted' }).eq('id', req.id)
-    const { data: conv } = await supabase.from('conversations').insert({ participant_1: user!.id, participant_2: req.from_user_id }).select('id').single()
+    const { data: conv } = await supabase.from('conversations').insert({ participant_1: user!.id, participant_2: req.from_user_id, type: 'dm' }).select('id').single()
     setDmRequests(prev => prev.filter(r => r.id !== req.id))
     if (conv) {
       const newConv: DMConv = { convId: conv.id, otherId: req.from_user_id, otherName: req.from_profile?.full_name ?? null, otherAvatar: req.from_profile?.avatar_url ?? null, otherUsername: req.from_profile?.username ?? null, lastMsg: null, lastAt: new Date().toISOString(), unread: 0 }
@@ -529,7 +529,7 @@ export default function MessagesPage() {
     setInput(''); setSendErr(''); setMobileView('chat'); setLoadingCollabMsgs(true)
     let convId = thread.convId
     if (!convId) {
-      const { data } = await supabase.from('conversations').insert({ participant_1: user!.id, participant_2: thread.matchUserId }).select('id').single()
+      const { data } = await supabase.from('conversations').insert({ participant_1: user!.id, participant_2: thread.matchUserId, type: 'collab' }).select('id').single()
       convId = data?.id ?? null
       if (convId) { setCollabThreads(prev => prev.map(t => t.matchUserId === thread.matchUserId ? { ...t, convId } : t)); setActiveCollab(prev => prev ? { ...prev, convId } : prev) }
     }
@@ -575,10 +575,10 @@ export default function MessagesPage() {
     setInput(''); setSendErr(''); setMobileView('chat'); setLoadingLeaderMsgs(true)
     let convId = leader.convId
     if (!convId) {
-      const { data: existing } = await supabase.from('conversations').select('id').or(`and(participant_1.eq.${user!.id},participant_2.eq.${leader.userId}),and(participant_1.eq.${leader.userId},participant_2.eq.${user!.id})`).maybeSingle()
+      const { data: existing } = await supabase.from('conversations').select('id').eq('type','leader').or(`and(participant_1.eq.${user!.id},participant_2.eq.${leader.userId}),and(participant_1.eq.${leader.userId},participant_2.eq.${user!.id})`).maybeSingle()
       if (existing) { convId = existing.id }
       else {
-        const { data } = await supabase.from('conversations').insert({ participant_1: user!.id, participant_2: leader.userId }).select('id').single()
+        const { data } = await supabase.from('conversations').insert({ participant_1: user!.id, participant_2: leader.userId, type: 'leader' }).select('id').single()
         convId = data?.id ?? null
       }
       if (convId) { setClubLeaders(prev => prev.map(l => l.userId === leader.userId ? { ...l, convId } : l)); setActiveLeader(prev => prev ? { ...prev, convId } : prev) }

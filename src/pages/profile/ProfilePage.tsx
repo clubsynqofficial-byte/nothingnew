@@ -291,6 +291,7 @@ export default function ProfilePage() {
         const { data: conv } = await supabase
           .from('conversations')
           .select('id')
+          .eq('type', 'dm')
           .or(`and(participant_1.eq.${user!.id},participant_2.eq.${paramUserId}),and(participant_1.eq.${paramUserId},participant_2.eq.${user!.id})`)
           .maybeSingle()
         setConvId(conv?.id ?? null)
@@ -314,7 +315,7 @@ export default function ProfilePage() {
       await supabase.from('message_requests').update({ status: 'accepted' }).eq('id', msgReqId)
       const { data: conv } = await supabase
         .from('conversations')
-        .insert({ participant_1: user.id, participant_2: paramUserId })
+        .insert({ participant_1: user.id, participant_2: paramUserId, type: 'dm' })
         .select('id')
         .single()
       setConvId(conv?.id ?? null)
