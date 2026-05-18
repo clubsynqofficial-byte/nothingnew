@@ -447,40 +447,15 @@ export default function ProfilePage() {
           <div style={{ position:'absolute', top:10, left:'40%', width:260, height:80, background:'radial-gradient(ellipse, rgba(255,255,255,0.04) 0%, transparent 70%)', pointerEvents:'none' }} />
           <div style={{ position:'absolute', bottom:-35, left:100, width:150, height:150, borderRadius:'50%', background:'rgba(200,40,100,0.07)', pointerEvents:'none' }} />
 
-          {/* Back button + message button — other user */}
+          {/* Back button — other user */}
           {!isOwnProfile && (
-            <div style={{ position:'absolute', top:14, left:16, right:16, zIndex:2, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-              <button className="pf-back" onClick={() => navigate(-1)} style={{
-                background:'rgba(0,0,0,0.45)', backdropFilter:'blur(10px)',
-                border:'1px solid rgba(255,255,255,0.15)', borderRadius:10,
-                padding:'7px 15px', color:'rgba(255,255,255,0.72)', fontSize:13,
-                display:'flex', alignItems:'center', gap:6,
-              }}>← Back</button>
-
-              <div style={{ display:'flex', gap:8 }}>
-                {msgStatus === 'received' && (
-                  <button className="pf-btn" onClick={declineRequest}
-                    style={{ padding:'7px 14px', background:'rgba(239,68,68,.12)', backdropFilter:'blur(10px)', border:'1px solid rgba(239,68,68,.3)', borderRadius:10, color:'#f87171', fontSize:13, fontWeight:600 }}
-                    onMouseEnter={e => e.currentTarget.style.background='rgba(239,68,68,.22)'}
-                    onMouseLeave={e => e.currentTarget.style.background='rgba(239,68,68,.12)'}>
-                    Decline
-                  </button>
-                )}
-                <button className="pf-btn" onClick={handleMessageAction} disabled={msgLoading || msgStatus === 'sent'}
-                  style={{
-                    padding:'7px 16px', backdropFilter:'blur(10px)', borderRadius:10, fontSize:13, fontWeight:600,
-                    border: msgStatus === 'accepted' ? '1px solid rgba(138,21,56,0.6)' : '1px solid rgba(255,255,255,0.18)',
-                    background: msgStatus === 'accepted' ? 'rgba(138,21,56,0.45)' : msgStatus === 'received' ? 'rgba(34,197,94,.18)' : 'rgba(0,0,0,0.45)',
-                    color: msgStatus === 'accepted' ? '#fff' : msgStatus === 'received' ? '#4ade80' : 'rgba(255,255,255,0.75)',
-                    opacity: msgStatus === 'sent' ? 0.5 : 1,
-                    display:'flex', alignItems:'center', gap:6,
-                  }}
-                  onMouseEnter={e => { if (msgStatus !== 'sent') e.currentTarget.style.background = msgStatus === 'accepted' ? 'rgba(138,21,56,0.65)' : 'rgba(138,21,56,0.35)' }}
-                  onMouseLeave={e => { e.currentTarget.style.background = msgStatus === 'accepted' ? 'rgba(138,21,56,0.45)' : msgStatus === 'received' ? 'rgba(34,197,94,.18)' : 'rgba(0,0,0,0.45)' }}>
-                  {msgLoading ? '…' : msgStatus === 'none' ? '✉ Message' : msgStatus === 'sent' ? '✓ Request Sent' : msgStatus === 'received' ? '✓ Accept Request' : '💬 Open Chat'}
-                </button>
-              </div>
-            </div>
+            <button className="pf-back" onClick={() => navigate(-1)} style={{
+              position:'absolute', top:14, left:16, zIndex:2,
+              background:'rgba(0,0,0,0.45)', backdropFilter:'blur(10px)',
+              border:'1px solid rgba(255,255,255,0.15)', borderRadius:10,
+              padding:'7px 15px', color:'rgba(255,255,255,0.72)', fontSize:13,
+              display:'flex', alignItems:'center', gap:6,
+            }}>← Back</button>
           )}
 
           {/* Action buttons — own profile, pinned top-right of banner */}
@@ -592,6 +567,46 @@ export default function ProfilePage() {
               {!dp?.bio && (!dp?.skills || dp.skills.length === 0) && (
                 <div style={{ fontSize:13, color:'var(--text-muted)', fontStyle:'italic', marginBottom:22 }}>
                   {isOwnProfile ? 'No bio yet — add one to introduce yourself.' : "This user hasn't added a bio yet."}
+                </div>
+              )}
+
+              {/* Message button — other users only */}
+              {!isOwnProfile && (
+                <div style={{ display:'flex', gap:8, marginBottom:20 }}>
+                  {msgStatus === 'received' && (
+                    <button className="pf-btn" onClick={declineRequest}
+                      style={{ padding:'10px 18px', background:'rgba(239,68,68,.08)', border:'1px solid rgba(239,68,68,.25)', borderRadius:11, color:'#f87171', fontSize:13.5, fontWeight:600, fontFamily:'inherit' }}
+                      onMouseEnter={e => e.currentTarget.style.background='rgba(239,68,68,.18)'}
+                      onMouseLeave={e => e.currentTarget.style.background='rgba(239,68,68,.08)'}>
+                      Decline
+                    </button>
+                  )}
+                  <button className="pf-btn" onClick={handleMessageAction}
+                    disabled={msgLoading || msgStatus === 'sent'}
+                    style={{
+                      padding:'10px 22px', borderRadius:11, fontSize:13.5, fontWeight:700, fontFamily:'inherit',
+                      border: msgStatus === 'accepted' ? '1px solid rgba(138,21,56,.6)' : '1px solid rgba(255,255,255,.15)',
+                      background: msgStatus === 'accepted' ? 'linear-gradient(135deg,#8a1538,#c0185c)' : msgStatus === 'received' ? 'rgba(34,197,94,.12)' : 'rgba(138,21,56,.15)',
+                      color: msgStatus === 'received' ? '#4ade80' : '#fff',
+                      opacity: msgStatus === 'sent' ? 0.55 : 1,
+                      boxShadow: msgStatus === 'accepted' ? '0 4px 18px rgba(138,21,56,.35)' : 'none',
+                      display:'flex', alignItems:'center', gap:7, cursor: msgStatus === 'sent' ? 'default' : 'pointer',
+                    }}
+                    onMouseEnter={e => { if (msgStatus !== 'sent') e.currentTarget.style.opacity = '0.85' }}
+                    onMouseLeave={e => { e.currentTarget.style.opacity = msgStatus === 'sent' ? '0.55' : '1' }}>
+                    {msgLoading
+                      ? <span style={{ width:14, height:14, border:'2px solid rgba(255,255,255,.3)', borderTopColor:'#fff', borderRadius:'50%', animation:'pf-spin .7s linear infinite', display:'inline-block' }} />
+                      : msgStatus === 'none'     ? '✉'
+                      : msgStatus === 'sent'     ? '✓'
+                      : msgStatus === 'received' ? '✓'
+                      : '💬'}
+                    {msgLoading
+                      ? 'Loading…'
+                      : msgStatus === 'none'     ? 'Send Message Request'
+                      : msgStatus === 'sent'     ? 'Request Sent'
+                      : msgStatus === 'received' ? 'Accept Request'
+                      : 'Open Chat'}
+                  </button>
                 </div>
               )}
 
