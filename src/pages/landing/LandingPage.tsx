@@ -998,6 +998,7 @@ function CTASection() {
 // ── Footer ────────────────────────────────────────────────────────────────────
 
 function LandingFooter() {
+  const navigate = useNavigate()
   return (
     <footer style={{ padding:'32px 36px', borderTop:'1px solid rgba(87,65,68,.1)', background:'rgba(0,0,0,.32)' }}>
       <div style={{ maxWidth:1200, margin:'0 auto', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:20 }}>
@@ -1012,7 +1013,12 @@ function LandingFooter() {
               onMouseLeave={e => (e.currentTarget.style.color='rgba(243,221,223,.24)')}>{label}</button>
           ))}
         </div>
-        <div style={{ fontSize:12, color:'rgba(243,221,223,.14)' }}>© 2026 CLUBSYNQ</div>
+        <div style={{ display:'flex', alignItems:'center', gap:20 }}>
+          <div style={{ fontSize:12, color:'rgba(243,221,223,.14)' }}>© 2026 CLUBSYNQ</div>
+          <button onClick={() => navigate('/signin')} style={{ background:'none', border:'none', color:'rgba(243,221,223,.12)', fontSize:11, cursor:'pointer', padding:0, fontFamily:'inherit', transition:'color .15s' }}
+            onMouseEnter={e => (e.currentTarget.style.color='rgba(243,221,223,.45)')}
+            onMouseLeave={e => (e.currentTarget.style.color='rgba(243,221,223,.12)')}>Team Login</button>
+        </div>
       </div>
     </footer>
   )
