@@ -28,7 +28,7 @@ interface ProfilePost {
 interface ViewedProfile {
   id: string; full_name: string | null; avatar_url: string | null
   bio: string | null; skills: string[]; karak_points: number
-  role: string; university: { name: string } | null
+  role: string; university: { name: string } | null; username: string | null
 }
 
 const CAT_COLORS: Record<string, string> = {
@@ -156,6 +156,13 @@ export default function ProfilePage() {
 
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [tab, setTab] = useState<'clubs' | 'listings' | 'reviews' | 'posts'>('posts')
+
+  // Messaging
+  type MsgReqStatus = 'none' | 'sent' | 'received' | 'accepted'
+  const [msgStatus,  setMsgStatus]  = useState<MsgReqStatus>('none')
+  const [msgReqId,   setMsgReqId]   = useState<string | null>(null)
+  const [_convId,    setConvId]     = useState<string | null>(null)
+  const [msgLoading, setMsgLoading] = useState(false)
   const [profilePosts, setProfilePosts] = useState<ProfilePost[]>([])
   const [loadingPosts, setLoadingPosts] = useState(false)
 
@@ -245,7 +252,7 @@ export default function ProfilePage() {
     if (isOwnProfile) {
       if (user) { fetchAll(user.id); fetchProfilePosts(user.id) }
     } else if (paramUserId) {
-      supabase.from('profiles').select('id, full_name, avatar_url, bio, skills, karak_points, role, university:universities(name)').eq('id', paramUserId).maybeSingle()
+      supabase.from('profiles').select('id, full_name, avatar_url, bio, skills, karak_points, role, username, university:universities(name)').eq('id', paramUserId).maybeSingle()
         .then(({ data }) => {
           if (!data) { setNotFound(true); setLoading(false); return }
           setViewedProfile(data as unknown as ViewedProfile)
@@ -269,6 +276,61 @@ export default function ProfilePage() {
       .subscribe()
     return () => { supabase.removeChannel(ch) }
   }, [user, paramUserId, isOwnProfile, fetchAll])
+
+  useEffect(() => {
+    if (isOwnProfile || !user || !paramUserId) return
+    async function fetchMsgStatus() {
+      const { data } = await supabase
+        .from('message_requests')
+        .select('id, from_user_id, to_user_id, status')
+        .or(`and(from_user_id.eq.${user!.id},to_user_id.eq.${paramUserId}),and(from_user_id.eq.${paramUserId},to_user_id.eq.${user!.id})`)
+        .maybeSingle()
+      if (!data) { setMsgStatus('none'); return }
+      setMsgReqId(data.id)
+      if (data.status === 'accepted') {
+        const { data: conv } = await supabase
+          .from('conversations')
+          .select('id')
+          .or(`and(participant_1.eq.${user!.id},participant_2.eq.${paramUserId}),and(participant_1.eq.${paramUserId},participant_2.eq.${user!.id})`)
+          .maybeSingle()
+        setConvId(conv?.id ?? null)
+        setMsgStatus('accepted')
+      } else if (data.from_user_id === user!.id) {
+        setMsgStatus('sent')
+      } else {
+        setMsgStatus('received')
+      }
+    }
+    fetchMsgStatus()
+  }, [isOwnProfile, user, paramUserId])
+
+  async function handleMessageAction() {
+    if (!user || !paramUserId) return
+    setMsgLoading(true)
+    if (msgStatus === 'none') {
+      await supabase.from('message_requests').insert({ from_user_id: user.id, to_user_id: paramUserId })
+      setMsgStatus('sent')
+    } else if (msgStatus === 'received' && msgReqId) {
+      await supabase.from('message_requests').update({ status: 'accepted' }).eq('id', msgReqId)
+      const { data: conv } = await supabase
+        .from('conversations')
+        .insert({ participant_1: user.id, participant_2: paramUserId })
+        .select('id')
+        .single()
+      setConvId(conv?.id ?? null)
+      setMsgStatus('accepted')
+    } else if (msgStatus === 'accepted') {
+      navigate('/messages')
+    }
+    setMsgLoading(false)
+  }
+
+  async function declineRequest() {
+    if (!msgReqId) return
+    await supabase.from('message_requests').update({ status: 'declined' }).eq('id', msgReqId)
+    setMsgStatus('none')
+    setMsgReqId(null)
+  }
 
   function openEdit() {
     setEditName(profile?.full_name ?? '')
@@ -385,15 +447,40 @@ export default function ProfilePage() {
           <div style={{ position:'absolute', top:10, left:'40%', width:260, height:80, background:'radial-gradient(ellipse, rgba(255,255,255,0.04) 0%, transparent 70%)', pointerEvents:'none' }} />
           <div style={{ position:'absolute', bottom:-35, left:100, width:150, height:150, borderRadius:'50%', background:'rgba(200,40,100,0.07)', pointerEvents:'none' }} />
 
-          {/* Back button — other user */}
+          {/* Back button + message button — other user */}
           {!isOwnProfile && (
-            <button className="pf-back" onClick={() => navigate(-1)} style={{
-              position:'absolute', top:14, left:16, zIndex:2,
-              background:'rgba(0,0,0,0.45)', backdropFilter:'blur(10px)',
-              border:'1px solid rgba(255,255,255,0.15)', borderRadius:10,
-              padding:'7px 15px', color:'rgba(255,255,255,0.72)', fontSize:13,
-              display:'flex', alignItems:'center', gap:6,
-            }}>← Back</button>
+            <div style={{ position:'absolute', top:14, left:16, right:16, zIndex:2, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <button className="pf-back" onClick={() => navigate(-1)} style={{
+                background:'rgba(0,0,0,0.45)', backdropFilter:'blur(10px)',
+                border:'1px solid rgba(255,255,255,0.15)', borderRadius:10,
+                padding:'7px 15px', color:'rgba(255,255,255,0.72)', fontSize:13,
+                display:'flex', alignItems:'center', gap:6,
+              }}>← Back</button>
+
+              <div style={{ display:'flex', gap:8 }}>
+                {msgStatus === 'received' && (
+                  <button className="pf-btn" onClick={declineRequest}
+                    style={{ padding:'7px 14px', background:'rgba(239,68,68,.12)', backdropFilter:'blur(10px)', border:'1px solid rgba(239,68,68,.3)', borderRadius:10, color:'#f87171', fontSize:13, fontWeight:600 }}
+                    onMouseEnter={e => e.currentTarget.style.background='rgba(239,68,68,.22)'}
+                    onMouseLeave={e => e.currentTarget.style.background='rgba(239,68,68,.12)'}>
+                    Decline
+                  </button>
+                )}
+                <button className="pf-btn" onClick={handleMessageAction} disabled={msgLoading || msgStatus === 'sent'}
+                  style={{
+                    padding:'7px 16px', backdropFilter:'blur(10px)', borderRadius:10, fontSize:13, fontWeight:600,
+                    border: msgStatus === 'accepted' ? '1px solid rgba(138,21,56,0.6)' : '1px solid rgba(255,255,255,0.18)',
+                    background: msgStatus === 'accepted' ? 'rgba(138,21,56,0.45)' : msgStatus === 'received' ? 'rgba(34,197,94,.18)' : 'rgba(0,0,0,0.45)',
+                    color: msgStatus === 'accepted' ? '#fff' : msgStatus === 'received' ? '#4ade80' : 'rgba(255,255,255,0.75)',
+                    opacity: msgStatus === 'sent' ? 0.5 : 1,
+                    display:'flex', alignItems:'center', gap:6,
+                  }}
+                  onMouseEnter={e => { if (msgStatus !== 'sent') e.currentTarget.style.background = msgStatus === 'accepted' ? 'rgba(138,21,56,0.65)' : 'rgba(138,21,56,0.35)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = msgStatus === 'accepted' ? 'rgba(138,21,56,0.45)' : msgStatus === 'received' ? 'rgba(34,197,94,.18)' : 'rgba(0,0,0,0.45)' }}>
+                  {msgLoading ? '…' : msgStatus === 'none' ? '✉ Message' : msgStatus === 'sent' ? '✓ Request Sent' : msgStatus === 'received' ? '✓ Accept Request' : '💬 Open Chat'}
+                </button>
+              </div>
+            </div>
           )}
 
           {/* Action buttons — own profile, pinned top-right of banner */}
@@ -462,6 +549,11 @@ export default function ProfilePage() {
                 </h1>
                 <RoleBadge role={dp?.role ?? 'student'} />
               </div>
+              {(isOwnProfile ? profile?.username : viewedProfile?.username) && (
+                <div style={{ fontSize:13, color:'rgba(192,37,90,.7)', fontWeight:600, marginBottom:4 }}>
+                  @{isOwnProfile ? profile?.username : viewedProfile?.username}
+                </div>
+              )}
 
               {/* Karak Points — inline below name */}
               <div style={{ display:'inline-flex', alignItems:'center', gap:7, background:'rgba(233,193,118,0.07)', border:'1px solid rgba(233,193,118,0.17)', borderRadius:99, padding:'5px 14px', marginBottom:10 }}>

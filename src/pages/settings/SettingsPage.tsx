@@ -176,18 +176,21 @@ export default function SettingsPage() {
 
 function ProfileTab({ addToast }: { addToast: (msg: string, type?: 'success' | 'error') => void }) {
   const { user, profile, refreshProfile } = useAuth()
-  const [name,       setName]       = useState(profile?.full_name ?? '')
-  const [bio,        setBio]        = useState(profile?.bio ?? '')
-  const [school,     setSchool]     = useState(profile?.school ?? '')
-  const [skills,     setSkills]     = useState<string[]>(profile?.skills ?? [])
-  const [skillInput, setSkillInput] = useState('')
-  const [saving,     setSaving]     = useState(false)
-  const [avLoading,  setAvLoading]  = useState(false)
+  const [name,         setName]         = useState(profile?.full_name ?? '')
+  const [username,     setUsername]     = useState(profile?.username ?? '')
+  const [usernameErr,  setUsernameErr]  = useState('')
+  const [bio,          setBio]          = useState(profile?.bio ?? '')
+  const [school,       setSchool]       = useState(profile?.school ?? '')
+  const [skills,       setSkills]       = useState<string[]>(profile?.skills ?? [])
+  const [skillInput,   setSkillInput]   = useState('')
+  const [saving,       setSaving]       = useState(false)
+  const [avLoading,    setAvLoading]    = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!profile) return
     setName(profile.full_name ?? '')
+    setUsername(profile.username ?? '')
     setBio(profile.bio ?? '')
     setSchool(profile.school ?? '')
     setSkills(profile.skills ?? [])
@@ -203,10 +206,17 @@ function ProfileTab({ addToast }: { addToast: (msg: string, type?: 'success' | '
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
+    setUsernameErr('')
     if (!user) return
+    const uname = username.trim().toLowerCase()
+    if (uname && !/^[a-z0-9_]{3,20}$/.test(uname)) {
+      setUsernameErr('3–20 chars, letters, numbers, underscores only')
+      return
+    }
     setSaving(true)
     const { error } = await supabase.from('profiles').update({
       full_name: name.trim() || null,
+      username: uname || null,
       bio: bio.trim() || null,
       school: school.trim() || null,
       skills,
@@ -282,6 +292,16 @@ function ProfileTab({ addToast }: { addToast: (msg: string, type?: 'success' | '
 
         <Field label="Display Name">
           <input className="st-input" style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="Your full name" maxLength={80} />
+        </Field>
+
+        <Field label="Username" hint="3–20 chars · letters, numbers, underscores · used to @mention you">
+          <div style={{ position: 'relative' }}>
+            <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,.3)', fontSize: 14, pointerEvents: 'none' }}>@</span>
+            <input className="st-input" style={{ ...inputStyle, paddingLeft: 28, borderColor: usernameErr ? 'rgba(239,68,68,.5)' : undefined }}
+              value={username} onChange={e => { setUsername(e.target.value.toLowerCase()); setUsernameErr('') }}
+              placeholder="yourname" maxLength={20} />
+          </div>
+          {usernameErr && <div style={{ fontSize: 11.5, color: '#f87171', marginTop: 5 }}>{usernameErr}</div>}
         </Field>
 
         <Field label="School / Faculty" hint="Your department or faculty within your university.">

@@ -7,7 +7,17 @@ import { filterText } from '../../lib/contentFilter'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-type MsgTab = 'collabs' | 'trades' | 'leaders'
+type MsgTab = 'dms' | 'collabs' | 'trades' | 'leaders'
+
+interface MsgRequest {
+  id: string; from_user_id: string; to_user_id: string; status: string; created_at: string
+  from_profile: { full_name: string | null; avatar_url: string | null; username: string | null } | null
+}
+
+interface DMConv {
+  convId: string; otherId: string; otherName: string | null; otherAvatar: string | null
+  otherUsername: string | null; lastMsg: string | null; lastAt: string; unread: number
+}
 
 interface Profile { id: string; full_name: string | null; avatar_url: string | null; last_seen_at?: string | null }
 
@@ -242,7 +252,7 @@ export default function MessagesPage() {
   const navigate = useNavigate()
   const { connectedSet, statusMap } = usePresence()
 
-  const [tab, setTab] = useState<MsgTab>('collabs')
+  const [tab, setTab] = useState<MsgTab>('dms')
 
   // Collab state
   const [collabThreads, setCollabThreads] = useState<CollabThread[]>([])
@@ -269,6 +279,14 @@ export default function MessagesPage() {
   const [activeGroup, setActiveGroup] = useState<GroupChat | null>(null)
   const [groupMsgs, setGroupMsgs] = useState<GroupMessage[]>([])
   const [loadingGroupMsgs, setLoadingGroupMsgs] = useState(false)
+
+  // DM state
+  const [dmRequests,    setDmRequests]    = useState<MsgRequest[]>([])
+  const [dmConvs,       setDmConvs]       = useState<DMConv[]>([])
+  const [loadingDms,    setLoadingDms]    = useState(true)
+  const [activeDm,      setActiveDm]      = useState<DMConv | null>(null)
+  const [dmMsgs,        setDmMsgs]        = useState<DM[]>([])
+  const [loadingDmMsgs, setLoadingDmMsgs] = useState(false)
 
   // New group creation
   const [creatingGroup, setCreatingGroup] = useState(false)
@@ -438,7 +456,72 @@ export default function MessagesPage() {
     setLoadingGroups(false)
   }, [user])
 
-  useEffect(() => { fetchCollabs(); fetchTrades(); fetchLeaders(); fetchGroupChats() }, [fetchCollabs, fetchTrades, fetchLeaders, fetchGroupChats])
+  // ── DM fetch ──
+  const fetchDms = useCallback(async () => {
+    if (!user) return
+    setLoadingDms(true)
+    const [{ data: reqs }, { data: convs }] = await Promise.all([
+      supabase.from('message_requests').select('id, from_user_id, to_user_id, status, created_at, from_profile:profiles!from_user_id(full_name, avatar_url, username)').eq('to_user_id', user.id).eq('status', 'pending'),
+      supabase.from('conversations').select('id, participant_1, participant_2, last_message_at').or(`participant_1.eq.${user.id},participant_2.eq.${user.id}`).order('last_message_at', { ascending: false, nullsFirst: false }),
+    ])
+    setDmRequests((reqs ?? []) as unknown as MsgRequest[])
+    if (!convs?.length) { setDmConvs([]); setLoadingDms(false); return }
+    const otherIds = convs.map(c => c.participant_1 === user.id ? c.participant_2 : c.participant_1)
+    const convIds  = convs.map(c => c.id)
+    const [{ data: profiles }, { data: lastMsgs }, { data: unreadMsgs }] = await Promise.all([
+      supabase.from('profiles').select('id, full_name, avatar_url, username').in('id', otherIds),
+      supabase.from('direct_messages').select('conversation_id, content, created_at').in('conversation_id', convIds).order('created_at', { ascending: false }),
+      supabase.from('direct_messages').select('conversation_id').in('conversation_id', convIds).neq('sender_id', user.id).is('read_at', null),
+    ])
+    const profileMap: Record<string, { full_name: string | null; avatar_url: string | null; username: string | null }> = {}
+    for (const p of profiles ?? []) profileMap[p.id] = p as any
+    const lastMsgMap: Record<string, string> = {}
+    for (const m of lastMsgs ?? []) { if (!lastMsgMap[m.conversation_id]) lastMsgMap[m.conversation_id] = m.content }
+    const unreadMap: Record<string, number> = {}
+    for (const m of unreadMsgs ?? []) { unreadMap[m.conversation_id] = (unreadMap[m.conversation_id] ?? 0) + 1 }
+    setDmConvs(convs.map(c => {
+      const otherId = c.participant_1 === user.id ? c.participant_2 : c.participant_1
+      const p = profileMap[otherId]
+      return { convId: c.id, otherId, otherName: p?.full_name ?? null, otherAvatar: p?.avatar_url ?? null, otherUsername: p?.username ?? null, lastMsg: lastMsgMap[c.id] ?? null, lastAt: c.last_message_at ?? c.id, unread: unreadMap[c.id] ?? 0 }
+    }))
+    setLoadingDms(false)
+  }, [user])
+
+  const openDm = async (conv: DMConv) => {
+    setActiveDm(conv); setActiveCollab(null); setActiveTrade(null); setActiveLeader(null); setActiveGroup(null)
+    setInput(''); setSendErr(''); setMobileView('chat'); setLoadingDmMsgs(true)
+    const { data } = await supabase.from('direct_messages').select('*').eq('conversation_id', conv.convId).order('created_at', { ascending: true })
+    setDmMsgs((data as DM[]) ?? [])
+    setLoadingDmMsgs(false)
+    await supabase.from('direct_messages').update({ read_at: new Date().toISOString() }).eq('conversation_id', conv.convId).neq('sender_id', user!.id).is('read_at', null)
+    setDmConvs(prev => prev.map(c => c.convId === conv.convId ? { ...c, unread: 0 } : c))
+    if (channelRef.current) supabase.removeChannel(channelRef.current)
+    channelRef.current = supabase.channel(`dm-${conv.convId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'direct_messages', filter: `conversation_id=eq.${conv.convId}` }, payload => {
+        const msg = payload.new as DM
+        setDmMsgs(prev => prev.find(m => m.id === msg.id) ? prev : [...prev, msg])
+        setDmConvs(prev => prev.map(c => c.convId === conv.convId ? { ...c, lastMsg: msg.content, lastAt: msg.created_at } : c))
+      }).subscribe()
+    setTimeout(() => inputRef.current?.focus(), 80)
+  }
+
+  async function acceptRequest(req: MsgRequest) {
+    await supabase.from('message_requests').update({ status: 'accepted' }).eq('id', req.id)
+    const { data: conv } = await supabase.from('conversations').insert({ participant_1: user!.id, participant_2: req.from_user_id }).select('id').single()
+    setDmRequests(prev => prev.filter(r => r.id !== req.id))
+    if (conv) {
+      const newConv: DMConv = { convId: conv.id, otherId: req.from_user_id, otherName: req.from_profile?.full_name ?? null, otherAvatar: req.from_profile?.avatar_url ?? null, otherUsername: req.from_profile?.username ?? null, lastMsg: null, lastAt: new Date().toISOString(), unread: 0 }
+      setDmConvs(prev => [newConv, ...prev])
+      openDm(newConv)
+    }
+  }
+
+  async function declineRequest(req: MsgRequest) {
+    await supabase.from('message_requests').update({ status: 'declined' }).eq('id', req.id)
+    setDmRequests(prev => prev.filter(r => r.id !== req.id))
+  }
+
+  useEffect(() => { fetchCollabs(); fetchTrades(); fetchLeaders(); fetchGroupChats(); fetchDms() }, [fetchCollabs, fetchTrades, fetchLeaders, fetchGroupChats, fetchDms])
 
   // ── Open collab chat ──
   const openCollab = async (thread: CollabThread) => {
@@ -590,11 +673,19 @@ export default function MessagesPage() {
       if (saved) await supabase.from('group_chats').update({ last_message_at: new Date().toISOString() }).eq('id', activeGroup.id)
       setGroupMsgs(prev => saved ? prev.map(m => m.id === optId ? (saved as GroupMessage) : m) : prev.filter(m => m.id !== optId))
       setGroupChats(prev => prev.map(g => g.id === activeGroup.id ? { ...g, lastMsg: text, lastAt: new Date().toISOString() } : g))
+    } else if (activeDm) {
+      const optId = `opt-${Date.now()}`
+      setDmMsgs(prev => [...prev, { id: optId, conversation_id: activeDm.convId, sender_id: user.id, content: text, read_at: null, created_at: new Date().toISOString() }])
+      const { data: saved } = await supabase.from('direct_messages').insert({ conversation_id: activeDm.convId, sender_id: user.id, content: text }).select().single()
+      setDmMsgs(prev => saved ? prev.map(m => m.id === optId ? (saved as DM) : m) : prev.filter(m => m.id !== optId))
+      await supabase.from('conversations').update({ last_message_at: new Date().toISOString() }).eq('id', activeDm.convId)
+      setDmConvs(prev => prev.map(c => c.convId === activeDm.convId ? { ...c, lastMsg: text, lastAt: new Date().toISOString() } : c))
     }
     setSending(false)
   }
 
   // ── Derived ──
+  const totalDmUnread     = dmConvs.reduce((s, c) => s + c.unread, 0) + dmRequests.length
   const totalCollabUnread = collabThreads.reduce((s, t) => s + t.unread, 0)
   const totalTradeUnread  = tradeThreads.reduce((s, t) => s + t.unread, 0)
   const totalLeaderUnread = clubLeaders.reduce((s, l) => s + l.unread, 0) + groupChats.reduce((s, g) => s + g.unread, 0)
@@ -603,13 +694,14 @@ export default function MessagesPage() {
   const shownTrades   = q ? tradeThreads.filter(t => (t.otherProfile.full_name ?? '').toLowerCase().includes(q) || t.listingTitle.toLowerCase().includes(q)) : tradeThreads
   const shownGroups   = q ? groupChats.filter(g => g.name.toLowerCase().includes(q)) : groupChats
   const shownLeaders  = q ? clubLeaders.filter(l => (l.profile.full_name ?? '').toLowerCase().includes(q) || l.clubName.toLowerCase().includes(q)) : clubLeaders
+  const shownDmConvs  = q ? dmConvs.filter(c => (c.otherName ?? '').toLowerCase().includes(q) || (c.otherUsername ?? '').toLowerCase().includes(q)) : dmConvs
 
-  const activeAny = activeCollab ?? activeTrade ?? activeLeader ?? activeGroup
-  const activeProfile = activeCollab?.matchProfile ?? activeTrade?.otherProfile ?? activeLeader?.profile ?? null
+  const activeAny = activeCollab ?? activeTrade ?? activeLeader ?? activeGroup ?? activeDm
+  const activeProfile = activeCollab?.matchProfile ?? activeTrade?.otherProfile ?? activeLeader?.profile ?? (activeDm ? { id: activeDm.otherId, full_name: activeDm.otherName, avatar_url: activeDm.otherAvatar } : null)
 
   // ── Messages for right panel ──
-  const messages: (DM | TradeDM | GroupMessage)[] = activeCollab ? collabMsgs : activeTrade ? tradeMsgs : activeLeader ? leaderMsgs : groupMsgs
-  const loadingMsgs = activeCollab ? loadingCollabMsgs : activeTrade ? loadingTradeMsgs : activeLeader ? loadingLeaderMsgs : loadingGroupMsgs
+  const messages: (DM | TradeDM | GroupMessage)[] = activeCollab ? collabMsgs : activeTrade ? tradeMsgs : activeLeader ? leaderMsgs : activeDm ? dmMsgs : groupMsgs
+  const loadingMsgs = activeCollab ? loadingCollabMsgs : activeTrade ? loadingTradeMsgs : activeLeader ? loadingLeaderMsgs : activeDm ? loadingDmMsgs : loadingGroupMsgs
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -630,11 +722,13 @@ export default function MessagesPage() {
           {/* Tabs */}
           <div style={{ display: 'flex', background: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: 3, marginBottom: 12, gap: 3 }}>
             {([
+              { key: 'dms'     as MsgTab, label: 'DMs',     badge: totalDmUnread     },
               { key: 'collabs' as MsgTab, label: 'Collabs', badge: totalCollabUnread },
               { key: 'trades'  as MsgTab, label: 'Trades',  badge: totalTradeUnread  },
               { key: 'leaders' as MsgTab, label: 'Leaders', badge: totalLeaderUnread  },
             ]).map(({ key, label, badge }) => (
               <button key={key} className={`mp-tab${tab === key ? ' active' : ''}`} onClick={() => { setTab(key); setSearch(''); setCreatingGroup(false) }} style={{ flex: 1, padding: '7px 4px', borderRadius: 10, border: 'none', background: 'transparent', color: tab === key ? '#fff' : 'var(--text-muted)', fontSize: 10.5, fontWeight: tab === key ? 700 : 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                {key === 'dms'     && <IcMessageBig size={13} />}
                 {key === 'collabs' && <IcUsers size={13} active={tab === 'collabs'} />}
                 {key === 'trades'  && <IcZap   size={13} active={tab === 'trades'}  />}
                 {key === 'leaders' && <IcCrown size={13} active={tab === 'leaders'} />}
@@ -655,6 +749,55 @@ export default function MessagesPage() {
 
         {/* Thread list */}
         <div className="mp-scroll" style={{ flex: 1, overflowY: 'auto' }}>
+          {tab === 'dms' && (
+            loadingDms ? <ShimmerList /> : (
+              <>
+                {/* Pending requests */}
+                {dmRequests.length > 0 && (
+                  <div style={{ padding: '10px 16px 4px' }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.3)', textTransform: 'uppercase', marginBottom: 8 }}>
+                      Message Requests · {dmRequests.length}
+                    </div>
+                    {dmRequests.map(req => (
+                      <div key={req.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.05)' }}>
+                        <Av url={req.from_profile?.avatar_url} name={req.from_profile?.full_name} size={38} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {req.from_profile?.full_name ?? 'Someone'}
+                          </div>
+                          {req.from_profile?.username && <div style={{ fontSize: 11, color: 'var(--accent)', opacity: 0.7 }}>@{req.from_profile.username}</div>}
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Wants to message you · {reltime(req.created_at)}</div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
+                          <button onClick={() => acceptRequest(req)} style={{ padding: '5px 10px', background: 'rgba(138,21,56,.25)', border: '1px solid rgba(138,21,56,.4)', borderRadius: 8, color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Accept</button>
+                          <button onClick={() => declineRequest(req)} style={{ padding: '5px 8px', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 8, color: 'rgba(255,255,255,.4)', fontSize: 11.5, cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* Conversations */}
+                {shownDmConvs.length === 0 && dmRequests.length === 0
+                  ? <EmptyList icon={<IcMessageBig size={38} />} title="No direct messages yet" sub="Visit someone's profile and send them a message request." />
+                  : shownDmConvs.map((c, i) => (
+                    <div key={c.convId} className={`thread-row${activeDm?.convId === c.convId ? ' active' : ''}`} onClick={() => openDm(c)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', animationDelay: `${i * 0.04}s` }}>
+                      <Av url={c.otherAvatar} name={c.otherName} size={46} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}>
+                          <span style={{ fontSize: 13.5, fontWeight: c.unread > 0 ? 700 : 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>{c.otherName ?? 'User'}</span>
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0, marginLeft: 6, opacity: 0.7 }}>{reltime(c.lastAt)}</span>
+                        </div>
+                        {c.otherUsername && <div style={{ fontSize: 10.5, color: 'var(--accent)', opacity: 0.6, marginBottom: 2 }}>@{c.otherUsername}</div>}
+                        <div style={{ fontSize: 12, color: c.unread > 0 ? 'var(--text-secondary)' : 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: c.unread > 0 ? 500 : 400 }}>{c.lastMsg ?? <span style={{ fontStyle: 'italic', opacity: 0.5 }}>Say hello →</span>}</div>
+                      </div>
+                      {c.unread > 0 && <span style={{ minWidth: 18, height: 18, fontSize: 10, fontWeight: 900, background: 'var(--accent)', color: '#fff', borderRadius: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px', flexShrink: 0 }}>{c.unread}</span>}
+                    </div>
+                  ))
+                }
+              </>
+            )
+          )}
+
           {tab === 'collabs' && (
             loadingCollabs ? <ShimmerList /> :
             shownCollabs.length === 0 ? <EmptyList icon={<IcUsers size={38} />} title={q ? 'No matches' : 'No collaborator matches yet'} sub={q ? `Nothing for "${search}"` : 'Match with founders in Collaboration.'} /> :
