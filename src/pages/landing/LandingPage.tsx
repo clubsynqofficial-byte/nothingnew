@@ -82,8 +82,8 @@ export default function LandingPage() {
   return (
     <div className="lnd-root" style={{ minHeight:'100vh', background:'#05020a', color:'#f3dddf', fontFamily:"'Be Vietnam Pro', sans-serif", overflowX:'hidden' }}>
       <LandingStyles />
-      <LandingNav scrolled={scrolled} navigate={navigate} />
-      <HeroSection navigate={navigate} />
+      <LandingNav scrolled={scrolled} />
+      <HeroSection />
       <FeatureMarquee />
       <MockShowcaseSection />
       <ProblemSection />
@@ -91,8 +91,8 @@ export default function LandingPage() {
       <HowItWorksSection />
       <FAQSection />
       <ContactSection />
-      <CTASection navigate={navigate} />
-      <LandingFooter navigate={navigate} />
+      <CTASection />
+      <LandingFooter />
     </div>
   )
 }
@@ -237,7 +237,7 @@ function SectionEyebrow({ text, mb = 12 }: { text: string; mb?: number }) {
 
 // ── Nav ───────────────────────────────────────────────────────────────────────
 
-function LandingNav({ scrolled, navigate }: { scrolled:boolean; navigate: ReturnType<typeof useNavigate> }) {
+function LandingNav({ scrolled }: { scrolled:boolean }) {
   return (
     <nav className="lnd-nav" style={{ position:'fixed', top:0, left:0, right:0, zIndex:200, padding:'0 36px', height:64, display:'flex', alignItems:'center', justifyContent:'space-between', background:scrolled?'rgba(5,2,10,0.86)':'transparent', backdropFilter:scrolled?'blur(32px) saturate(200%)':'none', borderBottom:scrolled?'1px solid rgba(192,37,90,.14)':'1px solid transparent', boxShadow:scrolled?'0 1px 0 rgba(192,37,90,.06),0 8px 32px rgba(0,0,0,.24)':'none', transition:'all .4s' }}>
       <div style={{ display:'flex', alignItems:'center', gap:10, cursor:'pointer' }} onClick={() => window.scrollTo({ top:0, behavior:'smooth' })}>
@@ -258,7 +258,7 @@ function LandingNav({ scrolled, navigate }: { scrolled:boolean; navigate: Return
 
 // ── Hero ──────────────────────────────────────────────────────────────────────
 
-function HeroSection({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {
+function HeroSection() {
   const mouse = useMouseParallax()
   return (
     <section style={{ minHeight:'100vh', position:'relative', display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', textAlign:'center', padding:'120px clamp(20px,5vw,64px) 80px', overflow:'hidden' }}>
@@ -962,7 +962,7 @@ function ContactSection() {
 
 // ── CTA ───────────────────────────────────────────────────────────────────────
 
-function CTASection({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {
+function CTASection() {
   const { ref, visible } = useScrollReveal(.18)
   return (
     <section style={{ padding:'clamp(72px,9vw,110px) 32px', position:'relative', overflow:'hidden' }}>
@@ -997,7 +997,7 @@ function CTASection({ navigate }: { navigate: ReturnType<typeof useNavigate> }) 
 
 // ── Footer ────────────────────────────────────────────────────────────────────
 
-function LandingFooter({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {
+function LandingFooter() {
   return (
     <footer style={{ padding:'32px 36px', borderTop:'1px solid rgba(87,65,68,.1)', background:'rgba(0,0,0,.32)' }}>
       <div style={{ maxWidth:1200, margin:'0 auto', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:20 }}>
