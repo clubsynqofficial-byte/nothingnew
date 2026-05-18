@@ -248,9 +248,9 @@ function LandingNav({ scrolled, navigate }: { scrolled:boolean; navigate: Return
           <button key={label} className="lnd-nav-link" onClick={() => document.getElementById(id)?.scrollIntoView({ behavior:'smooth' })}>{label}</button>
         ))}
       </div>
-      <div style={{ display:'flex', gap:10 }}>
-        <button className="lnd-btn-ghost lnd-nav-signin" style={{ padding:'9px 22px', fontSize:13, borderRadius:10 }} onClick={() => navigate('/signin')}>Sign In</button>
-        <button className="lnd-btn-primary" style={{ padding:'9px 22px', fontSize:13, borderRadius:10 }} onClick={() => navigate('/signup')}>Get Started</button>
+      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 16px', background:'rgba(192,37,90,.08)', border:'1px solid rgba(192,37,90,.28)', borderRadius:9999 }}>
+        <span style={{ width:7, height:7, borderRadius:'50%', background:'#c0255a', display:'inline-block', boxShadow:'0 0 8px rgba(192,37,90,1)', animation:'lPulse 2s ease-in-out infinite', flexShrink:0 }} />
+        <span style={{ fontSize:12.5, fontWeight:700, letterSpacing:'.08em', color:'rgba(243,221,223,.75)', whiteSpace:'nowrap' }}>Launching May 22</span>
       </div>
     </nav>
   )
@@ -306,10 +306,10 @@ function HeroSection({ navigate }: { navigate: ReturnType<typeof useNavigate> })
           ClubSynq is the first platform built for the full student experience — social network, skill trading, club management, co-founder matching, and gamified reputation. All in one place.
         </p>
 
-        {/* CTAs */}
-        <div className="lnd-hero-btns" style={{ display:'flex', gap:14, justifyContent:'center', flexWrap:'wrap', animation:'lFadeUp .7s .65s ease both' }}>
-          <button className="lnd-btn-primary" style={{ fontSize:15, padding:'15px 40px', borderRadius:13 }} onClick={() => navigate('/signup')}>Get Started — It's Free</button>
-          <button className="lnd-btn-ghost"   style={{ fontSize:15, padding:'15px 40px', borderRadius:13 }} onClick={() => navigate('/signin')}>Sign In →</button>
+        {/* Launch badge */}
+        <div style={{ display:'inline-flex', alignItems:'center', gap:12, padding:'14px 32px', background:'rgba(192,37,90,.07)', border:'1px solid rgba(192,37,90,.25)', borderRadius:16, animation:'lFadeUp .7s .65s ease both', backdropFilter:'blur(8px)' }}>
+          <span style={{ width:8, height:8, borderRadius:'50%', background:'#c0255a', display:'inline-block', boxShadow:'0 0 10px rgba(192,37,90,1)', animation:'lPulse 2s ease-in-out infinite', flexShrink:0 }} />
+          <span style={{ fontSize:16, fontWeight:700, color:'rgba(243,221,223,.8)', letterSpacing:'.04em' }}>Launching May 22nd — Stay tuned</span>
         </div>
       </div>
     </section>
@@ -983,11 +983,11 @@ function CTASection({ navigate }: { navigate: ReturnType<typeof useNavigate> }) 
             <span className="lnd-gradient-text">something that lasts?</span>
           </h2>
           <p style={{ fontSize:16, color:'rgba(243,221,223,.38)', lineHeight:1.78, maxWidth:420, margin:'0 auto 48px' }}>
-            Early access is open now. No app needed — just sign up and start building your network.
+            Something big is coming. ClubSynq launches May 22nd — your network, your skills, your future.
           </p>
-          <div style={{ display:'flex', gap:14, justifyContent:'center', flexWrap:'wrap' }}>
-            <button className="lnd-btn-primary" style={{ fontSize:16, padding:'17px 56px', borderRadius:15 }} onClick={() => navigate('/signup')}>Create Free Account</button>
-            <button className="lnd-btn-ghost"   style={{ fontSize:16, padding:'17px 48px', borderRadius:15 }} onClick={() => navigate('/signin')}>I have an account</button>
+          <div style={{ display:'inline-flex', alignItems:'center', gap:12, padding:'16px 40px', background:'rgba(192,37,90,.08)', border:'1px solid rgba(192,37,90,.3)', borderRadius:16, backdropFilter:'blur(8px)' }}>
+            <span style={{ width:9, height:9, borderRadius:'50%', background:'#c0255a', display:'inline-block', boxShadow:'0 0 12px rgba(192,37,90,1)', animation:'lPulse 2s ease-in-out infinite', flexShrink:0 }} />
+            <span style={{ fontSize:17, fontWeight:800, color:'rgba(243,221,223,.85)', letterSpacing:'.04em' }}>Launching May 22nd</span>
           </div>
         </div>
       </div>
@@ -1006,7 +1006,7 @@ function LandingFooter({ navigate }: { navigate: ReturnType<typeof useNavigate> 
           <span style={{ fontSize:13, fontWeight:900, letterSpacing:'.22em', color:'rgba(255,255,255,.35)', textTransform:'uppercase' }}>CLUBSYNQ</span>
         </div>
         <div style={{ display:'flex', gap:28, flexWrap:'wrap' }}>
-          {([['Sign In', () => navigate('/signin')], ['Get Started', () => navigate('/signup')], ['Features', () => document.getElementById('features')?.scrollIntoView({ behavior:'smooth' })]] as [string,()=>void][]).map(([label, action]) => (
+          {([['Features', () => document.getElementById('features')?.scrollIntoView({ behavior:'smooth' })], ['How it Works', () => document.getElementById('how-it-works')?.scrollIntoView({ behavior:'smooth' })], ['FAQ', () => document.getElementById('faq')?.scrollIntoView({ behavior:'smooth' })]] as [string,()=>void][]).map(([label, action]) => (
             <button key={label} onClick={action} style={{ background:'none', border:'none', color:'rgba(243,221,223,.24)', fontSize:13, fontWeight:500, cursor:'pointer', padding:0, fontFamily:'inherit', transition:'color .15s' }}
               onMouseEnter={e => (e.currentTarget.style.color='rgba(243,221,223,.6)')}
               onMouseLeave={e => (e.currentTarget.style.color='rgba(243,221,223,.24)')}>{label}</button>
