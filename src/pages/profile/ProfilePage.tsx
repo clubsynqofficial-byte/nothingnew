@@ -435,7 +435,7 @@ export default function ProfilePage() {
     const onMove = (e: MouseEvent | TouchEvent) => {
       const y = 'touches' in e ? e.touches[0].clientY : (e as MouseEvent).clientY
       const delta = (y - clientY) * 0.7
-      setBannerPosition(p => Math.max(0, Math.min(100, startPos - delta)))
+      setBannerPosition(_p => Math.max(0, Math.min(100, startPos - delta)))
     }
     const onUp = () => {
       window.removeEventListener('mousemove', onMove)

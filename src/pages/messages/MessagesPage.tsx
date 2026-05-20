@@ -171,7 +171,7 @@ function EmojiPicker({ onSelect, isMine, openUpward }: { onSelect: (emoji: strin
 
   const displayEmojis = searchResults ?? (
     activeCat === 'recent'
-      ? recents.map(nativeToEmoji).filter(Boolean) as typeof searchResults
+      ? recents.map(nativeToEmoji).filter(Boolean)
       : (emojiData.categories.find(c => c.id === activeCat)?.emojis.map(id => emojiData.emojis[id]).filter(Boolean) ?? [])
   )
 
@@ -361,7 +361,7 @@ function IcUsersBig({ size = 56, animated = false }: { size?: number; animated?:
 // ── Page ──────────────────────────────────────────────────────────────────
 
 export default function MessagesPage() {
-  const { user, incomingCall, rejectIncomingCall, consumeIncomingCall } = useAuth()
+  const { user, consumeIncomingCall } = useAuth()
   const consumeIncomingCallRef = useRef(consumeIncomingCall)
   consumeIncomingCallRef.current = consumeIncomingCall
   const navigate = useNavigate()
@@ -945,7 +945,6 @@ export default function MessagesPage() {
   callStateRef.current     = callState
 
   const callRoomId = activeCollab?.convId ?? activeLeader?.convId ?? activeGroup?.id ?? activeDm?.convId ?? null
-  const callOpen   = callState !== 'idle'
   const ICE = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
@@ -1122,11 +1121,6 @@ export default function MessagesPage() {
       const msg = e instanceof Error ? e.message : String(e)
       setCallError(msg.includes('Permission') || msg.includes('NotAllowed') ? 'Camera/microphone access denied.' : `Call failed: ${msg}`)
     }
-  }
-
-  function rejectCall() {
-    rejectIncomingCall()
-    doCleanup()
   }
 
   function endCall() {
