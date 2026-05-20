@@ -22,7 +22,6 @@ import PositionsPage from './pages/positions/PositionsPage'
 import MessagesPage from './pages/messages/MessagesPage'
 import EventsPage from './pages/events/EventsPage'
 import SettingsPage from './pages/settings/SettingsPage'
-import NucleusPortal from './pages/nucleus/NucleusPortal'
 
 function RootRoute() {
   const { session, loading } = useAuth()
@@ -151,7 +150,6 @@ function AppRoutes() {
       <Route path="/messages" element={<ProtectedRoute><MessagesPage /></ProtectedRoute>} />
       <Route path="/events" element={<ProtectedRoute><EventsPage /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
-      <Route path="/nucleus" element={<NucleusPortal />} />
 <Route path="*" element={<Navigate to="/home" replace />} />
     </Routes>
   )
