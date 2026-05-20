@@ -384,6 +384,15 @@ export default function TalentPage() {
         .listing-card { transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s, opacity 0.2s !important; }
         .req-btn:hover:not(:disabled) { background: var(--accent) !important; color: #fff !important; border-color: var(--accent) !important; }
         .action-btn:hover:not(:disabled) { opacity: 0.85; }
+        .tp-tabs { display: flex; gap: 2px; background: rgba(0,0,0,0.3); border-radius: 12px; padding: 4px; border: 1px solid rgba(87,65,68,0.2); width: 100%; box-sizing: border-box; }
+        .tp-tab-btn { white-space: nowrap; }
+        .tp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 20px; }
+        @media (max-width: 640px) {
+          .tp-tabs { flex-wrap: wrap; }
+          .tp-tab-btn { flex: 1 1 calc(50% - 2px); min-width: 0; padding: 8px 8px !important; font-size: 11px !important; justify-content: center; }
+          .tp-tab-btn span:first-child { display: none; }
+          .tp-grid { grid-template-columns: 1fr !important; }
+        }
       `}</style>
 
       {/* ── Header ── */}
@@ -407,21 +416,21 @@ export default function TalentPage() {
       </div>
 
       {/* ── Tabs ── */}
-      <div className="tp-2" style={{ display: 'flex', gap: 2, background: 'rgba(0,0,0,0.3)', borderRadius: 12, padding: 4, marginBottom: 32, width: 'fit-content', border: '1px solid rgba(87,65,68,0.2)' }}>
+      <div className="tp-2 tp-tabs" style={{ marginBottom: 32 }}>
         {([
           { key: 'browse' as Tab, label: 'Browse', icon: '⊞' },
           { key: 'my-listings' as Tab, label: 'My Listings', icon: '◫', count: myListings.length },
           { key: 'requests' as Tab, label: 'Requests', icon: '⟳' },
           { key: 'ongoing-trades' as Tab, label: 'Ongoing Trades', icon: '⇄', count: activeTrades.length },
         ] as { key: Tab; label: string; icon: string; count?: number }[]).map(({ key, label, icon, count }) => (
-          <button key={key} onClick={() => setTab(key)} style={{
+          <button key={key} className="tp-tab-btn" onClick={() => setTab(key)} style={{
             padding: '8px 20px', background: tab === key ? 'var(--bg-card)' : 'transparent',
             border: tab === key ? '1px solid rgba(87,65,68,0.35)' : '1px solid transparent',
             borderRadius: 9, color: tab === key ? 'var(--text-primary)' : 'var(--text-muted)',
             fontSize: 13, fontWeight: tab === key ? 700 : 500, cursor: 'pointer',
             display: 'flex', alignItems: 'center', gap: 7,
             boxShadow: tab === key ? '0 1px 8px rgba(0,0,0,0.3)' : 'none',
-            transition: 'all 0.15s', whiteSpace: 'nowrap',
+            transition: 'all 0.15s', fontFamily: 'inherit',
           }}>
             <span style={{ fontSize: 14, opacity: tab === key ? 1 : 0.5 }}>{icon}</span>
             {label}
@@ -470,7 +479,7 @@ export default function TalentPage() {
           </div>
 
           {loading ? (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
+            <div className="tp-grid">
               {[0,1,2,3,4,5].map(i => (
                 <div key={i} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', animationDelay: `${i * 0.05}s` }}>
                   <div className="tp-shimmer" style={{ height: 4, borderRadius: 0 }} />
@@ -497,7 +506,7 @@ export default function TalentPage() {
               {!search && <button onClick={openCreate} style={{ padding: '10px 24px', background: 'var(--accent)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>+ List a Skill</button>}
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
+            <div className="tp-grid">
               {listings.map((l, i) => {
                 const already = alreadyRequestedIds.has(l.id)
                 return (
@@ -529,7 +538,7 @@ export default function TalentPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                 <div style={{ fontSize: 13, color: 'var(--text-muted)' }}><span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{myListings.filter(l => l.is_active).length}</span> active · <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{myListings.filter(l => !l.is_active).length}</span> paused</div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
+              <div className="tp-grid">
                 {myListings.map((l, i) => (
                   <ListingCard key={l.id} listing={l} index={i} dimmed={!l.is_active} action={
                     <div style={{ display: 'flex', gap: 8 }}>

@@ -287,7 +287,7 @@ export default function DiscoveryPage() {
               fontSize: 16, color: 'var(--text-secondary)', lineHeight: 1.65, maxWidth: 460,
               animation: 'fadeUp 0.55s 0.18s ease both',
             }}>
-              Explore student clubs and organizations across Qatar's universities. Join, connect, and make an impact.
+              Explore student clubs and organizations across Qatar. Join, connect, and make an impact.
             </p>
           </div>
         </div>
@@ -380,7 +380,7 @@ export default function DiscoveryPage() {
         ) : (
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 310px), 1fr))',
             gap: 22,
           }}>
             {clubs.map((club, i) => (
@@ -682,7 +682,7 @@ function ClubCard({ club, index, onJoin, onOpen, joining, isPending, hasForm, in
 function SkeletonGrid() {
   const shimmerBg = 'linear-gradient(90deg, rgba(52,39,40,0.3) 0%, rgba(72,54,57,0.55) 45%, rgba(52,39,40,0.3) 100%)'
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))', gap: 22 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 310px), 1fr))', gap: 22 }}>
       {Array.from({ length: 6 }).map((_, i) => (
         <div key={i} style={{
           background: 'rgba(41,28,30,0.35)',

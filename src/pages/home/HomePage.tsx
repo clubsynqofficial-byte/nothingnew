@@ -417,7 +417,7 @@ export default function HomePage() {
               </div>
             </div>
             <div className="hero-sub" style={{ fontSize:13, color:'rgba(255,255,255,.6)', fontWeight:500 }}>
-              {profile?.university?.name ?? 'Your campus'} &nbsp;·&nbsp; {loading ? '…' : `${posts.length} posts`}
+              Your campus community, all in one place. Connect, explore, and make an impact across Qatar.
             </div>
           </div>
 
@@ -495,8 +495,8 @@ export default function HomePage() {
             {/* Poll builder */}
             {showPoll && (
               <div style={{ padding: '0 18px 14px 74px' }}>
-                <div style={{ background: 'rgba(96,165,250,.06)', border: '1px solid rgba(96,165,250,.15)', borderRadius: 14, padding: '14px 16px' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#60a5fa', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10 }}>Poll</div>
+                <div style={{ background: 'rgba(138,21,56,.06)', border: '1px solid rgba(138,21,56,.22)', borderRadius: 14, padding: '14px 16px' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10 }}>Poll</div>
                   <input value={pollQuestion} onChange={e => setPollQuestion(e.target.value)} placeholder="Ask a question…" style={{ width: '100%', background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 9, padding: '8px 12px', color: 'var(--text-primary)', fontSize: 13, outline: 'none', fontFamily: 'inherit', marginBottom: 10, boxSizing: 'border-box' }} />
                   {pollOptions.map((opt, i) => (
                     <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 7 }}>
@@ -504,7 +504,7 @@ export default function HomePage() {
                       {pollOptions.length > 2 && <button onClick={() => setPollOptions(prev => prev.filter((_, j) => j !== i))} style={{ background: 'transparent', border: 'none', color: 'rgba(248,113,113,.6)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>✕</button>}
                     </div>
                   ))}
-                  {pollOptions.length < 4 && <button onClick={() => setPollOptions(prev => [...prev, ''])} style={{ fontSize: 12, color: '#60a5fa', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit', fontWeight: 600 }}>+ Add option</button>}
+                  {pollOptions.length < 4 && <button onClick={() => setPollOptions(prev => [...prev, ''])} style={{ fontSize: 12, color: 'var(--accent)', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit', fontWeight: 600 }}>+ Add option</button>}
                 </div>
               </div>
             )}
@@ -603,7 +603,7 @@ export default function HomePage() {
                 <input ref={imgRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple style={{ display:'none' }} onChange={onImgSel}/>
                 <button onClick={() => imgs.length < 4 && imgRef.current?.click()} disabled={imgs.length >= 4} style={{
                   display:'inline-flex', alignItems:'center', gap:6, padding:'6px 12px', borderRadius:9999,
-                  border:'none', cursor: imgs.length >= 4 ? 'default' : 'pointer', fontFamily:'inherit', fontSize:13, fontWeight:600,
+                  border:'1px solid transparent', cursor: imgs.length >= 4 ? 'default' : 'pointer', fontFamily:'inherit', fontSize:13, fontWeight:600,
                   background: imgs.length > 0 ? 'rgba(138,21,56,.18)' : 'transparent',
                   color: imgs.length > 0 ? 'var(--accent)' : imgs.length >= 4 ? 'rgba(255,255,255,.2)' : 'var(--text-muted)', transition:'all .15s',
                   opacity: imgs.length >= 4 ? .4 : 1,
@@ -614,9 +614,9 @@ export default function HomePage() {
                   <Img/>{imgs.length > 0 ? <span style={{ fontSize:11 }}>{imgs.length}/4</span> : <span>Photo</span>}
                 </button>
                 {/* Poll toggle */}
-                <button onClick={() => setShowPoll(v => !v)} style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'6px 12px', borderRadius:9999, border:'none', cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:600, background: showPoll ? 'rgba(96,165,250,.18)' : 'transparent', color: showPoll ? '#60a5fa' : 'var(--text-muted)', transition:'all .15s' }}
-                  onMouseEnter={e => { e.currentTarget.style.background='rgba(96,165,250,.12)'; e.currentTarget.style.color='#60a5fa' }}
-                  onMouseLeave={e => { e.currentTarget.style.background=showPoll?'rgba(96,165,250,.18)':'transparent'; e.currentTarget.style.color=showPoll?'#60a5fa':'var(--text-muted)' }}>
+                <button onClick={() => setShowPoll(v => !v)} style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'6px 12px', borderRadius:9999, border:'1px solid transparent', cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:600, background: showPoll ? 'rgba(138,21,56,.2)' : 'transparent', color: showPoll ? 'var(--accent)' : 'var(--text-muted)', transition:'all .15s' }}
+                  onMouseEnter={e => { e.currentTarget.style.background='rgba(138,21,56,.14)'; e.currentTarget.style.color='var(--accent)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background=showPoll?'rgba(138,21,56,.2)':'transparent'; e.currentTarget.style.color=showPoll?'var(--accent)':'var(--text-muted)' }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
                   <span>Poll</span>
                 </button>
@@ -657,11 +657,6 @@ export default function HomePage() {
             <div style={{ fontSize:13, fontWeight:800, color:'var(--text-muted)', letterSpacing:'.06em', textTransform:'uppercase' }}>
               Campus Feed
             </div>
-            {!loading && (
-              <div style={{ padding:'2px 9px', borderRadius:9999, background:'rgba(138,21,56,.2)', border:'1px solid rgba(138,21,56,.3)', fontSize:11, fontWeight:800, color:'#e57c9a' }}>
-                {posts.length}
-              </div>
-            )}
           </div>
 
           {/* Posts */}
@@ -757,41 +752,6 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Explore */}
-          <div className="card" style={{ padding:'14px 12px' }}>
-            <div style={{ fontSize:11, fontWeight:800, color:'var(--text-muted)', letterSpacing:'.08em', textTransform:'uppercase', paddingLeft:4, marginBottom:8 }}>Explore campus</div>
-            {[
-              { icon:'📅', label:'Events', sub:'See what\'s on', path:'/events', color:'rgba(96,165,250,.15)', border:'rgba(96,165,250,.25)', c:'#93c5fd' },
-              { icon:'🏛️', label:'Clubs', sub:'Find your people', path:'/clubs', color:'rgba(167,139,250,.15)', border:'rgba(167,139,250,.25)', c:'#c4b5fd' },
-            ].map(item=>(
-              <button key={item.label} className="slink" onClick={()=>nav(item.path)}>
-                <div style={{ width:34, height:34, borderRadius:10, background:item.color, border:`1px solid ${item.border}`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, flexShrink:0 }}>
-                  {item.icon}
-                </div>
-                <div>
-                  <div style={{ fontSize:13, fontWeight:700, color:'var(--text-primary)' }}>{item.label}</div>
-                  <div style={{ fontSize:11, color:'var(--text-muted)' }}>{item.sub}</div>
-                </div>
-              </button>
-            ))}
-          </div>
-
-          {/* Campus */}
-          {profile?.university && (
-            <div className="card" style={{ padding:'16px 18px', position:'relative', overflow:'hidden' }}>
-              <div style={{ position:'absolute', top:-30, right:-30, width:110, height:110, borderRadius:'50%', background:'radial-gradient(circle,rgba(138,21,56,.12) 0%,transparent 70%)', pointerEvents:'none' }}/>
-              <div style={{ fontSize:11, fontWeight:800, color:'var(--text-muted)', letterSpacing:'.08em', textTransform:'uppercase', marginBottom:10 }}>Your Campus</div>
-              <div style={{ fontSize:14, fontWeight:800, color:'var(--text-primary)', marginBottom:4, lineHeight:1.4 }}>{profile.university.name}</div>
-              {profile.university.location && (
-                <div style={{ fontSize:12, color:'var(--text-muted)' }}>📍 {profile.university.location}</div>
-              )}
-              {profile.bio && (
-                <div style={{ fontSize:12, color:'var(--text-secondary)', marginTop:10, lineHeight:1.6, padding:'10px 12px', borderRadius:10, background:'rgba(255,255,255,.03)', border:'1px solid rgba(255,255,255,.05)' }}>
-                  "{profile.bio}"
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -994,17 +954,17 @@ function Card({
 
         {/* Poll */}
         {poll && (
-          <div onClick={e => e.stopPropagation()} style={{ marginBottom: 12, background: 'rgba(96,165,250,.05)', border: '1px solid rgba(96,165,250,.15)', borderRadius: 12, padding: '12px 14px' }}>
+          <div onClick={e => e.stopPropagation()} style={{ marginBottom: 12, background: 'rgba(138,21,56,.05)', border: '1px solid rgba(138,21,56,.18)', borderRadius: 12, padding: '12px 14px' }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 10 }}>{poll.question}</div>
             {poll.options.map(opt => {
               const total = poll.options.reduce((s, o) => s + o.voteCount, 0)
               const pct = total > 0 ? Math.round((opt.voteCount / total) * 100) : 0
               const isVoted = poll.userVote === opt.id
               return (
-                <div key={opt.id} onClick={() => onPollVote(opt.id)} style={{ marginBottom: 7, cursor: 'pointer', borderRadius: 8, overflow: 'hidden', position: 'relative', border: `1px solid ${isVoted ? 'rgba(96,165,250,.4)' : 'rgba(255,255,255,.08)'}`, transition: 'border-color .15s' }}>
-                  <div style={{ position: 'absolute', top: 0, left: 0, height: '100%', width: `${pct}%`, background: isVoted ? 'rgba(96,165,250,.18)' : 'rgba(255,255,255,.05)', transition: 'width .4s ease' }} />
+                <div key={opt.id} onClick={() => onPollVote(opt.id)} style={{ marginBottom: 7, cursor: 'pointer', borderRadius: 8, overflow: 'hidden', position: 'relative', border: `1px solid ${isVoted ? 'rgba(192,37,90,.5)' : 'rgba(255,255,255,.08)'}`, transition: 'border-color .15s' }}>
+                  <div style={{ position: 'absolute', top: 0, left: 0, height: '100%', width: `${pct}%`, background: isVoted ? 'rgba(138,21,56,.25)' : 'rgba(255,255,255,.05)', transition: 'width .4s ease' }} />
                   <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', padding: '7px 11px' }}>
-                    <span style={{ fontSize: 12.5, fontWeight: isVoted ? 700 : 500, color: isVoted ? '#60a5fa' : 'var(--text-primary)' }}>{opt.text}</span>
+                    <span style={{ fontSize: 12.5, fontWeight: isVoted ? 700 : 500, color: isVoted ? '#c0255a' : 'var(--text-primary)' }}>{opt.text}</span>
                     <span style={{ fontSize: 12, color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>{pct}%</span>
                   </div>
                 </div>

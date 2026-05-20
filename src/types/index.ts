@@ -11,6 +11,9 @@ export interface Profile {
   id: string
   full_name: string | null
   avatar_url: string | null
+  banner_url: string | null
+  banner_position: number | null
+  banner_zoom: number | null
   university_id: string | null
   role: 'student' | 'club_leader' | 'admin'
   bio: string | null

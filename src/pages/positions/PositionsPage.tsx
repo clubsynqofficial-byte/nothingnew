@@ -180,7 +180,7 @@ export default function PositionsPage() {
 
         {/* Grid */}
         {loading ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gap: 16 }}>
             {[0,1,2,3,4,5].map(i => (
               <div key={i} style={{ height: 200, borderRadius: 18, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', animation: 'pos-fade-up 0.4s ease both', animationDelay: `${i*0.05}s` }} />
             ))}
@@ -192,7 +192,7 @@ export default function PositionsPage() {
             <div style={{ fontSize: 13 }}>Check back later or try a different filter.</div>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gap: 16 }}>
             {positions.map((pos, i) => {
               const tc = TYPE_COLORS[pos.type]
               const appStatus = applicationStatus.get(pos.id)

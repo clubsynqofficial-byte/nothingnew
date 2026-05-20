@@ -78,6 +78,7 @@ button { cursor: pointer; }
   flex: 1;
   min-height: calc(100vh - var(--topbar-height));
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* Mobile nav overlay backdrop */
@@ -142,4 +143,22 @@ button { cursor: pointer; }
 .page-content {
   padding: 32px 28px 64px;
   margin: 0 auto;
+  /* Ensure nothing inside can create horizontal page scroll */
+  max-width: 100%;
+}
+
+/* ── Responsive grid utilities ──
+   minmax(min(100%, Npx), 1fr) collapses to 1 column automatically when the
+   container is narrower than N px — no media query needed. ── */
+.rg-300 { display: grid; gap: 20px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
+.rg-280 { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); }
+.rg-260 { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); }
+.rg-210 { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr)); }
+
+/* ── Responsive tab bar ── */
+.resp-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  width: 100%;
+  box-sizing: border-box;
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import rawEmojiData from '@emoji-mart/data'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { usePresence, type PresenceStatus } from '../../contexts/PresenceContext'
@@ -16,7 +17,8 @@ interface MsgRequest {
 
 interface DMConv {
   convId: string; otherId: string; otherName: string | null; otherAvatar: string | null
-  otherUsername: string | null; lastMsg: string | null; lastAt: string; unread: number
+  otherUsername: string | null; otherLastSeen: string | null
+  lastMsg: string | null; lastAt: string; unread: number
 }
 
 interface Profile { id: string; full_name: string | null; avatar_url: string | null; last_seen_at?: string | null }
@@ -45,17 +47,20 @@ interface GroupChat {
 interface DM {
   id: string; conversation_id: string; sender_id: string
   content: string; read_at: string | null; created_at: string
+  reactions?: Record<string, string[]>
 }
 
 interface TradeDM {
   id: string; request_id: string; sender_id: string
   content: string; created_at: string
   profile?: { full_name: string | null } | null
+  reactions?: Record<string, string[]>
 }
 
 interface GroupMessage {
   id: string; group_id: string; sender_id: string; content: string; created_at: string
   profile?: { full_name: string | null; avatar_url: string | null } | null
+  reactions?: Record<string, string[]>
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -108,6 +113,104 @@ function GroupAv({ members, size = 40 }: { members: Profile[]; size?: number }) 
           </div>
         )
       })}
+    </div>
+  )
+}
+
+// ── Emoji Picker ─────────────────────────────────────────────────────────
+
+interface EmojiMartData {
+  categories: { id: string; emojis: string[] }[]
+  emojis: Record<string, { id: string; name: string; keywords: string[]; skins: { unified: string; native: string }[] }>
+}
+
+const emojiData = rawEmojiData as EmojiMartData
+
+const CAT_ICONS: Record<string, string> = { people:'😀', nature:'🐶', foods:'🍕', activity:'⚽', places:'✈️', objects:'💡', symbols:'🔣', flags:'🏳️' }
+const CAT_LABELS: Record<string, string> = { people:'Smileys & People', nature:'Animals & Nature', foods:'Food & Drink', activity:'Activities', places:'Travel & Places', objects:'Objects', symbols:'Symbols', flags:'Flags' }
+
+const RECENT_KEY = 'emoji_recents'
+const MAX_RECENTS = 32
+
+function getRecents(): string[] {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]') } catch { return [] }
+}
+function addRecent(native: string) {
+  const list = [native, ...getRecents().filter(e => e !== native)].slice(0, MAX_RECENTS)
+  localStorage.setItem(RECENT_KEY, JSON.stringify(list))
+}
+
+function EmojiPicker({ onSelect, isMine, openUpward }: { onSelect: (emoji: string) => void; isMine: boolean; openUpward: boolean }) {
+  const [search, setSearch] = useState('')
+  const [activeCat, setActiveCat] = useState('recent')
+  const [recents, setRecents] = useState<string[]>(getRecents)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const r = getRecents()
+    setRecents(r)
+    if (r.length === 0) setActiveCat('people')
+  }, [])
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 50) }, [])
+
+  function handleSelect(native: string) {
+    addRecent(native)
+    setRecents(getRecents())
+    onSelect(native)
+  }
+
+  const nativeToEmoji = (native: string) =>
+    Object.values(emojiData.emojis).find(e => e.skins[0].native === native) ?? null
+
+  const searchResults = search.length >= 1
+    ? Object.values(emojiData.emojis).filter(e =>
+        e.name.toLowerCase().includes(search.toLowerCase()) ||
+        e.keywords.some(k => k.startsWith(search.toLowerCase()))
+      ).slice(0, 80)
+    : null
+
+  const displayEmojis = searchResults ?? (
+    activeCat === 'recent'
+      ? recents.map(nativeToEmoji).filter(Boolean) as typeof searchResults
+      : (emojiData.categories.find(c => c.id === activeCat)?.emojis.map(id => emojiData.emojis[id]).filter(Boolean) ?? [])
+  )
+
+  const allTabs = [
+    { id: 'recent', icon: '🕐', label: 'Recently Used' },
+    ...emojiData.categories.map(c => ({ id: c.id, icon: CAT_ICONS[c.id] ?? '•', label: CAT_LABELS[c.id] ?? c.id })),
+  ]
+
+  return (
+    <div style={{ position: 'absolute', [isMine ? 'right' : 'left']: 0, ...(openUpward ? { bottom: 34 } : { top: 34 }), zIndex: 1000, width: 320, background: 'rgba(18,12,15,0.98)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 14, boxShadow: '0 8px 40px rgba(0,0,0,0.7)', backdropFilter: 'blur(20px)', overflow: 'hidden' }} onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}>
+      {/* Search */}
+      <div style={{ padding: '10px 10px 6px' }}>
+        <input ref={inputRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search emoji…" style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '7px 10px', color: '#fff', fontSize: 13, outline: 'none' }} />
+      </div>
+      {/* Category tabs */}
+      {!search && (
+        <div style={{ display: 'flex', padding: '0 6px 4px', gap: 2, overflowX: 'auto' }}>
+          {allTabs.map(tab => (
+            <button key={tab.id} onClick={() => setActiveCat(tab.id)} title={tab.label} style={{ flexShrink: 0, background: activeCat === tab.id ? 'rgba(255,255,255,0.12)' : 'none', border: 'none', borderRadius: 8, padding: '4px 7px', cursor: 'pointer', fontSize: 16, opacity: activeCat === tab.id ? 1 : 0.55, transition: 'opacity .15s, background .15s' }}>
+              {tab.icon}
+            </button>
+          ))}
+        </div>
+      )}
+      {/* Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 1, padding: '2px 6px 8px', maxHeight: 220, overflowY: 'auto' }}>
+        {(displayEmojis ?? []).map(emoji => (
+          <button key={emoji!.id} onClick={() => handleSelect(emoji!.skins[0].native)} title={emoji!.name} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, padding: 4, borderRadius: 6, transition: 'background .1s' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
+            {emoji!.skins[0].native}
+          </button>
+        ))}
+        {(displayEmojis ?? []).length === 0 && (
+          <span style={{ gridColumn: '1/-1', textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: 13, padding: '16px 0' }}>
+            {activeCat === 'recent' ? 'No recent emojis yet' : 'No results'}
+          </span>
+        )}
+      </div>
     </div>
   )
 }
@@ -174,6 +277,16 @@ const CSS = `
 
 @media (min-width: 769px) { .left-panel { display: flex !important; } .right-panel { display: flex !important; } .mobile-back-btn { display: none !important; } }
 @media (max-width: 768px) { .mobile-back-btn { display: flex !important; } }
+
+@keyframes vc-fade  { from { opacity:0; } to { opacity:1; } }
+@keyframes spin     { to { transform:rotate(360deg); } }
+@keyframes vc-ring  { 0% { transform:scale(1); opacity:.7; } 100% { transform:scale(2.2); opacity:0; } }
+@keyframes vc-dot   { 0%,80%,100% { transform:scale(0.6); opacity:.3; } 40% { transform:scale(1); opacity:1; } }
+@keyframes vc-pulse { 0%,100% { opacity:1; box-shadow:0 0 8px rgba(74,222,128,.8); } 50% { opacity:.5; box-shadow:0 0 18px rgba(74,222,128,.4); } }
+
+.vc-ring { position:absolute; inset:0; border-radius:50%; border:2px solid rgba(74,222,128,.45); animation:vc-ring 2.4s ease-out infinite; pointer-events:none; }
+.vc-dot  { display:inline-block; width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,.55); animation:vc-dot 1.4s ease-in-out infinite; }
+.vc-btn:hover { background:rgba(34,197,94,0.22) !important; border-color:rgba(34,197,94,0.5) !important; transform:scale(1.08); }
 `
 
 // ── SVG Icons ────────────────────────────────────────────────────────────────
@@ -248,8 +361,11 @@ function IcUsersBig({ size = 56, animated = false }: { size?: number; animated?:
 // ── Page ──────────────────────────────────────────────────────────────────
 
 export default function MessagesPage() {
-  const { user } = useAuth()
+  const { user, incomingCall, rejectIncomingCall, consumeIncomingCall } = useAuth()
+  const consumeIncomingCallRef = useRef(consumeIncomingCall)
+  consumeIncomingCallRef.current = consumeIncomingCall
   const navigate = useNavigate()
+  const location = useLocation()
   const { connectedSet, statusMap } = usePresence()
 
   const [tab, setTab] = useState<MsgTab>('dms')
@@ -469,11 +585,11 @@ export default function MessagesPage() {
     const otherIds = convs.map(c => c.participant_1 === user.id ? c.participant_2 : c.participant_1)
     const convIds  = convs.map(c => c.id)
     const [{ data: profiles }, { data: lastMsgs }, { data: unreadMsgs }] = await Promise.all([
-      supabase.from('profiles').select('id, full_name, avatar_url, username').in('id', otherIds),
+      supabase.from('profiles').select('id, full_name, avatar_url, username, last_seen_at').in('id', otherIds),
       supabase.from('direct_messages').select('conversation_id, content, created_at').in('conversation_id', convIds).order('created_at', { ascending: false }),
       supabase.from('direct_messages').select('conversation_id').in('conversation_id', convIds).neq('sender_id', user.id).is('read_at', null),
     ])
-    const profileMap: Record<string, { full_name: string | null; avatar_url: string | null; username: string | null }> = {}
+    const profileMap: Record<string, { full_name: string | null; avatar_url: string | null; username: string | null; last_seen_at: string | null }> = {}
     for (const p of profiles ?? []) profileMap[p.id] = p as any
     const lastMsgMap: Record<string, string> = {}
     for (const m of lastMsgs ?? []) { if (!lastMsgMap[m.conversation_id]) lastMsgMap[m.conversation_id] = m.content }
@@ -482,7 +598,7 @@ export default function MessagesPage() {
     setDmConvs(convs.map(c => {
       const otherId = c.participant_1 === user.id ? c.participant_2 : c.participant_1
       const p = profileMap[otherId]
-      return { convId: c.id, otherId, otherName: p?.full_name ?? null, otherAvatar: p?.avatar_url ?? null, otherUsername: p?.username ?? null, lastMsg: lastMsgMap[c.id] ?? null, lastAt: c.last_message_at ?? c.id, unread: unreadMap[c.id] ?? 0 }
+      return { convId: c.id, otherId, otherName: p?.full_name ?? null, otherAvatar: p?.avatar_url ?? null, otherUsername: p?.username ?? null, otherLastSeen: p?.last_seen_at ?? null, lastMsg: lastMsgMap[c.id] ?? null, lastAt: c.last_message_at ?? c.id, unread: unreadMap[c.id] ?? 0 }
     }))
     setLoadingDms(false)
   }, [user])
@@ -501,6 +617,10 @@ export default function MessagesPage() {
         const msg = payload.new as DM
         setDmMsgs(prev => prev.find(m => m.id === msg.id) ? prev : [...prev, msg])
         setDmConvs(prev => prev.map(c => c.convId === conv.convId ? { ...c, lastMsg: msg.content, lastAt: msg.created_at } : c))
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'direct_messages', filter: `conversation_id=eq.${conv.convId}` }, payload => {
+        const msg = payload.new as DM
+        setDmMsgs(prev => prev.map(m => m.id === msg.id ? { ...m, reactions: msg.reactions } : m))
       }).subscribe()
     setTimeout(() => inputRef.current?.focus(), 80)
   }
@@ -510,7 +630,7 @@ export default function MessagesPage() {
     const { data: conv } = await supabase.from('conversations').insert({ participant_1: user!.id, participant_2: req.from_user_id, type: 'dm' }).select('id').single()
     setDmRequests(prev => prev.filter(r => r.id !== req.id))
     if (conv) {
-      const newConv: DMConv = { convId: conv.id, otherId: req.from_user_id, otherName: req.from_profile?.full_name ?? null, otherAvatar: req.from_profile?.avatar_url ?? null, otherUsername: req.from_profile?.username ?? null, lastMsg: null, lastAt: new Date().toISOString(), unread: 0 }
+      const newConv: DMConv = { convId: conv.id, otherId: req.from_user_id, otherName: req.from_profile?.full_name ?? null, otherAvatar: req.from_profile?.avatar_url ?? null, otherUsername: req.from_profile?.username ?? null, otherLastSeen: null, lastMsg: null, lastAt: new Date().toISOString(), unread: 0 }
       setDmConvs(prev => [newConv, ...prev])
       openDm(newConv)
     }
@@ -522,6 +642,43 @@ export default function MessagesPage() {
   }
 
   useEffect(() => { fetchCollabs(); fetchTrades(); fetchLeaders(); fetchGroupChats(); fetchDms() }, [fetchCollabs, fetchTrades, fetchLeaders, fetchGroupChats, fetchDms])
+
+  // ── Realtime: refresh DMs when a message_request is accepted (sender side) ──
+  useEffect(() => {
+    if (!user) return
+    const ch = supabase.channel('dm-req-watch')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'message_requests', filter: `from_user_id=eq.${user.id}` }, payload => {
+        if ((payload.new as { status: string }).status === 'accepted') fetchDms()
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'message_requests', filter: `to_user_id=eq.${user.id}` }, payload => {
+        if ((payload.new as { status: string }).status === 'accepted') fetchDms()
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'message_requests', filter: `to_user_id=eq.${user.id}` }, () => {
+        fetchDms()
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [user, fetchDms])
+
+  // ── Auto-open DM or auto-answer call from navigation state ──
+  useEffect(() => {
+    const state = location.state as {
+      dmConvId?: string; dmOtherId?: string
+      dmOtherName?: string | null; dmOtherAvatar?: string | null; dmOtherUsername?: string | null
+      autoAnswer?: boolean
+    } | null
+    window.history.replaceState({}, '')
+    if (state?.autoAnswer) { answerCall(); return }
+    if (!state?.dmConvId || !state?.dmOtherId) return
+    const conv: DMConv = {
+      convId: state.dmConvId, otherId: state.dmOtherId,
+      otherName: state.dmOtherName ?? null, otherAvatar: state.dmOtherAvatar ?? null,
+      otherUsername: state.dmOtherUsername ?? null, otherLastSeen: null,
+      lastMsg: null, lastAt: new Date().toISOString(), unread: 0,
+    }
+    openDm(conv)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // ── Open collab chat ──
   const openCollab = async (thread: CollabThread) => {
@@ -545,6 +702,10 @@ export default function MessagesPage() {
         const msg = payload.new as DM
         setCollabMsgs(prev => prev.find(m => m.id === msg.id) ? prev : [...prev, msg])
         setCollabThreads(prev => prev.map(t => t.matchUserId === thread.matchUserId ? { ...t, lastMsg: msg.content, lastAt: msg.created_at } : t))
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'direct_messages', filter: `conversation_id=eq.${convId}` }, payload => {
+        const msg = payload.new as DM
+        setCollabMsgs(prev => prev.map(m => m.id === msg.id ? { ...m, reactions: msg.reactions } : m))
       }).subscribe()
     setTimeout(() => inputRef.current?.focus(), 80)
   }
@@ -595,6 +756,10 @@ export default function MessagesPage() {
         const msg = payload.new as DM
         setLeaderMsgs(prev => prev.find(m => m.id === msg.id) ? prev : [...prev, msg])
         setClubLeaders(prev => prev.map(l => l.userId === leader.userId ? { ...l, lastMsg: msg.content, lastAt: msg.created_at } : l))
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'direct_messages', filter: `conversation_id=eq.${convId}` }, payload => {
+        const msg = payload.new as DM
+        setLeaderMsgs(prev => prev.map(m => m.id === msg.id ? { ...m, reactions: msg.reactions } : m))
       }).subscribe()
     setTimeout(() => inputRef.current?.focus(), 80)
   }
@@ -615,6 +780,10 @@ export default function MessagesPage() {
         setGroupMsgs(prev => prev.find(m => m.id === msg.id) ? prev : [...prev, msg])
         markLastRead(`group-${group.id}`)
         setGroupChats(prev => prev.map(g => g.id === group.id ? { ...g, lastMsg: msg.content, lastAt: msg.created_at } : g))
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'group_messages', filter: `group_id=eq.${group.id}` }, payload => {
+        const msg = payload.new as GroupMessage
+        setGroupMsgs(prev => prev.map(m => m.id === msg.id ? { ...m, reactions: msg.reactions } : m))
       }).subscribe()
     setTimeout(() => inputRef.current?.focus(), 80)
   }
@@ -637,7 +806,6 @@ export default function MessagesPage() {
     if (newGrp) openGroup({ id: newGrp.id, name: newGrp.name, createdBy: newGrp.created_by, lastMsg: null, lastAt: newGrp.last_message_at, unread: 0, memberProfiles: clubLeaders.filter(l => selectedMemberIds.has(l.userId)).map(l => l.profile) })
   }
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [collabMsgs, tradeMsgs, leaderMsgs, groupMsgs])
   useEffect(() => () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }, [])
 
   // ── Send ──
@@ -697,11 +865,341 @@ export default function MessagesPage() {
   const shownDmConvs  = q ? dmConvs.filter(c => (c.otherName ?? '').toLowerCase().includes(q) || (c.otherUsername ?? '').toLowerCase().includes(q)) : dmConvs
 
   const activeAny = activeCollab ?? activeTrade ?? activeLeader ?? activeGroup ?? activeDm
-  const activeProfile = activeCollab?.matchProfile ?? activeTrade?.otherProfile ?? activeLeader?.profile ?? (activeDm ? { id: activeDm.otherId, full_name: activeDm.otherName, avatar_url: activeDm.otherAvatar } : null)
+  const activeProfile = activeCollab?.matchProfile ?? activeTrade?.otherProfile ?? activeLeader?.profile ?? (activeDm ? { id: activeDm.otherId, full_name: activeDm.otherName, avatar_url: activeDm.otherAvatar, last_seen_at: activeDm.otherLastSeen } : null)
 
   // ── Messages for right panel ──
   const messages: (DM | TradeDM | GroupMessage)[] = activeCollab ? collabMsgs : activeTrade ? tradeMsgs : activeLeader ? leaderMsgs : activeDm ? dmMsgs : groupMsgs
   const loadingMsgs = activeCollab ? loadingCollabMsgs : activeTrade ? loadingTradeMsgs : activeLeader ? loadingLeaderMsgs : activeDm ? loadingDmMsgs : loadingGroupMsgs
+
+  const msgCountRef = useRef(0)
+  useEffect(() => {
+    const count = messages.length
+    if (count > msgCountRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+    msgCountRef.current = count
+  }, [messages])
+
+  const [pickerState, setPickerState] = useState<{ msgId: string; openUpward: boolean } | null>(null)
+  useEffect(() => {
+    if (!pickerState) return
+    function handleClick() { setPickerState(null) }
+    document.addEventListener('click', handleClick)
+    return () => document.removeEventListener('click', handleClick)
+  }, [pickerState])
+
+  async function toggleReaction(msgId: string, emoji: string) {
+    if (!user) return
+    const msg = messages.find(m => m.id === msgId)
+    if (!msg) return
+    const current = msg.reactions ?? {}
+    // Remove user from any existing emoji first (one reaction per user per message)
+    const newReactions: Record<string, string[]> = {}
+    for (const [e, ids] of Object.entries(current)) {
+      const filtered = ids.filter(id => id !== user.id)
+      if (filtered.length > 0) newReactions[e] = filtered
+    }
+    // Toggle: if same emoji was already theirs, just clear it; otherwise add new one
+    const wasAlreadyThis = (current[emoji] ?? []).includes(user.id)
+    if (!wasAlreadyThis) newReactions[emoji] = [...(newReactions[emoji] ?? []), user.id]
+    const patch = (arr: { id: string; reactions?: Record<string, string[]> }[]) =>
+      arr.map(m => m.id === msgId ? { ...m, reactions: newReactions } : m)
+    if (activeGroup) {
+      setGroupMsgs(p => patch(p) as GroupMessage[])
+      await supabase.from('group_messages').update({ reactions: newReactions }).eq('id', msgId)
+    } else if (activeCollab) {
+      setCollabMsgs(p => patch(p) as DM[])
+      await supabase.from('direct_messages').update({ reactions: newReactions }).eq('id', msgId)
+    } else if (activeLeader) {
+      setLeaderMsgs(p => patch(p) as DM[])
+      await supabase.from('direct_messages').update({ reactions: newReactions }).eq('id', msgId)
+    } else if (activeDm) {
+      setDmMsgs(p => patch(p) as DM[])
+      await supabase.from('direct_messages').update({ reactions: newReactions }).eq('id', msgId)
+    }
+  }
+
+  // ── Video call (WebRTC) ──
+  const [callState, setCallState]           = useState<'idle' | 'calling' | 'active'>('idle')
+  const [callError, setCallError]           = useState<string | null>(null)
+  const [micOn, setMicOn]                   = useState(true)
+  const [camOn, setCamOn]                   = useState(true)
+  const [screenSharing, setScreenSharing]   = useState(false)
+  const [connQuality, setConnQuality]       = useState<RTCPeerConnectionState>('new')
+  const localVideoRef    = useRef<HTMLVideoElement>(null)
+  const remoteVideoRef   = useRef<HTMLVideoElement>(null)
+  const pcRef            = useRef<RTCPeerConnection | null>(null)
+  const localStreamRef   = useRef<MediaStream | null>(null)
+  const screenStreamRef  = useRef<MediaStream | null>(null)
+  const peerChRef        = useRef<ReturnType<typeof supabase.channel> | null>(null)
+  const isCallerRef      = useRef(false)
+  const callStartRef     = useRef<Date | null>(null)
+  const callTimeoutRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const reconTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Ref mirrors so event callbacks always read current values (no stale closures)
+  const camOnRef           = useRef(true)
+  const screenSharingRef   = useRef(false)
+  const callStateRef       = useRef<'idle' | 'calling' | 'active'>('idle')
+  camOnRef.current         = camOn
+  screenSharingRef.current = screenSharing
+  callStateRef.current     = callState
+
+  const callRoomId = activeCollab?.convId ?? activeLeader?.convId ?? activeGroup?.id ?? activeDm?.convId ?? null
+  const callOpen   = callState !== 'idle'
+  const ICE = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'turn:openrelay.metered.ca:80',      username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443',     username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+  ]
+
+  // Request browser notification permission once
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission()
+  }, [])
+
+  // Attach local stream to video element after overlay mounts
+  useEffect(() => {
+    if ((callState === 'calling' || callState === 'active') && localStreamRef.current && localVideoRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current
+    }
+  }, [callState])
+
+  // Insert "call started" when the call connects (caller side only to avoid duplicates)
+  useEffect(() => {
+    if (callState === 'active') {
+      // Cancel the unanswered-call timeout as soon as the call is live
+      if (callTimeoutRef.current) { clearTimeout(callTimeoutRef.current); callTimeoutRef.current = null }
+      if (isCallerRef.current) {
+        callStartRef.current = new Date()
+        insertCallEvent('📹 Video call started')
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [callState])
+
+  // ── Window event listeners — WebRTC signals relayed from AuthContext's personal channel ──
+  useEffect(() => {
+    async function onAnswer(e: Event) {
+      const payload = (e as CustomEvent).detail
+      const pc = pcRef.current; if (!pc) return
+      await pc.setRemoteDescription(new RTCSessionDescription(payload.answer))
+      setCallState('active')
+    }
+    function onEnd()    { doCleanup() }
+    function onReject() { doCleanup() }
+    function onUserAccept() { answerCall() }
+    window.addEventListener('vc:answer',      onAnswer)
+    window.addEventListener('vc:end',         onEnd)
+    window.addEventListener('vc:reject',      onReject)
+    window.addEventListener('vc:user-accept', onUserAccept)
+    return () => {
+      window.removeEventListener('vc:answer',      onAnswer)
+      window.removeEventListener('vc:end',         onEnd)
+      window.removeEventListener('vc:reject',      onReject)
+      window.removeEventListener('vc:user-accept', onUserAccept)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // ── Error toast auto-dismiss ──
+  useEffect(() => {
+    if (!callError) return
+    const t = setTimeout(() => setCallError(null), 5000)
+    return () => clearTimeout(t)
+  }, [callError])
+
+  function waitForIceComplete(pc: RTCPeerConnection): Promise<void> {
+    return new Promise<void>(resolve => {
+      if (pc.iceGatheringState === 'complete') { resolve(); return }
+      const timeout = setTimeout(resolve, 4000)
+      const check = () => {
+        if (pc.iceGatheringState === 'complete') {
+          clearTimeout(timeout)
+          pc.removeEventListener('icegatheringstatechange', check)
+          resolve()
+        }
+      }
+      pc.addEventListener('icegatheringstatechange', check)
+    })
+  }
+
+  function makePC() {
+    const pc = new RTCPeerConnection({ iceServers: ICE })
+    pc.ontrack = ({ streams }) => {
+      if (remoteVideoRef.current && streams[0]) remoteVideoRef.current.srcObject = streams[0]
+    }
+    pc.onconnectionstatechange = () => {
+      setConnQuality(pc.connectionState)
+      if (pc.connectionState === 'failed') {
+        // Unrecoverable without full renegotiation — end immediately
+        if (reconTimerRef.current) { clearTimeout(reconTimerRef.current); reconTimerRef.current = null }
+        doCleanup()
+      } else if (pc.connectionState === 'disconnected') {
+        // Give WebRTC 8s to self-recover before tearing down
+        reconTimerRef.current = setTimeout(() => {
+          if (pcRef.current?.connectionState !== 'connected') doCleanup()
+        }, 8000)
+      } else if (pc.connectionState === 'connected') {
+        if (reconTimerRef.current) { clearTimeout(reconTimerRef.current); reconTimerRef.current = null }
+      }
+    }
+    pcRef.current = pc
+    return pc
+  }
+
+  async function getMedia() {
+    let stream: MediaStream
+    try { stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }) }
+    catch { stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true }) }
+    localStreamRef.current = stream
+    return stream
+  }
+
+  async function insertCallEvent(text: string) {
+    if (!user) return
+    if (activeCollab?.convId) { await supabase.from('direct_messages').insert({ conversation_id: activeCollab.convId, sender_id: user.id, content: text }); return }
+    if (activeLeader?.convId) { await supabase.from('direct_messages').insert({ conversation_id: activeLeader.convId, sender_id: user.id, content: text }); return }
+    if (activeDm?.convId)     { await supabase.from('direct_messages').insert({ conversation_id: activeDm.convId,    sender_id: user.id, content: text }); return }
+    if (activeGroup)          { await supabase.from('group_messages').insert({ group_id: activeGroup.id,             sender_id: user.id, content: text }); return }
+  }
+
+  async function startCall() {
+    if (!callRoomId || !user) return
+    const peerId = activeDm?.otherId ?? activeCollab?.matchUserId ?? activeLeader?.userId ?? null
+    if (!peerId) return
+    isCallerRef.current = true
+    setCallError(null)
+    try {
+      const stream = await getMedia()
+      setCallState('calling')
+      // Auto-cancel if unanswered after 60s
+      callTimeoutRef.current = setTimeout(() => {
+        if (callStateRef.current === 'calling') {
+          peerChRef.current?.send({ type: 'broadcast', event: 'end', payload: { from: user?.id } })
+          insertCallEvent('📹 Video call — no answer')
+          doCleanup()
+        }
+      }, 60_000)
+      // Subscribe to peer's personal channel so we can send them signals
+      const peerCh = supabase.channel(`user-vc-${peerId}`)
+      peerChRef.current = peerCh
+      await new Promise<void>(res => peerCh.subscribe(s => { if (s === 'SUBSCRIBED') res() }))
+      const pc = makePC()
+      stream.getTracks().forEach(t => pc.addTrack(t, stream))
+      const offer = await pc.createOffer()
+      await pc.setLocalDescription(offer)
+      await waitForIceComplete(pc)
+      const callerName = (user.user_metadata as Record<string, string> | null)?.full_name ?? null
+      await peerCh.send({ type: 'broadcast', event: 'offer', payload: { offer: pc.localDescription, from: user.id, callerName } })
+    } catch (e: unknown) {
+      doCleanup()
+      const msg = e instanceof Error ? e.message : String(e)
+      setCallError(msg.includes('Permission') || msg.includes('NotAllowed') ? 'Camera/microphone access denied. Check your browser permissions.' : `Call failed: ${msg}`)
+    }
+  }
+
+  async function answerCall() {
+    const consumed = consumeIncomingCallRef.current()
+    if (!consumed || !user) return
+    const { data: callData, peerCh } = consumed
+    peerChRef.current = peerCh
+    isCallerRef.current = false
+    setCallError(null)
+    try {
+      const stream = await getMedia()
+      setCallState('active')
+      const pc = makePC()
+      stream.getTracks().forEach(t => pc.addTrack(t, stream))
+      await pc.setRemoteDescription(new RTCSessionDescription(callData.offer))
+      const answer = await pc.createAnswer()
+      await pc.setLocalDescription(answer)
+      await waitForIceComplete(pc)
+      await peerCh.send({ type: 'broadcast', event: 'answer', payload: { answer: pc.localDescription, from: user.id } })
+    } catch (e: unknown) {
+      doCleanup()
+      const msg = e instanceof Error ? e.message : String(e)
+      setCallError(msg.includes('Permission') || msg.includes('NotAllowed') ? 'Camera/microphone access denied.' : `Call failed: ${msg}`)
+    }
+  }
+
+  function rejectCall() {
+    rejectIncomingCall()
+    doCleanup()
+  }
+
+  function endCall() {
+    peerChRef.current?.send({ type: 'broadcast', event: 'end', payload: { from: user?.id } })
+    if (callState === 'active' && callStartRef.current) {
+      const secs = Math.floor((Date.now() - callStartRef.current.getTime()) / 1000)
+      const dur  = secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`
+      insertCallEvent(`📹 Video call ended · ${dur}`)
+    } else if (callState === 'calling') {
+      insertCallEvent('📹 Video call — no answer')
+    }
+    doCleanup()
+  }
+
+  function doCleanup() {
+    if (callTimeoutRef.current) { clearTimeout(callTimeoutRef.current); callTimeoutRef.current = null }
+    if (reconTimerRef.current)  { clearTimeout(reconTimerRef.current);  reconTimerRef.current  = null }
+    pcRef.current?.close(); pcRef.current = null
+    localStreamRef.current?.getTracks().forEach(t => t.stop()); localStreamRef.current = null
+    screenStreamRef.current?.getTracks().forEach(t => t.stop()); screenStreamRef.current = null
+    if (localVideoRef.current)  localVideoRef.current.srcObject  = null
+    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null
+    if (peerChRef.current) { supabase.removeChannel(peerChRef.current); peerChRef.current = null }
+    setCallState('idle'); setMicOn(true); setCamOn(true); setScreenSharing(false); setConnQuality('new')
+  }
+
+  function toggleMic() {
+    const on = !micOn
+    localStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = on }); setMicOn(on)
+  }
+
+  function toggleCam() {
+    const on = !camOn
+    localStreamRef.current?.getVideoTracks().forEach(t => { t.enabled = on }); setCamOn(on)
+  }
+
+  // Stable stop function — safe to use in onended without stale closure risk
+  async function stopScreenShare() {
+    screenStreamRef.current?.getTracks().forEach(t => t.stop())
+    screenStreamRef.current = null
+    const camTrack = localStreamRef.current?.getVideoTracks()[0] ?? null
+    if (camTrack) {
+      camTrack.enabled = camOnRef.current  // restore whatever camera state was before sharing
+      if (pcRef.current) {
+        const sender = pcRef.current.getSenders().find(s => s.track?.kind === 'video')
+        if (sender) await sender.replaceTrack(camTrack)
+      }
+    }
+    if (localVideoRef.current) localVideoRef.current.srcObject = localStreamRef.current
+    setScreenSharing(false)
+  }
+
+  async function toggleScreenShare() {
+    if (screenSharingRef.current) {
+      await stopScreenShare()
+    } else {
+      try {
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
+        screenStreamRef.current = screenStream
+        const screenTrack = screenStream.getVideoTracks()[0]
+        if (pcRef.current) {
+          const sender = pcRef.current.getSenders().find(s => s.track?.kind === 'video')
+          if (sender) await sender.replaceTrack(screenTrack)
+        }
+        if (localVideoRef.current) localVideoRef.current.srcObject = screenStream
+        setScreenSharing(true)
+        // Use stopScreenShare (not toggleScreenShare) so onended never has a stale closure
+        screenTrack.onended = stopScreenShare
+      } catch {
+        // User cancelled or permission denied — do nothing
+      }
+    }
+  }
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -922,7 +1420,7 @@ export default function MessagesPage() {
                 <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
                   {activeGroup ? activeGroup.name : (activeProfile?.full_name ?? 'User')}
                   {!activeGroup && activeProfile && (() => {
-                    const uid = activeCollab?.matchUserId ?? activeTrade?.otherUserId ?? activeLeader?.userId ?? ''
+                    const uid = activeCollab?.matchUserId ?? activeTrade?.otherUserId ?? activeLeader?.userId ?? activeDm?.otherId ?? ''
                     const st = getStatus(uid, connectedSet, statusMap, activeProfile.last_seen_at)
                     return <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 500, color: STATUS_COLOR[st] }}><StatusDot userId={uid} lastSeenAt={activeProfile.last_seen_at} connectedSet={connectedSet} statusMap={statusMap} size={8} />{STATUS_LABEL[st]}</span>
                   })()}
@@ -935,13 +1433,27 @@ export default function MessagesPage() {
                 {activeCollab && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--accent)', background: 'rgba(138,21,56,0.15)', border: '1px solid rgba(138,21,56,0.25)', borderRadius: 6, padding: '2px 8px', display: 'flex', alignItems: 'center', gap: 5 }}><IcHandshake size={11} /> Collaborator</span>{activeCollab.projectTitle && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{activeCollab.projectTitle}</span>}</div>}
                 {activeTrade && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 10.5, fontWeight: 700, color: '#4ade80', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 6, padding: '2px 8px', display: 'flex', alignItems: 'center', gap: 5 }}><IcZap size={11} /> {activeTrade.skillOffered}</span><span style={{ fontSize: 11, color: 'var(--text-muted)', opacity: 0.5 }}>→</span><span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{activeTrade.skillWanted}</span>{activeTrade.status === 'completed' && <span style={{ fontSize: 9.5, fontWeight: 700, color: '#a5b4fc', background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.22)', borderRadius: 6, padding: '2px 7px' }}>COMPLETED</span>}</div>}
                 {activeLeader && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 10.5, fontWeight: 700, color: activeLeader.role === 'president' ? 'var(--gold)' : activeLeader.customRole ? 'var(--accent)' : 'var(--text-muted)', background: activeLeader.role === 'president' || activeLeader.customRole ? 'rgba(138,21,56,0.12)' : 'rgba(255,255,255,0.05)', border: `1px solid ${activeLeader.role === 'president' || activeLeader.customRole ? 'rgba(138,21,56,0.2)' : 'rgba(255,255,255,0.08)'}`, borderRadius: 6, padding: '2px 8px', display: 'flex', alignItems: 'center', gap: 5 }}>{activeLeader.role === 'president' ? <IcCrown size={11} /> : activeLeader.customRole ? <IcStar size={11} /> : null}{activeLeader.role === 'president' ? 'President' : activeLeader.customRole ?? 'Member'}</span><span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{activeLeader.clubName}</span></div>}
+                {activeDm && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--accent)', background: 'rgba(138,21,56,0.12)', border: '1px solid rgba(138,21,56,0.22)', borderRadius: 6, padding: '2px 8px' }}>Direct Message</span>{activeDm.otherUsername && <span style={{ fontSize: 11, color: 'var(--text-muted)', opacity: 0.7 }}>@{activeDm.otherUsername}</span>}</div>}
               </div>
 
-              {!activeGroup && (
-                <button onClick={() => navigate(`/profile/${activeProfile?.id}`)} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 9, padding: '7px 14px', color: 'var(--text-muted)', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }} onMouseEnter={e => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.09)' }} onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}>
-                  View Profile
-                </button>
-              )}
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                {/* Video Call button — groups not supported */}
+                {callRoomId && !activeGroup && (
+                  <button
+                    onClick={startCall}
+                    title="Start video call"
+                    className="vc-btn"
+                    style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.28)', color: '#4ade80', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .18s' }}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+                  </button>
+                )}
+                {!activeGroup && (
+                  <button onClick={() => navigate(`/profile/${activeProfile?.id}`)} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 9, padding: '7px 14px', color: 'var(--text-muted)', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }} onMouseEnter={e => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.09)' }} onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}>
+                    View Profile
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Messages area */}
@@ -971,11 +1483,27 @@ export default function MessagesPage() {
                         els.push(<div key={`sep-${msg.id}`} style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '20px 0 12px' }}><div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} /><span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.05em', padding: '2px 10px', background: 'rgba(255,255,255,0.04)', borderRadius: 9999, border: '1px solid rgba(255,255,255,0.06)' }}>{msgDate}</span><div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} /></div>)
                       }
 
+                      // Call event messages render as centered pills
+                      if (msg.content.startsWith('📹')) {
+                        els.push(
+                          <div key={msg.id} style={{ display: 'flex', justifyContent: 'center', margin: '10px 0', animation: 'mp-msg-in 0.22s ease both' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 14px', background: 'rgba(74,222,128,0.07)', border: '1px solid rgba(74,222,128,0.18)', borderRadius: 9999, fontSize: 12, color: 'rgba(74,222,128,0.85)', fontWeight: 500 }}>
+                              {msg.content}
+                              <span style={{ fontSize: 10, opacity: 0.5, marginLeft: 2 }}>{new Date(msg.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</span>
+                            </div>
+                          </div>
+                        )
+                        return
+                      }
+
                       // For group messages, show sender info when not mine
                       const senderProfile = activeGroup && !isMine ? ('profile' in msg ? msg.profile : null) : null
 
+                      const reactions = msg.reactions ?? {}
+                      const reactionEntries = Object.entries(reactions).filter(([, ids]) => ids.length > 0)
+                      const pickerOpen = pickerState?.msgId === msg.id
                       els.push(
-                        <div key={msg.id} style={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start', alignItems: 'flex-end', gap: 8, marginBottom: sameAsNext ? 3 : 12, animation: isOpt ? 'mp-msg-in 0.2s ease both' : 'mp-msg-in 0.22s cubic-bezier(0.22,1,0.36,1) both' }}>
+                        <div key={msg.id} style={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start', alignItems: 'flex-end', gap: 8, marginBottom: sameAsNext && reactionEntries.length === 0 ? 3 : 12, animation: isOpt ? 'mp-msg-in 0.2s ease both' : 'mp-msg-in 0.22s cubic-bezier(0.22,1,0.36,1) both', position: 'relative' }}>
                           {!isMine && (
                             <div style={{ width: 28, flexShrink: 0, marginBottom: 2 }}>
                               {!sameAsNext && (senderProfile ? <Av url={(senderProfile as any).avatar_url ?? null} name={senderProfile.full_name} size={28} /> : <Av url={activeProfile?.avatar_url} name={activeProfile?.full_name} size={28} />)}
@@ -983,9 +1511,32 @@ export default function MessagesPage() {
                           )}
                           <div style={{ maxWidth: '68%', display: 'flex', flexDirection: 'column', alignItems: isMine ? 'flex-end' : 'flex-start', gap: 2 }}>
                             {!isMine && !sameAsPrev && <span style={{ fontSize: 10.5, color: 'var(--text-muted)', paddingLeft: 6, marginBottom: 2, fontWeight: 500 }}>{senderProfile?.full_name?.split(' ')[0] ?? activeProfile?.full_name?.split(' ')[0] ?? 'User'}</span>}
-                            <div className="msg-bubble" style={{ padding: '10px 14px', wordBreak: 'break-word', whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.55, background: isMine ? 'linear-gradient(135deg, var(--accent) 0%, #c42057 100%)' : 'rgba(255,255,255,0.07)', color: isMine ? '#fff' : 'var(--text-primary)', border: isMine ? 'none' : '1px solid rgba(255,255,255,0.08)', borderRadius: isMine ? (sameAsPrev && sameAsNext ? '20px 6px 6px 20px' : sameAsPrev ? '20px 6px 20px 20px' : sameAsNext ? '20px 20px 6px 20px' : '20px 6px 20px 20px') : (sameAsPrev && sameAsNext ? '6px 20px 20px 6px' : sameAsPrev ? '6px 20px 20px 20px' : sameAsNext ? '20px 20px 20px 6px' : '6px 20px 20px 20px'), boxShadow: isMine ? '0 4px 16px rgba(138,21,56,0.3)' : '0 2px 8px rgba(0,0,0,0.2)', opacity: isOpt ? 0.75 : 1 }}>
-                              {msg.content}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexDirection: isMine ? 'row-reverse' : 'row' }}>
+                              <div className="msg-bubble" style={{ padding: '10px 14px', wordBreak: 'break-word', whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.55, background: isMine ? 'linear-gradient(135deg, var(--accent) 0%, #c42057 100%)' : 'rgba(255,255,255,0.07)', color: isMine ? '#fff' : 'var(--text-primary)', border: isMine ? 'none' : '1px solid rgba(255,255,255,0.08)', borderRadius: isMine ? (sameAsPrev && sameAsNext ? '20px 6px 6px 20px' : sameAsPrev ? '20px 6px 20px 20px' : sameAsNext ? '20px 20px 6px 20px' : '20px 6px 20px 20px') : (sameAsPrev && sameAsNext ? '6px 20px 20px 6px' : sameAsPrev ? '6px 20px 20px 20px' : sameAsNext ? '20px 20px 20px 6px' : '6px 20px 20px 20px'), boxShadow: isMine ? '0 4px 16px rgba(138,21,56,0.3)' : '0 2px 8px rgba(0,0,0,0.2)', opacity: isOpt ? 0.75 : 1 }}>
+                                {msg.content}
+                              </div>
+                              {!isOpt && (
+                                <div style={{ position: 'relative', flexShrink: 0 }}>
+                                  <button
+                                    onClick={e => { e.stopPropagation(); if (pickerOpen) { setPickerState(null) } else { const top = (e.currentTarget as HTMLElement).getBoundingClientRect().top; setPickerState({ msgId: msg.id, openUpward: top > 360 }) } }}
+                                    style={{ width: 26, height: 26, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.12)', background: pickerOpen ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.06)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: 'rgba(255,255,255,0.5)', transition: 'background .15s, color .15s' }}
+                                    title="React"
+                                  >☺</button>
+                                  {pickerOpen && (
+                                    <EmojiPicker isMine={isMine} openUpward={pickerState!.openUpward} onSelect={emoji => { toggleReaction(msg.id, emoji); setPickerState(null) }} />
+                                  )}
+                                </div>
+                              )}
                             </div>
+                            {reactionEntries.length > 0 && (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4, paddingInline: 2 }}>
+                                {reactionEntries.map(([emoji, ids]) => (
+                                  <button key={emoji} onClick={e => { e.stopPropagation(); toggleReaction(msg.id, emoji) }} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 9999, background: ids.includes(user?.id ?? '') ? 'rgba(138,21,56,0.25)' : 'rgba(255,255,255,0.07)', border: `1px solid ${ids.includes(user?.id ?? '') ? 'rgba(192,37,90,0.4)' : 'rgba(255,255,255,0.1)'}`, cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)', transition: 'background .15s' }}>
+                                    <span>{emoji}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                             {showTime && <span style={{ fontSize: 10, color: 'var(--text-muted)', paddingInline: 6, opacity: 0.6, marginTop: 1 }}>{new Date(msg.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}{isMine && <span style={{ marginLeft: 3, opacity: 0.8 }}>{isOpt ? '·' : '✓'}</span>}</span>}
                           </div>
                         </div>
@@ -1015,6 +1566,81 @@ export default function MessagesPage() {
           </>
         )}
       </div>
+
+      {/* ── Call error toast ── */}
+      {callError && (
+        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 10000, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 12, padding: '12px 18px', color: '#f87171', fontSize: 13, fontWeight: 500, backdropFilter: 'blur(16px)', boxShadow: '0 4px 24px rgba(0,0,0,0.5)', animation: 'vc-fade .2s ease both', display: 'flex', alignItems: 'center', gap: 10, maxWidth: 380 }}>
+          <span style={{ flexShrink: 0 }}>⚠</span>
+          <span>{callError}</span>
+          <button onClick={() => setCallError(null)} style={{ marginLeft: 4, background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: 14, opacity: 0.6, padding: 0 }}>✕</button>
+        </div>
+      )}
+
+      {/* ── Active / Calling call overlay ── */}
+      {(callState === 'calling' || callState === 'active') && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', flexDirection: 'column', background: '#0a0a0a', animation: 'vc-fade .22s ease both' }}>
+
+          {/* Remote video (full bg) */}
+          <video ref={remoteVideoRef} autoPlay playsInline style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', background: '#0a0a0a' }} />
+
+          {/* Calling state placeholder (shown until remote connects) */}
+          {callState === 'calling' && (
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'radial-gradient(ellipse at 50% 40%, rgba(20,40,20,0.97) 0%, rgba(8,4,7,0.99) 100%)', zIndex: 1 }}>
+              <div style={{ position: 'relative', marginBottom: 32 }}>
+                <div className="vc-ring" style={{ animationDelay: '0s' }} />
+                <div className="vc-ring" style={{ animationDelay: '.5s' }} />
+                <div className="vc-ring" style={{ animationDelay: '1s' }} />
+                <div style={{ position: 'relative', zIndex: 2, width: 96, height: 96, borderRadius: '50%', background: 'linear-gradient(135deg,#166534,#15803d)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, fontWeight: 900, color: '#fff', border: '3px solid rgba(74,222,128,0.4)', boxShadow: '0 0 40px rgba(34,197,94,0.2)' }}>
+                  {(activeProfile?.full_name ?? activeGroup?.name ?? '?').split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase()}
+                </div>
+              </div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#fff', marginBottom: 10 }}>{activeProfile?.full_name ?? activeGroup?.name ?? 'Video Call'}</div>
+              <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.4)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="vc-dot" /><span className="vc-dot" style={{ animationDelay: '.3s' }} /><span className="vc-dot" style={{ animationDelay: '.6s' }} />
+                <span>Calling…</span>
+              </div>
+            </div>
+          )}
+
+          {/* Local video PiP */}
+          <video ref={localVideoRef} autoPlay playsInline muted style={{ position: 'absolute', bottom: 90, right: 20, width: 160, height: 90, borderRadius: 12, objectFit: 'cover', border: `2px solid ${screenSharing ? 'rgba(74,222,128,0.5)' : 'rgba(255,255,255,0.15)'}`, boxShadow: '0 4px 24px rgba(0,0,0,0.6)', zIndex: 10, background: '#111', display: (camOn || screenSharing) ? 'block' : 'none' }} />
+
+          {/* Top bar */}
+          <div style={{ position: 'relative', zIndex: 11, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', background: 'linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, transparent 100%)', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {callState === 'active' && <div style={{ width: 7, height: 7, borderRadius: '50%', background: connQuality === 'disconnected' ? '#fbbf24' : '#4ade80', boxShadow: connQuality === 'disconnected' ? '0 0 8px rgba(251,191,36,0.8)' : '0 0 8px rgba(74,222,128,0.8)', animation: 'vc-pulse 2s ease-in-out infinite' }} />}
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.8)' }}>{activeProfile?.full_name ?? activeGroup?.name ?? 'Video Call'}</span>
+              {callState === 'active' && (
+                connQuality === 'disconnected'
+                  ? <span style={{ fontSize: 10.5, color: 'rgba(251,191,36,0.9)', background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.3)', borderRadius: 9999, padding: '1px 7px' }}>Reconnecting…</span>
+                  : <span style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.5)', background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.25)', borderRadius: 9999, padding: '1px 7px' }}>Live</span>
+              )}
+            </div>
+          </div>
+
+          {/* Bottom controls */}
+          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '20px 0 28px', background: 'linear-gradient(to top, rgba(0,0,0,0.75) 0%, transparent 100%)' }}>
+            <button onClick={toggleMic} title={micOn ? 'Mute' : 'Unmute'} style={{ width: 52, height: 52, borderRadius: '50%', background: micOn ? 'rgba(255,255,255,0.15)' : 'rgba(239,68,68,0.25)', border: `1.5px solid ${micOn ? 'rgba(255,255,255,0.2)' : 'rgba(239,68,68,0.5)'}`, color: micOn ? '#fff' : '#f87171', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)', transition: 'all .18s' }}>
+              {micOn
+                ? <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+                : <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z"/></svg>
+              }
+            </button>
+            <button onClick={toggleScreenShare} title={screenSharing ? 'Stop sharing' : 'Share screen'} style={{ width: 52, height: 52, borderRadius: '50%', background: screenSharing ? 'rgba(74,222,128,0.2)' : 'rgba(255,255,255,0.15)', border: `1.5px solid ${screenSharing ? 'rgba(74,222,128,0.6)' : 'rgba(255,255,255,0.2)'}`, color: screenSharing ? '#4ade80' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)', transition: 'all .18s' }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M20 18c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6zm8 9l-4-4h3V8h2v3h3l-4 4z"/></svg>
+            </button>
+            <button onClick={endCall} title="End call" style={{ width: 60, height: 60, borderRadius: '50%', background: 'linear-gradient(135deg,#dc2626,#ef4444)', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 28px rgba(239,68,68,0.55)', transition: 'all .18s' }} onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.08)' }} onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style={{ transform: 'rotate(135deg)' }}><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg>
+            </button>
+            <button onClick={toggleCam} title={camOn ? 'Camera off' : 'Camera on'} style={{ width: 52, height: 52, borderRadius: '50%', background: camOn ? 'rgba(255,255,255,0.15)' : 'rgba(239,68,68,0.25)', border: `1.5px solid ${camOn ? 'rgba(255,255,255,0.2)' : 'rgba(239,68,68,0.5)'}`, color: camOn ? '#fff' : '#f87171', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)', transition: 'all .18s' }}>
+              {camOn
+                ? <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+                : <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M21 6.5l-4-4-9.28 9.28-1.23 1.23L2 18.5V21h2.5l4.78-4.78 1.22-1.22L21 6.5zM3.5 19l1-1L19 3.5l1 1-16.5 16.5-1-1z"/><path d="M17 10.5V7c0-.55-.45-1-1-1h-3L9 10h5v3.5l4-3.5 2 2V7l-3 3.5z"/></svg>
+              }
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

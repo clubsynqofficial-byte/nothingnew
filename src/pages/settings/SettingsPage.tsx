@@ -179,13 +179,15 @@ function ProfileTab({ addToast }: { addToast: (msg: string, type?: 'success' | '
   const [name,         setName]         = useState(profile?.full_name ?? '')
   const [username,     setUsername]     = useState(profile?.username ?? '')
   const [usernameErr,  setUsernameErr]  = useState('')
+  const [uStatus, setUStatus] = useState<'idle' | 'checking' | 'available' | 'taken' | 'invalid'>('idle')
   const [bio,          setBio]          = useState(profile?.bio ?? '')
   const [school,       setSchool]       = useState(profile?.school ?? '')
   const [skills,       setSkills]       = useState<string[]>(profile?.skills ?? [])
   const [skillInput,   setSkillInput]   = useState('')
   const [saving,       setSaving]       = useState(false)
   const [avLoading,    setAvLoading]    = useState(false)
-  const fileRef = useRef<HTMLInputElement>(null)
+  const fileRef     = useRef<HTMLInputElement>(null)
+  const uDebounce   = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (!profile) return
@@ -195,6 +197,19 @@ function ProfileTab({ addToast }: { addToast: (msg: string, type?: 'success' | '
     setSchool(profile.school ?? '')
     setSkills(profile.skills ?? [])
   }, [profile?.id])
+
+  useEffect(() => {
+    const uname = username.trim().toLowerCase()
+    if (!uname || uname === (profile?.username ?? '')) { setUStatus('idle'); return }
+    if (!/^[a-z0-9_]{3,20}$/.test(uname)) { setUStatus('invalid'); return }
+    setUStatus('checking')
+    if (uDebounce.current) clearTimeout(uDebounce.current)
+    uDebounce.current = setTimeout(async () => {
+      const { data } = await supabase.from('profiles').select('id').eq('username', uname).neq('id', user?.id ?? '').maybeSingle()
+      setUStatus(data ? 'taken' : 'available')
+    }, 450)
+    return () => { if (uDebounce.current) clearTimeout(uDebounce.current) }
+  }, [username])
 
   function addSkill() {
     const s = skillInput.trim()
@@ -213,6 +228,8 @@ function ProfileTab({ addToast }: { addToast: (msg: string, type?: 'success' | '
       setUsernameErr('3–20 chars, letters, numbers, underscores only')
       return
     }
+    if (uStatus === 'taken') { setUsernameErr('That username is already taken.'); return }
+    if (uStatus === 'checking') { setUsernameErr('Still checking availability — please wait.'); return }
     setSaving(true)
     const { error } = await supabase.from('profiles').update({
       full_name: name.trim() || null,
@@ -297,11 +314,25 @@ function ProfileTab({ addToast }: { addToast: (msg: string, type?: 'success' | '
         <Field label="Username" hint="3–20 chars · letters, numbers, underscores · used to @mention you">
           <div style={{ position: 'relative' }}>
             <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,.3)', fontSize: 14, pointerEvents: 'none' }}>@</span>
-            <input className="st-input" style={{ ...inputStyle, paddingLeft: 28, borderColor: usernameErr ? 'rgba(239,68,68,.5)' : undefined }}
-              value={username} onChange={e => { setUsername(e.target.value.toLowerCase()); setUsernameErr('') }}
+            <input className="st-input" style={{ ...inputStyle, paddingLeft: 28, paddingRight: uStatus !== 'idle' ? 110 : 14,
+              borderColor: usernameErr || uStatus === 'taken' || uStatus === 'invalid' ? 'rgba(239,68,68,.5)' : uStatus === 'available' ? 'rgba(34,197,94,.45)' : undefined }}
+              value={username} onChange={e => { setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '')); setUsernameErr('') }}
               placeholder="yourname" maxLength={20} />
+            {uStatus !== 'idle' && (
+              <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap', pointerEvents: 'none',
+                color: uStatus === 'available' ? '#22c55e' : uStatus === 'taken' ? '#ef4444' : uStatus === 'invalid' ? '#f97316' : 'rgba(255,255,255,.35)' }}>
+                {uStatus === 'checking'  ? 'Checking…'
+                : uStatus === 'available' ? '✓ Available'
+                : uStatus === 'taken'     ? '✗ Already taken'
+                : '3–20 chars only'}
+              </span>
+            )}
           </div>
-          {usernameErr && <div style={{ fontSize: 11.5, color: '#f87171', marginTop: 5 }}>{usernameErr}</div>}
+          {(usernameErr || uStatus === 'taken' || uStatus === 'invalid') && (
+            <div style={{ fontSize: 11.5, color: '#f87171', marginTop: 5 }}>
+              {usernameErr || (uStatus === 'taken' ? 'That username is already taken.' : '3–20 chars, letters, numbers, underscores only')}
+            </div>
+          )}
         </Field>
 
         <Field label="School / Faculty" hint="Your department or faculty within your university.">

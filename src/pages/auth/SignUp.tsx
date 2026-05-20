@@ -1,30 +1,59 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useState, useEffect, useRef, type FormEvent, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import AuthLayout from './AuthLayout'
 
+const USERNAME_RE = /^[a-z0-9_]{3,20}$/
+
 export default function SignUp() {
   const navigate = useNavigate()
-  const [fullName, setFullName] = useState('')
-  const [school, setSchool]     = useState('')
-  const [email, setEmail]       = useState('')
-  const [password, setPassword] = useState('')
-  const [showPw, setShowPw]     = useState(false)
-  const [loading, setLoading]       = useState(false)
-  const [googleLoading, setGLoading] = useState(false)
-  const [error, setError]           = useState('')
-  const [success, setSuccess]       = useState(false)
+  const [fullName, setFullName]   = useState('')
+  const [username, setUsername]   = useState('')
+  const [school, setSchool]       = useState('')
+  const [email, setEmail]         = useState('')
+  const [password, setPassword]   = useState('')
+  const [showPw, setShowPw]       = useState(false)
+  const [loading, setLoading]         = useState(false)
+  const [googleLoading, setGLoading]  = useState(false)
+  const [error, setError]             = useState('')
+  const [success, setSuccess]         = useState(false)
+
+  // username availability
+  const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken' | 'invalid'>('idle')
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (!username) { setUsernameStatus('idle'); return }
+    if (!USERNAME_RE.test(username)) { setUsernameStatus('invalid'); return }
+    setUsernameStatus('checking')
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(async () => {
+      const { data } = await supabase.from('profiles').select('id').eq('username', username).maybeSingle()
+      setUsernameStatus(data ? 'taken' : 'available')
+    }, 450)
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+  }, [username])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
+    if (!USERNAME_RE.test(username)) { setError('Username must be 3–20 characters: letters, numbers, underscores only.'); return }
+    if (usernameStatus === 'taken') { setError('That username is already taken.'); return }
+    if (usernameStatus === 'checking') { setError('Still checking username availability — please wait a moment.'); return }
     setLoading(true)
     const { data, error: signUpError } = await supabase.auth.signUp({
       email, password,
       options: { data: { full_name: fullName } },
     })
     if (signUpError) { setError(signUpError.message); setLoading(false); return }
-    if (data.user && school) await supabase.from('profiles').update({ school }).eq('id', data.user.id)
+    if (data.user) {
+      const updates: Record<string, string> = {}
+      if (school)    updates.school   = school
+      if (username)  updates.username = username
+      if (Object.keys(updates).length) {
+        await supabase.from('profiles').update(updates).eq('id', data.user.id)
+      }
+    }
     setSuccess(true)
     setLoading(false)
   }
@@ -54,6 +83,14 @@ export default function SignUp() {
     )
   }
 
+  const uStatus = usernameStatus
+  const uColor  = uStatus === 'available' ? '#22c55e' : uStatus === 'taken' ? '#ef4444' : uStatus === 'invalid' ? '#f97316' : 'rgba(243,221,223,.18)'
+  const uMsg    = uStatus === 'available' ? '✓ Available'
+                : uStatus === 'taken'     ? '✗ Already taken'
+                : uStatus === 'invalid'   ? '3–20 chars, letters/numbers/underscore only'
+                : uStatus === 'checking'  ? 'Checking…'
+                : ''
+
   return (
     <AuthLayout>
       <h2 style={{ fontSize:22, fontWeight:900, color:'#f3dddf', marginBottom:5, letterSpacing:'-.5px' }}>Create your account</h2>
@@ -79,6 +116,31 @@ export default function SignUp() {
           </Field>
         </div>
 
+        <Field label="Username">
+          <div style={{ position:'relative' }}>
+            <span style={{ position:'absolute', left:14, top:'50%', transform:'translateY(-50%)', fontSize:14, color:'rgba(243,221,223,.4)', pointerEvents:'none', userSelect:'none' }}>@</span>
+            <input
+              type="text"
+              required
+              autoComplete="username"
+              placeholder="your_handle"
+              value={username}
+              onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+              maxLength={20}
+              className="auth-input"
+              style={{ paddingLeft:30, paddingRight: uStatus !== 'idle' ? 90 : 14, borderColor: uStatus === 'available' ? 'rgba(34,197,94,.45)' : uStatus === 'taken' || uStatus === 'invalid' ? 'rgba(239,68,68,.4)' : undefined }}
+            />
+            {uMsg && (
+              <span style={{ position:'absolute', right:12, top:'50%', transform:'translateY(-50%)', fontSize:10.5, fontWeight:700, color: uColor, whiteSpace:'nowrap', pointerEvents:'none' }}>
+                {uStatus === 'checking' ? <span style={{ opacity:.6 }}>Checking…</span> : uMsg}
+              </span>
+            )}
+          </div>
+          <div style={{ marginTop:5, fontSize:10.5, color: uColor, minHeight:14, transition:'color .2s' }}>
+            {uMsg && uStatus !== 'idle' && uStatus !== 'checking' ? uMsg : <span style={{ color:'rgba(243,221,223,.2)' }}>Only letters, numbers, and underscores · 3–20 chars</span>}
+          </div>
+        </Field>
+
         <Field label="Email">
           <input type="email" required autoComplete="email" placeholder="you@university.edu"
             value={email} onChange={e => setEmail(e.target.value)} className="auth-input" />
@@ -95,7 +157,12 @@ export default function SignUp() {
 
         {error && <ErrorBox message={error} />}
 
-        <button type="submit" disabled={loading} className="auth-btn" style={{ marginTop:4 }}>
+        <button
+          type="submit"
+          disabled={loading || usernameStatus === 'taken' || usernameStatus === 'checking'}
+          className="auth-btn"
+          style={{ marginTop:4, opacity: (loading || usernameStatus === 'taken' || usernameStatus === 'checking') ? .65 : 1 }}
+        >
           {loading ? 'Creating account…' : 'Create Free Account →'}
         </button>
 

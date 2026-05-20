@@ -77,9 +77,9 @@ const NAV_ITEMS = [
   { path: '/discovery', label: 'Discovery' },
   { path: '/events', label: 'Events' },
   { path: '/positions', label: 'Positions' },
-  { path: '/leadership', label: 'Leadership' },
-  { path: '/collaboration', label: 'Collaboration' },
-  { path: '/talent', label: 'Talent' },
+  { path: '/leadership', label: 'Your Clubs' },
+  { path: '/collaboration', label: 'Skill Souq' },
+  { path: '/talent', label: 'Co-Founder Match' },
   { path: '/clubs', label: 'Clubs' },
   { path: '/messages', label: 'Messages' },
 ]

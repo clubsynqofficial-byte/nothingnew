@@ -51,6 +51,7 @@ interface ReplyRow {
 interface AnnouncementRow {
   id: string; club_id: string; user_id: string
   content: string | null; image_url: string | null; created_at: string
+  pinned: boolean
   profile?: { full_name: string | null } | null
 }
 
@@ -192,6 +193,7 @@ export default function ClubProfilePage() {
       supabase.from('club_announcements')
         .select('*,profile:profiles(full_name)')
         .eq('club_id', clubId)
+        .order('pinned', { ascending: false })
         .order('created_at', { ascending: false }),
     ])
     setClub(cd ?? null)
@@ -525,7 +527,7 @@ export default function ClubProfilePage() {
                 {filteredRegular.length > 0 && (
                   <section>
                     <SectionLabel>Members · {filteredRegular.length}</SectionLabel>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 260px), 1fr))', gap: 10 }}>
                       {filteredRegular.map((m, i) => <MemberCard key={m.id} member={m} index={i} />)}
                     </div>
                   </section>
@@ -1046,6 +1048,15 @@ function AnnouncementsSection({
   const [posting,  setPosting]     = useState(false)
   const [postError, setPostError]  = useState('')
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
+  const [pinning, setPinning] = useState<string | null>(null)
+
+  const togglePin = async (ann: AnnouncementRow) => {
+    if (pinning) return
+    setPinning(ann.id)
+    await supabase.from('club_announcements').update({ pinned: !ann.pinned }).eq('id', ann.id)
+    setPinning(null)
+    onRefresh()
+  }
 
   const handlePost = async () => {
     if (!user || !content.trim() || posting) return
@@ -1167,12 +1178,20 @@ function AnnouncementsSection({
             const roleLabel = getRoleLabel(ann.user_id)
             return (
               <div key={ann.id} style={{
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px solid rgba(255,255,255,0.07)',
-                borderLeft: `3px solid ${rs.color}`,
+                background: ann.pinned ? 'rgba(230,175,50,0.04)' : 'rgba(255,255,255,0.03)',
+                border: ann.pinned ? '1px solid rgba(230,175,50,0.22)' : '1px solid rgba(255,255,255,0.07)',
+                borderLeft: `3px solid ${ann.pinned ? '#e6af32' : rs.color}`,
                 borderRadius: 14, padding: '18px 20px',
                 animation: `cp-up 0.4s cubic-bezier(0.22,1,0.36,1) ${i * 0.05}s both`,
+                position: 'relative',
               }}>
+                {/* Pinned badge */}
+                {ann.pinned && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 10, fontSize: 10.5, fontWeight: 700, color: '#e6af32', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>
+                    Pinned
+                  </div>
+                )}
                 {/* Author row */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
                   <Avatar name={ann.profile?.full_name} size={34} />
@@ -1191,6 +1210,27 @@ function AnnouncementsSection({
                   }}>
                     {roleLabel.toUpperCase()}
                   </span>
+                  {/* Pin / Unpin button — admins only */}
+                  {canPost && (
+                    <button
+                      onClick={() => togglePin(ann)}
+                      disabled={pinning === ann.id}
+                      title={ann.pinned ? 'Unpin' : 'Pin to top'}
+                      style={{
+                        background: ann.pinned ? 'rgba(230,175,50,0.15)' : 'rgba(255,255,255,0.05)',
+                        border: `1px solid ${ann.pinned ? 'rgba(230,175,50,0.35)' : 'rgba(255,255,255,0.1)'}`,
+                        borderRadius: 8, padding: '5px 8px', cursor: 'pointer',
+                        color: ann.pinned ? '#e6af32' : 'var(--text-muted)',
+                        display: 'flex', alignItems: 'center', gap: 4,
+                        fontSize: 11, fontWeight: 600, transition: 'all 0.15s',
+                        opacity: pinning === ann.id ? 0.5 : 1,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>
+                      {ann.pinned ? 'Unpin' : 'Pin'}
+                    </button>
+                  )}
                 </div>
                 {/* Content */}
                 {ann.content && (

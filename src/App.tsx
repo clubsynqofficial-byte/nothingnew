@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { PresenceProvider } from './contexts/PresenceContext'
 import AppLayout from './components/layout/AppLayout'
@@ -30,6 +30,41 @@ function RootRoute() {
   return <LandingPage />
 }
 
+function IncomingCallToast() {
+  const { incomingCall, rejectIncomingCall } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
+  if (!incomingCall) return null
+  const initials = (incomingCall.callerName ?? '?').split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase()
+  function handleAccept() {
+    if (location.pathname !== '/messages') navigate('/messages', { state: { autoAnswer: true } })
+    else window.dispatchEvent(new CustomEvent('vc:user-accept'))
+  }
+  return (
+    <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 99999, background: 'rgba(14,8,11,0.97)', border: '1px solid rgba(74,222,128,0.35)', borderRadius: 18, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14, boxShadow: '0 8px 40px rgba(0,0,0,0.7)', backdropFilter: 'blur(20px)', minWidth: 280, animation: 'vc-fade .25s ease both' }}>
+      <style>{`@keyframes vc-fade{from{opacity:0}to{opacity:1}} @keyframes vc-pulse{0%,100%{opacity:1;box-shadow:0 0 8px rgba(74,222,128,.8)}50%{opacity:.5;box-shadow:0 0 18px rgba(74,222,128,.4)}} @keyframes vc-dot{0%,80%,100%{transform:scale(.6);opacity:.3}40%{transform:scale(1);opacity:1}}`}</style>
+      <div style={{ width: 46, height: 46, borderRadius: '50%', background: 'linear-gradient(135deg,#166534,#15803d)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 900, color: '#fff', flexShrink: 0, animation: 'vc-pulse 1.5s ease-in-out infinite' }}>{initials}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13.5, fontWeight: 700, color: '#fff', marginBottom: 3 }}>{incomingCall.callerName ?? 'Someone'}</div>
+        <div style={{ fontSize: 11.5, color: 'rgba(74,222,128,0.8)', display: 'flex', alignItems: 'center', gap: 5 }}>
+          <span style={{ display:'inline-block', width:6, height:6, borderRadius:'50%', background:'rgba(74,222,128,.6)', animation:'vc-dot 1.4s ease-in-out infinite' }} />
+          <span style={{ display:'inline-block', width:6, height:6, borderRadius:'50%', background:'rgba(74,222,128,.6)', animation:'vc-dot 1.4s ease-in-out infinite', animationDelay:'.3s' }} />
+          <span style={{ display:'inline-block', width:6, height:6, borderRadius:'50%', background:'rgba(74,222,128,.6)', animation:'vc-dot 1.4s ease-in-out infinite', animationDelay:'.6s' }} />
+          <span>Incoming video call</span>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+        <button onClick={rejectIncomingCall} title="Decline" style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(239,68,68,0.18)', border: '1px solid rgba(239,68,68,0.4)', color: '#f87171', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style={{ transform: 'rotate(135deg)' }}><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg>
+        </button>
+        <button onClick={handleAccept} title="Accept" style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg,#16a34a,#22c55e)', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 16px rgba(34,197,94,0.5)' }}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { session, loading, profile } = useAuth()
   const [dismissed, setDismissed] = useState(false)
@@ -39,6 +74,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return (
     <AppLayout>
       {showOnboarding && <OnboardingModal onDone={() => setDismissed(true)} />}
+      <IncomingCallToast />
       {children}
     </AppLayout>
   )

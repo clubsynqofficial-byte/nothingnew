@@ -2466,7 +2466,7 @@ function ExistingMemberRow({
               return (
                 <div key={group}>
                   <div style={{ fontSize: 9, fontWeight: 800, color: 'rgba(255,255,255,.22)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 8 }}>{group}</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(190px,1fr))', gap: 7 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%, 190px),1fr))', gap: 7 }}>
                     {groupPrivs.map(p => {
                       const active = perms.includes(p.key)
                       return (

@@ -154,6 +154,14 @@ export default function ProfilePage() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [avatarError, setAvatarError]         = useState('')
 
+  const bannerInputRef = useRef<HTMLInputElement>(null)
+  const [uploadingBanner, setUploadingBanner] = useState(false)
+  const [bannerError, setBannerError]         = useState('')
+  const [bannerPosition, setBannerPosition]   = useState(50)
+  const [bannerZoom, setBannerZoom]           = useState(1.0)
+  const [adjustingBanner, setAdjustingBanner] = useState(false)
+  const [savingPosition, setSavingPosition]   = useState(false)
+
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [tab, setTab] = useState<'clubs' | 'listings' | 'reviews' | 'posts'>('posts')
 
@@ -161,7 +169,7 @@ export default function ProfilePage() {
   type MsgReqStatus = 'none' | 'sent' | 'received' | 'accepted'
   const [msgStatus,  setMsgStatus]  = useState<MsgReqStatus>('none')
   const [msgReqId,   setMsgReqId]   = useState<string | null>(null)
-  const [_convId,    setConvId]     = useState<string | null>(null)
+  const [convId,     setConvId]     = useState<string | null>(null)
   const [msgLoading, setMsgLoading] = useState(false)
   const [profilePosts, setProfilePosts] = useState<ProfilePost[]>([])
   const [loadingPosts, setLoadingPosts] = useState(false)
@@ -321,7 +329,23 @@ export default function ProfilePage() {
       setConvId(conv?.id ?? null)
       setMsgStatus('accepted')
     } else if (msgStatus === 'accepted') {
-      navigate('/messages')
+      let resolvedConvId = convId
+      if (!resolvedConvId) {
+        const { data: c } = await supabase.from('conversations').select('id').eq('type', 'dm')
+          .or(`and(participant_1.eq.${user.id},participant_2.eq.${paramUserId}),and(participant_1.eq.${paramUserId},participant_2.eq.${user.id})`)
+          .maybeSingle()
+        resolvedConvId = c?.id ?? null
+        if (resolvedConvId) setConvId(resolvedConvId)
+      }
+      navigate('/messages', {
+        state: {
+          dmConvId: resolvedConvId,
+          dmOtherId: paramUserId,
+          dmOtherName: viewedProfile?.full_name ?? null,
+          dmOtherAvatar: viewedProfile?.avatar_url ?? null,
+          dmOtherUsername: viewedProfile?.username ?? null,
+        }
+      })
     }
     setMsgLoading(false)
   }
@@ -355,6 +379,11 @@ export default function ProfilePage() {
     setEditing(false)
   }
 
+  useEffect(() => {
+    setBannerPosition(profile?.banner_position ?? 50)
+    setBannerZoom(profile?.banner_zoom ?? 1.0)
+  }, [profile?.banner_position, profile?.banner_zoom])
+
   async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file || !user) return
@@ -370,6 +399,54 @@ export default function ProfilePage() {
     await refreshProfile()
     setUploadingAvatar(false)
     if (avatarInputRef.current) avatarInputRef.current.value = ''
+  }
+
+  async function handleBannerChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !user) return
+    if (!['image/jpeg','image/png','image/webp','image/gif'].includes(file.type)) { setBannerError('Only JPEG, PNG, WebP, or GIF allowed.'); return }
+    if (file.size > 8 * 1024 * 1024) { setBannerError('Image must be under 8 MB.'); return }
+    setBannerError(''); setUploadingBanner(true)
+    const ext = file.name.split('.').pop()
+    const path = `${user.id}/banner.${ext}`
+    const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { upsert: true, contentType: file.type })
+    if (upErr) { setBannerError('Upload failed. Please try again.'); setUploadingBanner(false); return }
+    const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path)
+    await supabase.from('profiles').update({ banner_url: `${publicUrl}?t=${Date.now()}` }).eq('id', user.id)
+    await refreshProfile()
+    setUploadingBanner(false)
+    if (bannerInputRef.current) bannerInputRef.current.value = ''
+  }
+
+  async function saveBannerPosition() {
+    if (!user) return
+    setSavingPosition(true)
+    await supabase.from('profiles').update({
+      banner_position: Math.round(bannerPosition),
+      banner_zoom: Math.round(bannerZoom * 100) / 100,
+    }).eq('id', user.id)
+    await refreshProfile()
+    setSavingPosition(false)
+    setAdjustingBanner(false)
+  }
+
+  function startBannerDrag(clientY: number) {
+    const startPos = bannerPosition
+    const onMove = (e: MouseEvent | TouchEvent) => {
+      const y = 'touches' in e ? e.touches[0].clientY : (e as MouseEvent).clientY
+      const delta = (y - clientY) * 0.7
+      setBannerPosition(p => Math.max(0, Math.min(100, startPos - delta)))
+    }
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('touchmove', onMove)
+      window.removeEventListener('touchend', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    window.addEventListener('touchmove', onMove, { passive: true })
+    window.addEventListener('touchend', onUp)
   }
 
   async function toggleListing(id: string, isActive: boolean) {
@@ -444,9 +521,110 @@ export default function ProfilePage() {
           height:118, position:'relative', overflow:'hidden',
           background:'linear-gradient(135deg, rgba(155,22,65,0.65) 0%, rgba(95,12,42,0.5) 45%, rgba(22,8,16,0.3) 100%)',
         }}>
-          <div style={{ position:'absolute', top:-55, right:-55, width:240, height:240, borderRadius:'50%', background:'rgba(138,21,56,0.15)', pointerEvents:'none' }} />
-          <div style={{ position:'absolute', top:10, left:'40%', width:260, height:80, background:'radial-gradient(ellipse, rgba(255,255,255,0.04) 0%, transparent 70%)', pointerEvents:'none' }} />
-          <div style={{ position:'absolute', bottom:-35, left:100, width:150, height:150, borderRadius:'50%', background:'rgba(200,40,100,0.07)', pointerEvents:'none' }} />
+          {/* Banner image */}
+          {profile?.banner_url && (
+            <div style={{
+              position:'absolute', inset:0, pointerEvents:'none',
+              backgroundImage:`url("${profile.banner_url}")`,
+              backgroundRepeat:'no-repeat',
+              backgroundPosition:`center ${bannerPosition}%`,
+              backgroundSize: bannerZoom <= 1 ? 'cover' : `${(bannerZoom * 100).toFixed(1)}%`,
+            }} />
+          )}
+          {/* Drag-to-reposition overlay */}
+          {adjustingBanner && profile?.banner_url && (
+            <div
+              onMouseDown={e => { e.preventDefault(); startBannerDrag(e.clientY) }}
+              onTouchStart={e => startBannerDrag(e.touches[0].clientY)}
+              style={{ position:'absolute', inset:0, zIndex:2, cursor:'ns-resize', userSelect:'none', background:'rgba(0,0,0,0.35)' }}
+            >
+              {/* Reposition hint — centre */}
+              <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', background:'rgba(0,0,0,0.65)', backdropFilter:'blur(8px)', borderRadius:9999, padding:'7px 18px', display:'flex', alignItems:'center', gap:8, color:'rgba(255,255,255,0.9)', fontSize:12, fontWeight:600, border:'1px solid rgba(255,255,255,0.15)', pointerEvents:'none' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 5 5 12"/></svg>
+                Drag to reposition
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+              </div>
+              {/* Zoom slider — bottom centre, stops drag propagation */}
+              <div
+                onMouseDown={e => e.stopPropagation()}
+                onTouchStart={e => e.stopPropagation()}
+                style={{ position:'absolute', bottom:10, left:'50%', transform:'translateX(-50%)', display:'flex', alignItems:'center', gap:10, background:'rgba(0,0,0,0.65)', backdropFilter:'blur(8px)', borderRadius:9999, padding:'6px 16px', border:'1px solid rgba(255,255,255,0.15)', cursor:'default' }}
+              >
+                <button onMouseDown={e => e.stopPropagation()} onClick={() => setBannerZoom(z => Math.max(1.0, +(z - 0.1).toFixed(2)))} style={{ background:'none', border:'none', color:'rgba(255,255,255,0.8)', fontSize:16, lineHeight:1, cursor:'pointer', padding:'0 2px', fontWeight:300 }}>−</button>
+                <input
+                  type="range" min={1.0} max={2.5} step={0.01}
+                  value={bannerZoom}
+                  onChange={e => setBannerZoom(parseFloat(e.target.value))}
+                  style={{ width:110, accentColor:'var(--accent)', cursor:'pointer' }}
+                />
+                <button onMouseDown={e => e.stopPropagation()} onClick={() => setBannerZoom(z => Math.min(2.5, +(z + 0.1).toFixed(2)))} style={{ background:'none', border:'none', color:'rgba(255,255,255,0.8)', fontSize:16, lineHeight:1, cursor:'pointer', padding:'0 2px', fontWeight:300 }}>+</button>
+                <span style={{ fontSize:10, color:'rgba(255,255,255,0.5)', minWidth:30, textAlign:'right' }}>{Math.round(bannerZoom * 100)}%</span>
+              </div>
+            </div>
+          )}
+          {!profile?.banner_url && (
+            <>
+              <div style={{ position:'absolute', top:-55, right:-55, width:240, height:240, borderRadius:'50%', background:'rgba(138,21,56,0.15)', pointerEvents:'none' }} />
+              <div style={{ position:'absolute', top:10, left:'40%', width:260, height:80, background:'radial-gradient(ellipse, rgba(255,255,255,0.04) 0%, transparent 70%)', pointerEvents:'none' }} />
+              <div style={{ position:'absolute', bottom:-35, left:100, width:150, height:150, borderRadius:'50%', background:'rgba(200,40,100,0.07)', pointerEvents:'none' }} />
+            </>
+          )}
+
+          {/* Banner controls — own profile */}
+          {isOwnProfile && (
+            <>
+              <input ref={bannerInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" style={{ display:'none' }} onChange={handleBannerChange} />
+              {bannerError && (
+                <div style={{ position:'absolute', bottom:44, right:16, zIndex:4, whiteSpace:'nowrap', fontSize:11, color:'#f87171', background:'rgba(16,8,12,0.95)', border:'1px solid rgba(248,113,113,0.22)', borderRadius:8, padding:'4px 10px' }}>{bannerError}</div>
+              )}
+              <div style={{ position:'absolute', bottom:10, right:16, zIndex:3, display:'flex', gap:6 }}>
+                {adjustingBanner ? (
+                  <>
+                    <button
+                      onClick={() => { setAdjustingBanner(false); setBannerPosition(profile?.banner_position ?? 50); setBannerZoom(profile?.banner_zoom ?? 1.0) }}
+                      style={{ padding:'5px 13px', background:'rgba(0,0,0,0.55)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,0.18)', borderRadius:9999, color:'rgba(255,255,255,0.75)', fontSize:12, fontWeight:600, cursor:'pointer' }}
+                    >Cancel</button>
+                    <button
+                      onClick={saveBannerPosition}
+                      disabled={savingPosition}
+                      style={{ padding:'5px 14px', background: savingPosition ? 'rgba(138,21,56,0.4)' : 'var(--accent)', border:'none', borderRadius:9999, color:'#fff', fontSize:12, fontWeight:700, cursor: savingPosition ? 'default' : 'pointer', opacity: savingPosition ? 0.7 : 1, display:'flex', alignItems:'center', gap:6 }}
+                    >
+                      {savingPosition ? <><span style={{ width:10, height:10, border:'2px solid rgba(255,255,255,0.3)', borderTopColor:'#fff', borderRadius:'50%', display:'inline-block', animation:'pf-spin .7s linear infinite' }} /> Saving…</> : 'Save'}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {/* Swap photo icon — always visible */}
+                    <button
+                      onClick={() => bannerInputRef.current?.click()}
+                      disabled={uploadingBanner}
+                      title={profile?.banner_url ? 'Change banner' : 'Add banner'}
+                      style={{ width:32, height:32, padding:0, background:'rgba(0,0,0,0.5)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,0.18)', borderRadius:'50%', color:'rgba(255,255,255,0.8)', cursor:uploadingBanner?'default':'pointer', display:'flex', alignItems:'center', justifyContent:'center', opacity:uploadingBanner?0.5:1, transition:'opacity .15s,background .15s' }}
+                      onMouseEnter={e => { if (!uploadingBanner) e.currentTarget.style.background='rgba(0,0,0,0.75)' }}
+                      onMouseLeave={e => { e.currentTarget.style.background='rgba(0,0,0,0.5)' }}
+                    >
+                      {uploadingBanner
+                        ? <span style={{ width:13, height:13, border:'2px solid rgba(255,255,255,0.3)', borderTopColor:'#fff', borderRadius:'50%', display:'inline-block', animation:'pf-spin .7s linear infinite' }} />
+                        : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                      }
+                    </button>
+                    {/* Adjust position — only if banner exists */}
+                    {profile?.banner_url && (
+                      <button
+                        onClick={() => setAdjustingBanner(true)}
+                        title="Adjust position"
+                        style={{ width:32, height:32, padding:0, background:'rgba(0,0,0,0.5)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,0.18)', borderRadius:'50%', color:'rgba(255,255,255,0.8)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', transition:'background .15s' }}
+                        onMouseEnter={e => e.currentTarget.style.background='rgba(0,0,0,0.75)'}
+                        onMouseLeave={e => e.currentTarget.style.background='rgba(0,0,0,0.5)'}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><line x1="2" y1="12" x2="22" y2="12"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/></svg>
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            </>
+          )}
 
           {/* Back button — other user */}
           {!isOwnProfile && (
@@ -459,25 +637,20 @@ export default function ProfilePage() {
             }}>← Back</button>
           )}
 
-          {/* Action buttons — own profile, pinned top-right of banner */}
+          {/* Edit Profile button — own profile, top-right of banner */}
           {isOwnProfile && (
-            <div style={{ position:'absolute', top:14, right:16, zIndex:2, display:'flex', gap:8 }}>
+            <div style={{ position:'absolute', top:14, right:16, zIndex:2 }}>
               <button className="pf-btn" onClick={openEdit}
                 style={{ padding:'7px 16px', background:'rgba(0,0,0,0.4)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:10, color:'rgba(255,255,255,0.8)', fontSize:13, fontWeight:600 }}
                 onMouseEnter={e => { e.currentTarget.style.background='rgba(138,21,56,0.55)'; e.currentTarget.style.borderColor='rgba(138,21,56,0.6)'; e.currentTarget.style.color='#fff'; }}
                 onMouseLeave={e => { e.currentTarget.style.background='rgba(0,0,0,0.4)'; e.currentTarget.style.borderColor='rgba(255,255,255,0.15)'; e.currentTarget.style.color='rgba(255,255,255,0.8)'; }}
               >Edit Profile</button>
-              <button className="pf-btn" onClick={signOut}
-                style={{ padding:'7px 16px', background:'rgba(0,0,0,0.4)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,0.12)', borderRadius:10, color:'rgba(255,255,255,0.6)', fontSize:13, fontWeight:600 }}
-                onMouseEnter={e => { e.currentTarget.style.background='rgba(248,113,113,0.2)'; e.currentTarget.style.borderColor='rgba(248,113,113,0.4)'; e.currentTarget.style.color='#f87171'; }}
-                onMouseLeave={e => { e.currentTarget.style.background='rgba(0,0,0,0.4)'; e.currentTarget.style.borderColor='rgba(255,255,255,0.12)'; e.currentTarget.style.color='rgba(255,255,255,0.6)'; }}
-              >Sign Out</button>
             </div>
           )}
         </div>
 
         {/* Body */}
-        <div style={{ padding:'0 28px 28px', marginTop:-44 }}>
+        <div style={{ padding:'0 28px 28px', marginTop: editing ? 12 : -44 }}>
           {!editing ? (
             <>
               {/* Avatar */}
@@ -679,6 +852,11 @@ export default function ProfilePage() {
                   onMouseLeave={e => { if (!saving) e.currentTarget.style.background='var(--accent)' }}
                 >{saving ? 'Saving…' : 'Save Changes'}</button>
               </div>
+              <button className="pf-btn" onClick={signOut}
+                style={{ width:'100%', marginTop:10, padding:'10px', background:'transparent', border:'1px solid rgba(248,113,113,0.18)', borderRadius:11, color:'rgba(248,113,113,0.55)', fontSize:13, fontWeight:600 }}
+                onMouseEnter={e => { e.currentTarget.style.background='rgba(248,113,113,0.07)'; e.currentTarget.style.color='#f87171'; e.currentTarget.style.borderColor='rgba(248,113,113,0.35)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background='transparent'; e.currentTarget.style.color='rgba(248,113,113,0.55)'; e.currentTarget.style.borderColor='rgba(248,113,113,0.18)'; }}
+              >Sign Out</button>
             </div>
           )}
         </div>
@@ -833,7 +1011,7 @@ export default function ProfilePage() {
           clubs.length === 0
             ? <EmptyCard icon="🏛️" text="No clubs joined yet." />
             : (
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(210px, 1fr))', gap:10 }}>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(min(100%, 210px), 1fr))', gap:10 }}>
                 {clubs.map((m, i) => {
                   const c = catColor(m.club?.category ?? null)
                   return (

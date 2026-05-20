@@ -1,4 +1,5 @@
 import { useState, useEffect, type ReactNode } from 'react'
+import { useLocation } from 'react-router-dom'
 import SideNav from './SideNav'
 import TopBar from './TopBar'
 import FloatingChat from '../FloatingChat'
@@ -12,6 +13,7 @@ interface Props {
 export default function AppLayout({ children }: Props) {
   const [navOpen, setNavOpen] = useState(false)
   const { user } = useAuth()
+  const { pathname } = useLocation()
 
   useEffect(() => {
     if (!user) return
@@ -28,7 +30,7 @@ export default function AppLayout({ children }: Props) {
       <main className="main-content">
         {children}
       </main>
-      <FloatingChat />
+      {pathname !== '/messages' && <FloatingChat />}
     </div>
   )
 }
