@@ -905,7 +905,7 @@ function ContactSection() {
     setStatus('sending')
     try {
       const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-contact-email`,
+        'https://iclxtjfxxlygagfgxhwg.supabase.co/functions/v1/send-contact-email',
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
