@@ -250,7 +250,7 @@ function LandingNav({ scrolled }: { scrolled:boolean }) {
       </div>
       <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 16px', background:'rgba(192,37,90,.08)', border:'1px solid rgba(192,37,90,.28)', borderRadius:9999 }}>
         <span style={{ width:7, height:7, borderRadius:'50%', background:'#c0255a', display:'inline-block', boxShadow:'0 0 8px rgba(192,37,90,1)', animation:'lPulse 2s ease-in-out infinite', flexShrink:0 }} />
-        <span style={{ fontSize:12.5, fontWeight:700, letterSpacing:'.08em', color:'rgba(243,221,223,.75)', whiteSpace:'nowrap' }}>Now Live</span>
+        <span style={{ fontSize:12.5, fontWeight:700, letterSpacing:'.08em', color:'rgba(243,221,223,.75)', whiteSpace:'nowrap' }}>Coming Soon</span>
       </div>
     </nav>
   )
@@ -283,7 +283,7 @@ function HeroSection() {
           <div style={{ display:'inline-block', padding:1, borderRadius:9999, background:'linear-gradient(135deg,rgba(192,37,90,.7) 0%,rgba(138,21,56,.25) 50%,rgba(192,37,90,.5) 100%)' }}>
             <div style={{ display:'inline-flex', alignItems:'center', gap:9, padding:'8px 22px', background:'rgba(5,2,10,.93)', borderRadius:9999, backdropFilter:'blur(16px)' }}>
               <span style={{ width:7, height:7, borderRadius:'50%', background:'#c0255a', display:'inline-block', boxShadow:'0 0 14px rgba(192,37,90,1)', animation:'lPulse 2s ease-in-out infinite' }} />
-              <span style={{ fontSize:12, fontWeight:800, letterSpacing:'.14em', color:'#e0aab4', textTransform:'uppercase' }}>Early Access Now Open</span>
+              <span style={{ fontSize:12, fontWeight:800, letterSpacing:'.14em', color:'#e0aab4', textTransform:'uppercase' }}>Coming Soon</span>
             </div>
           </div>
         </div>
@@ -309,7 +309,7 @@ function HeroSection() {
         {/* Launch badge */}
         <div style={{ display:'inline-flex', alignItems:'center', gap:12, padding:'14px 32px', background:'rgba(192,37,90,.07)', border:'1px solid rgba(192,37,90,.25)', borderRadius:16, animation:'lFadeUp .7s .65s ease both', backdropFilter:'blur(8px)' }}>
           <span style={{ width:8, height:8, borderRadius:'50%', background:'#c0255a', display:'inline-block', boxShadow:'0 0 10px rgba(192,37,90,1)', animation:'lPulse 2s ease-in-out infinite', flexShrink:0 }} />
-          <span style={{ fontSize:16, fontWeight:700, color:'rgba(243,221,223,.8)', letterSpacing:'.04em' }}>Now Live — Join the community</span>
+          <span style={{ fontSize:16, fontWeight:700, color:'rgba(243,221,223,.8)', letterSpacing:'.04em' }}>Launching Soon — Stay tuned</span>
         </div>
       </div>
     </section>
