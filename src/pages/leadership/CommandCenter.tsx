@@ -837,9 +837,11 @@ export default function CommandCenter({ club, onDeleted, onPresidencyTransferred
                         <button onClick={() => setQrEvent(ev)} style={{ padding:'4px 11px', borderRadius:9999, border:'1px solid rgba(14,165,233,0.35)', background:'rgba(14,165,233,0.08)', color:'#38bdf8', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>QR</button>
                         {isCompleted && <button onClick={() => setCertEvent(ev)} style={{ padding:'4px 11px', borderRadius:9999, border:'1px solid rgba(233,193,118,0.35)', background:'rgba(233,193,118,0.08)', color:'var(--gold)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>🎓 Send Certs</button>}
                         {ev.is_live && <button onClick={() => handleOpenEventAnn(ev)} style={{ padding:'4px 11px', borderRadius:9999, border:'1px solid rgba(255,180,171,0.35)', background:'rgba(255,180,171,0.08)', color:'var(--live-red)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>📢 Announce</button>}
-                        <button onClick={() => toggleLive(ev)} style={{ padding:'4px 12px', borderRadius:9999, border:ev.is_live?'1px solid rgba(255,180,171,0.4)':'1px solid rgba(87,65,68,0.3)', background:ev.is_live?'rgba(255,180,171,0.1)':'transparent', color:ev.is_live?'var(--live-red)':'var(--text-muted)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
-                          {ev.is_live ? '● LIVE' : 'Go Live'}
-                        </button>
+                        {(!isCompleted || ev.is_live) && (
+                          <button onClick={() => toggleLive(ev)} style={{ padding:'4px 12px', borderRadius:9999, border:ev.is_live?'1px solid rgba(255,180,171,0.4)':'1px solid rgba(87,65,68,0.3)', background:ev.is_live?'rgba(255,180,171,0.1)':'transparent', color:ev.is_live?'var(--live-red)':'var(--text-muted)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
+                            {ev.is_live ? '● LIVE' : 'Go Live'}
+                          </button>
+                        )}
                       </div>
                     </div>
                   )

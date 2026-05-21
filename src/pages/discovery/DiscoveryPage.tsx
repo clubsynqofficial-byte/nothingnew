@@ -5,7 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import type { Club } from '../../types'
 import ClubApplicationModal from '../../components/ClubApplicationModal'
 
-const CATEGORIES = ['All', 'Technology', 'Arts & Culture', 'Sports', 'Entrepreneurship', 'Engineering', 'Business']
+const CATEGORIES = ['All', 'Technology', 'Arts & Culture', 'Sports', 'Entrepreneurship', 'Engineering', 'Business', 'Law']
 
 const CATEGORY_COLORS: Record<string, string> = {
   Technology: '#0ea5e9',
@@ -14,6 +14,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   Entrepreneurship: '#f97316',
   Engineering: '#22c55e',
   Business: '#ec4899',
+  Law: '#94a3b8',
 }
 
 const CATEGORY_GRADIENTS: Record<string, string> = {
@@ -23,6 +24,7 @@ const CATEGORY_GRADIENTS: Record<string, string> = {
   Entrepreneurship: 'linear-gradient(140deg, #200e00 0%, #3d1c00 100%)',
   Engineering: 'linear-gradient(140deg, #041a0c 0%, #063d1c 100%)',
   Business: 'linear-gradient(140deg, #220014 0%, #440028 100%)',
+  Law: 'linear-gradient(140deg, #0f1520 0%, #1e2d42 100%)',
 }
 
 interface ClubWithMeta extends Club {

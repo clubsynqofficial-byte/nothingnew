@@ -29,6 +29,7 @@ interface ViewedProfile {
   id: string; full_name: string | null; avatar_url: string | null
   bio: string | null; skills: string[]; karak_points: number
   role: string; university: { name: string } | null; username: string | null
+  banner_url: string | null; banner_position: number | null; banner_zoom: number | null
 }
 
 const CAT_COLORS: Record<string, string> = {
@@ -260,7 +261,7 @@ export default function ProfilePage() {
     if (isOwnProfile) {
       if (user) { fetchAll(user.id); fetchProfilePosts(user.id) }
     } else if (paramUserId) {
-      supabase.from('profiles').select('id, full_name, avatar_url, bio, skills, karak_points, role, username, university:universities(name)').eq('id', paramUserId).maybeSingle()
+      supabase.from('profiles').select('id, full_name, avatar_url, bio, skills, karak_points, role, username, university:universities(name), banner_url, banner_position, banner_zoom').eq('id', paramUserId).maybeSingle()
         .then(({ data }) => {
           if (!data) { setNotFound(true); setLoading(false); return }
           setViewedProfile(data as unknown as ViewedProfile)
@@ -418,6 +419,21 @@ export default function ProfilePage() {
     if (bannerInputRef.current) bannerInputRef.current.value = ''
   }
 
+  async function removeAvatar() {
+    if (!user) return
+    await supabase.from('profiles').update({ avatar_url: null }).eq('id', user.id)
+    await refreshProfile()
+  }
+
+  async function removeBanner() {
+    if (!user) return
+    await supabase.from('profiles').update({ banner_url: null, banner_position: 50, banner_zoom: 1.0 }).eq('id', user.id)
+    setBannerPosition(50)
+    setBannerZoom(1.0)
+    setAdjustingBanner(false)
+    await refreshProfile()
+  }
+
   async function saveBannerPosition() {
     if (!user) return
     setSavingPosition(true)
@@ -522,17 +538,17 @@ export default function ProfilePage() {
           background:'linear-gradient(135deg, rgba(155,22,65,0.65) 0%, rgba(95,12,42,0.5) 45%, rgba(22,8,16,0.3) 100%)',
         }}>
           {/* Banner image */}
-          {profile?.banner_url && (
+          {dp?.banner_url && (
             <div style={{
               position:'absolute', inset:0, pointerEvents:'none',
-              backgroundImage:`url("${profile.banner_url}")`,
+              backgroundImage:`url("${dp.banner_url}")`,
               backgroundRepeat:'no-repeat',
-              backgroundPosition:`center ${bannerPosition}%`,
-              backgroundSize: bannerZoom <= 1 ? 'cover' : `${(bannerZoom * 100).toFixed(1)}%`,
+              backgroundPosition:`center ${isOwnProfile ? bannerPosition : (dp.banner_position ?? 50)}%`,
+              backgroundSize: (isOwnProfile ? bannerZoom : (dp.banner_zoom ?? 1)) <= 1 ? 'cover' : `${((isOwnProfile ? bannerZoom : (dp.banner_zoom ?? 1)) * 100).toFixed(1)}%`,
             }} />
           )}
           {/* Drag-to-reposition overlay */}
-          {adjustingBanner && profile?.banner_url && (
+          {adjustingBanner && dp?.banner_url && (
             <div
               onMouseDown={e => { e.preventDefault(); startBannerDrag(e.clientY) }}
               onTouchStart={e => startBannerDrag(e.touches[0].clientY)}
@@ -562,7 +578,7 @@ export default function ProfilePage() {
               </div>
             </div>
           )}
-          {!profile?.banner_url && (
+          {!dp?.banner_url && (
             <>
               <div style={{ position:'absolute', top:-55, right:-55, width:240, height:240, borderRadius:'50%', background:'rgba(138,21,56,0.15)', pointerEvents:'none' }} />
               <div style={{ position:'absolute', top:10, left:'40%', width:260, height:80, background:'radial-gradient(ellipse, rgba(255,255,255,0.04) 0%, transparent 70%)', pointerEvents:'none' }} />
@@ -618,6 +634,18 @@ export default function ProfilePage() {
                         onMouseLeave={e => e.currentTarget.style.background='rgba(0,0,0,0.5)'}
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><line x1="2" y1="12" x2="22" y2="12"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/></svg>
+                      </button>
+                    )}
+                    {/* Remove banner — only if banner exists */}
+                    {profile?.banner_url && (
+                      <button
+                        onClick={removeBanner}
+                        title="Remove banner"
+                        style={{ width:32, height:32, padding:0, background:'rgba(0,0,0,0.5)', backdropFilter:'blur(10px)', border:'1px solid rgba(248,113,113,0.25)', borderRadius:'50%', color:'rgba(248,113,113,0.7)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', transition:'background .15s' }}
+                        onMouseEnter={e => e.currentTarget.style.background='rgba(248,113,113,0.18)'}
+                        onMouseLeave={e => e.currentTarget.style.background='rgba(0,0,0,0.5)'}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2"/></svg>
                       </button>
                     )}
                   </>
@@ -684,6 +712,13 @@ export default function ProfilePage() {
                   )}
                 </div>
                 {isOwnProfile && <input ref={avatarInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" style={{ display:'none' }} onChange={handleAvatarChange} />}
+                {isOwnProfile && profile?.avatar_url && (
+                  <button
+                    onClick={removeAvatar}
+                    title="Remove photo"
+                    style={{ position:'absolute', bottom:-10, left:'50%', transform:'translateX(-50%)', whiteSpace:'nowrap', fontSize:10, fontWeight:700, color:'rgba(248,113,113,0.7)', background:'rgba(16,8,12,0.92)', border:'1px solid rgba(248,113,113,0.2)', borderRadius:99, padding:'3px 9px', cursor:'pointer', fontFamily:'inherit' }}
+                  >remove</button>
+                )}
                 {avatarError && (
                   <div style={{ position:'absolute', top:'calc(100% + 8px)', left:0, width:215, fontSize:11, color:'#f87171', background:'rgba(16,8,12,0.97)', border:'1px solid rgba(248,113,113,0.22)', borderRadius:9, padding:'7px 11px', zIndex:20, lineHeight:1.5 }}>
                     {avatarError}
@@ -749,33 +784,41 @@ export default function ProfilePage() {
                 <div style={{ display:'flex', gap:8, marginBottom:20 }}>
                   {msgStatus === 'received' && (
                     <button className="pf-btn" onClick={declineRequest}
-                      style={{ padding:'10px 18px', background:'rgba(239,68,68,.08)', border:'1px solid rgba(239,68,68,.25)', borderRadius:11, color:'#f87171', fontSize:13.5, fontWeight:600, fontFamily:'inherit' }}
-                      onMouseEnter={e => e.currentTarget.style.background='rgba(239,68,68,.18)'}
-                      onMouseLeave={e => e.currentTarget.style.background='rgba(239,68,68,.08)'}>
+                      style={{ padding:'9px 18px', background:'rgba(239,68,68,.07)', border:'1px solid rgba(239,68,68,.22)', borderRadius:10, color:'#f87171', fontSize:13, fontWeight:600, fontFamily:'inherit', display:'flex', alignItems:'center', gap:6, cursor:'pointer', transition:'background .15s' }}
+                      onMouseEnter={e => e.currentTarget.style.background='rgba(239,68,68,.15)'}
+                      onMouseLeave={e => e.currentTarget.style.background='rgba(239,68,68,.07)'}>
                       Decline
                     </button>
                   )}
                   <button className="pf-btn" onClick={handleMessageAction}
                     disabled={msgLoading || msgStatus === 'sent'}
                     style={{
-                      padding:'10px 22px', borderRadius:11, fontSize:13.5, fontWeight:700, fontFamily:'inherit',
-                      border: msgStatus === 'accepted' ? '1px solid rgba(138,21,56,.6)' : '1px solid rgba(255,255,255,.15)',
-                      background: msgStatus === 'accepted' ? 'linear-gradient(135deg,#8a1538,#c0185c)' : msgStatus === 'received' ? 'rgba(34,197,94,.12)' : 'rgba(138,21,56,.15)',
-                      color: msgStatus === 'received' ? '#4ade80' : '#fff',
-                      opacity: msgStatus === 'sent' ? 0.55 : 1,
-                      boxShadow: msgStatus === 'accepted' ? '0 4px 18px rgba(138,21,56,.35)' : 'none',
-                      display:'flex', alignItems:'center', gap:7, cursor: msgStatus === 'sent' ? 'default' : 'pointer',
+                      padding:'9px 20px', borderRadius:10, fontSize:13, fontWeight:600, fontFamily:'inherit',
+                      display:'flex', alignItems:'center', gap:7,
+                      cursor: msgStatus === 'sent' ? 'default' : 'pointer',
+                      transition:'opacity .15s, box-shadow .15s',
+                      ...(msgStatus === 'accepted'
+                        ? { background:'linear-gradient(135deg,#8a1538,#b01550)', border:'1px solid rgba(138,21,56,.5)', color:'#fff', boxShadow:'0 2px 14px rgba(138,21,56,.3)' }
+                        : msgStatus === 'received'
+                        ? { background:'rgba(34,197,94,.1)', border:'1px solid rgba(34,197,94,.25)', color:'#4ade80', boxShadow:'none' }
+                        : msgStatus === 'sent'
+                        ? { background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.1)', color:'rgba(255,255,255,.4)', boxShadow:'none' }
+                        : { background:'rgba(138,21,56,.12)', border:'1px solid rgba(138,21,56,.3)', color:'rgba(255,255,255,.85)', boxShadow:'none' }),
                     }}
-                    onMouseEnter={e => { if (msgStatus !== 'sent') e.currentTarget.style.opacity = '0.85' }}
-                    onMouseLeave={e => { e.currentTarget.style.opacity = msgStatus === 'sent' ? '0.55' : '1' }}>
-                    {msgLoading
-                      ? <span style={{ width:14, height:14, border:'2px solid rgba(255,255,255,.3)', borderTopColor:'#fff', borderRadius:'50%', animation:'pf-spin .7s linear infinite', display:'inline-block' }} />
-                      : msgStatus === 'none'     ? '✉'
-                      : msgStatus === 'sent'     ? '✓'
-                      : msgStatus === 'received' ? '✓'
-                      : '💬'}
-                    {msgLoading
-                      ? 'Loading…'
+                    onMouseEnter={e => { if (msgStatus !== 'sent') e.currentTarget.style.opacity = '0.8' }}
+                    onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}>
+                    {msgLoading ? (
+                      <span style={{ width:13, height:13, border:'2px solid rgba(255,255,255,.25)', borderTopColor:'currentColor', borderRadius:'50%', animation:'pf-spin .7s linear infinite', display:'inline-block', flexShrink:0 }} />
+                    ) : msgStatus === 'accepted' ? (
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    ) : msgStatus === 'received' ? (
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    ) : msgStatus === 'sent' ? (
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    ) : (
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                    )}
+                    {msgLoading ? 'Loading…'
                       : msgStatus === 'none'     ? 'Send Message Request'
                       : msgStatus === 'sent'     ? 'Request Sent'
                       : msgStatus === 'received' ? 'Accept Request'

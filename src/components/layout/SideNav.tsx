@@ -78,8 +78,8 @@ const NAV_ITEMS = [
   { path: '/events', label: 'Events' },
   { path: '/positions', label: 'Positions' },
   { path: '/leadership', label: 'Your Clubs' },
-  { path: '/collaboration', label: 'Skill Souq' },
-  { path: '/talent', label: 'Co-Founder Match' },
+  { path: '/collaboration', label: 'Co-Founder Match' },
+  { path: '/talent', label: 'Skill Souq' },
   { path: '/clubs', label: 'Clubs' },
   { path: '/messages', label: 'Messages' },
 ]
@@ -150,7 +150,26 @@ export default function SideNav({ open = false, onClose }: Props) {
       }
     }
 
-    setMsgUnread(dmCount + tradeCount)
+    // Group chat unread: messages from others after localStorage lastRead timestamp
+    const { data: groupMems } = await supabase
+      .from('group_chat_members')
+      .select('group_id')
+      .eq('user_id', user.id)
+    const groupIds = (groupMems ?? []).map((m: { group_id: string }) => m.group_id)
+    let groupCount = 0
+    if (groupIds.length > 0) {
+      const { data: groupMsgs } = await supabase
+        .from('group_messages')
+        .select('group_id, sender_id, created_at')
+        .in('group_id', groupIds)
+        .neq('sender_id', user.id)
+      for (const msg of groupMsgs ?? []) {
+        const lastRead = localStorage.getItem(`lastRead_group-${msg.group_id}`) ?? '1970-01-01'
+        if (msg.created_at > lastRead) groupCount++
+      }
+    }
+
+    setMsgUnread(dmCount + tradeCount + groupCount)
   }, [user])
 
   useEffect(() => {
@@ -161,6 +180,7 @@ export default function SideNav({ open = false, onClose }: Props) {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'direct_messages' }, fetchUnread)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'direct_messages' }, fetchUnread)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'skill_trade_messages' }, fetchUnread)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'group_messages' }, fetchUnread)
       .subscribe()
     return () => { clearInterval(interval); supabase.removeChannel(ch) }
   }, [user, fetchUnread])

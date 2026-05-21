@@ -25,6 +25,8 @@ export default function SignIn() {
   async function handleGoogle() {
     setError('')
     setGLoading(true)
+    const redirect = searchParams.get('redirect')
+    if (redirect) sessionStorage.setItem('post_auth_redirect', redirect)
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: `${window.location.origin}/` },
@@ -67,7 +69,7 @@ export default function SignIn() {
       </form>
 
       <p style={{ textAlign:'center', marginTop:22, fontSize:13.5, color:'rgba(243,221,223,.32)' }}>
-        No account?{' '}<Link to="/signup" className="auth-link">Create one free</Link>
+        No account?{' '}<Link to={`/signup${searchParams.get('redirect') ? `?redirect=${encodeURIComponent(searchParams.get('redirect')!)}` : ''}`} className="auth-link">Create one free</Link>
       </p>
     </AuthLayout>
   )

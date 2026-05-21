@@ -26,7 +26,11 @@ import SettingsPage from './pages/settings/SettingsPage'
 function RootRoute() {
   const { session, loading } = useAuth()
   if (loading) return <LoadingScreen />
-  if (session) return <Navigate to="/home" replace />
+  if (session) {
+    const pending = sessionStorage.getItem('post_auth_redirect')
+    if (pending) { sessionStorage.removeItem('post_auth_redirect'); return <Navigate to={pending} replace /> }
+    return <Navigate to="/home" replace />
+  }
   return <LandingPage />
 }
 

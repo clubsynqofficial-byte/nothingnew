@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, type FormEvent, type ReactNode } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import AuthLayout from './AuthLayout'
 
@@ -7,6 +7,8 @@ const USERNAME_RE = /^[a-z0-9_]{3,20}$/
 
 export default function SignUp() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const redirect = searchParams.get('redirect')
   const [fullName, setFullName]   = useState('')
   const [username, setUsername]   = useState('')
   const [school, setSchool]       = useState('')
@@ -61,6 +63,7 @@ export default function SignUp() {
   async function handleGoogle() {
     setError('')
     setGLoading(true)
+    if (redirect) sessionStorage.setItem('post_auth_redirect', redirect)
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: `${window.location.origin}/` },
@@ -77,7 +80,7 @@ export default function SignUp() {
           <p style={{ color:'rgba(243,221,223,.38)', fontSize:14, lineHeight:1.78, margin:'0 auto 32px', maxWidth:290 }}>
             We sent a confirmation link to <strong style={{ color:'#e0aab4' }}>{email}</strong>. Click it to activate your account.
           </p>
-          <button onClick={() => navigate('/signin')} className="auth-btn">Go to Sign In →</button>
+          <button onClick={() => navigate(`/signin${redirect ? `?redirect=${encodeURIComponent(redirect)}` : ''}`)} className="auth-btn">Go to Sign In →</button>
         </div>
       </AuthLayout>
     )
@@ -172,7 +175,7 @@ export default function SignUp() {
       </form>
 
       <p style={{ textAlign:'center', marginTop:20, fontSize:13.5, color:'rgba(243,221,223,.32)' }}>
-        Already have an account?{' '}<Link to="/signin" className="auth-link">Sign in</Link>
+        Already have an account?{' '}<Link to={`/signin${redirect ? `?redirect=${encodeURIComponent(redirect)}` : ''}`} className="auth-link">Sign in</Link>
       </p>
     </AuthLayout>
   )

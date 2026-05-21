@@ -348,7 +348,7 @@ export default function LeadershipPage() {
             Back to My Clubs
           </button>
         </div>
-        <CreateClub onCreated={() => { setShowCreateForm(false); fetchClub() }} />
+        <CreateClub onCreated={async () => { await fetchClub(); setShowCreateForm(false) }} />
       </>
     )
   }

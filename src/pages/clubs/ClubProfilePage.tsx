@@ -1069,7 +1069,6 @@ function AnnouncementsSection({
       club_id: clubId, user_id: user.id, content: trimmed,
     })
     // Fire-and-forget — don't block the UI on email delivery
-    console.log('[announce-email] invoking for club:', clubId, clubName, 'members:', members.length)
     supabase.functions.invoke('send-announcement-email', {
       body: {
         clubId,
@@ -1077,11 +1076,7 @@ function AnnouncementsSection({
         content: trimmed,
         posterName: profile?.full_name ?? 'Club Admin',
       },
-    }).then(res => {
-      console.log('[announce-email] raw response:', JSON.stringify(res))
-    }).catch(err => {
-      console.error('[announce-email] invoke error:', err)
-    })
+    }).catch(() => {})
     setContent('')
     setShowForm(false)
     setPosting(false)

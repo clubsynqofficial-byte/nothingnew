@@ -62,33 +62,15 @@ export default function EventsPage() {
   const [pendingClubIds, setPendingClubIds] = useState<Set<string>>(new Set())
   const [joiningId, setJoiningId] = useState<string | null>(null)
   const [applyClub, setApplyClub] = useState<{ id: string; name: string } | null>(null)
-  const [rsvpIds, setRsvpIds] = useState<Set<string>>(new Set())
-  const [rsvpingId, setRsvpingId] = useState<string | null>(null)
-
   const fetchMemberships = useCallback(async () => {
     if (!user) return
-    const [{ data: mem }, { data: pending }, { data: rsvps }] = await Promise.all([
+    const [{ data: mem }, { data: pending }] = await Promise.all([
       supabase.from('club_memberships').select('club_id').eq('user_id', user.id),
       supabase.from('club_form_responses').select('club_id').eq('user_id', user.id).eq('status', 'pending'),
-      supabase.from('event_rsvps').select('event_id').eq('user_id', user.id),
     ])
     setMemberClubIds(new Set((mem ?? []).map((m: { club_id: string }) => m.club_id)))
     setPendingClubIds(new Set((pending ?? []).map((r: { club_id: string }) => r.club_id)))
-    setRsvpIds(new Set((rsvps ?? []).map((r: { event_id: string }) => r.event_id)))
   }, [user])
-
-  const handleRsvp = async (eventId: string) => {
-    if (!user || rsvpingId) return
-    setRsvpingId(eventId)
-    if (rsvpIds.has(eventId)) {
-      await supabase.from('event_rsvps').delete().eq('event_id', eventId).eq('user_id', user.id)
-      setRsvpIds(prev => { const s = new Set(prev); s.delete(eventId); return s })
-    } else {
-      await supabase.from('event_rsvps').insert({ event_id: eventId, user_id: user.id })
-      setRsvpIds(prev => new Set([...prev, eventId]))
-    }
-    setRsvpingId(null)
-  }
 
   const fetchEvents = useCallback(async () => {
     if (!user) return
@@ -253,11 +235,8 @@ export default function EventsPage() {
               isMember={memberClubIds.has(event.club_id)}
               isPending={pendingClubIds.has(event.club_id)}
               joining={joiningId === event.club_id}
-              isRsvped={rsvpIds.has(event.id)}
-              rsvping={rsvpingId === event.id}
               onClubClick={() => navigate(`/clubs/${event.club_id}`)}
               onJoin={() => handleJoin(event.club_id, event.club?.name ?? 'Club')}
-              onRsvp={() => handleRsvp(event.id)}
             />
           ))}
         </div>
@@ -275,17 +254,14 @@ export default function EventsPage() {
   )
 }
 
-function EventCard({ event, index, isMember, isPending, joining, isRsvped, rsvping, onClubClick, onJoin, onRsvp }: {
+function EventCard({ event, index, isMember, isPending, joining, onClubClick, onJoin }: {
   event: EventRow
   index: number
   isMember: boolean
   isPending: boolean
   joining: boolean
-  isRsvped: boolean
-  rsvping: boolean
   onClubClick: () => void
   onJoin: () => void
-  onRsvp: () => void
 }) {
   const catColor = CATEGORY_COLORS[event.club?.category ?? ''] ?? 'var(--accent)'
 
@@ -378,25 +354,6 @@ function EventCard({ event, index, isMember, isPending, joining, isRsvped, rsvpi
 
       {/* Buttons */}
       <div style={{ flexShrink: 0, alignSelf: 'center', display: 'flex', flexDirection: 'column', gap: 7 }}>
-        {/* RSVP button */}
-        <button
-          className="ev-join-btn"
-          onClick={onRsvp}
-          disabled={rsvping}
-          style={{
-            padding: '7px 14px', borderRadius: 9,
-            border: `1px solid ${isRsvped ? 'rgba(96,165,250,.4)' : 'rgba(96,165,250,.2)'}`,
-            background: isRsvped ? 'rgba(96,165,250,.15)' : 'rgba(96,165,250,.05)',
-            color: isRsvped ? '#60a5fa' : 'rgba(96,165,250,.7)',
-            fontSize: 12, fontWeight: 700, cursor: rsvping ? 'default' : 'pointer',
-            opacity: rsvping ? .6 : 1, whiteSpace: 'nowrap', fontFamily: 'inherit',
-            display: 'flex', alignItems: 'center', gap: 5,
-          }}
-        >
-          {isRsvped ? (
-            <><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg> Going</>
-          ) : 'RSVP'}
-        </button>
         {/* Join club button */}
         {isMember ? (
           <span style={{

@@ -1,11 +1,11 @@
-import { useState, useRef, type FormEvent, type DragEvent, type ChangeEvent } from 'react'
+import { useState, useRef, useEffect, type FormEvent, type DragEvent, type ChangeEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { filterText, validateImage } from '../../lib/contentFilter'
 
 const CATEGORIES = [
   'Technology', 'Arts & Culture', 'Sports', 'Entrepreneurship',
-  'Engineering', 'Business', 'Science', 'Community', 'Media', 'Other',
+  'Engineering', 'Business', 'Science', 'Community', 'Media', 'Law', 'Other',
 ]
 
 interface Props {
@@ -18,6 +18,7 @@ export default function CreateClub({ onCreated }: Props) {
   // Form fields
   const [name, setName] = useState('')
   const [category, setCategory] = useState('')
+  const [customCategory, setCustomCategory] = useState('')
   const [description, setDescription] = useState('')
   const [tagInput, setTagInput] = useState('')
   const [tags, setTags] = useState<string[]>([])
@@ -31,11 +32,16 @@ export default function CreateClub({ onCreated }: Props) {
 
   const bannerInputRef = useRef<HTMLInputElement>(null)
   const logoInputRef = useRef<HTMLInputElement>(null)
+  const errorRef = useRef<HTMLParagraphElement>(null)
 
   // Submission
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [submitted, setSubmitted] = useState(false)
+
+  useEffect(() => {
+    if (error) errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [error])
 
   // ── file helpers ──────────────────────────────────────────────────────────
 
@@ -132,7 +138,7 @@ export default function CreateClub({ onCreated }: Props) {
       .insert({
         user_id: user.id,
         name,
-        category: category || null,
+        category: category === 'Other' ? (customCategory.trim() || 'Other') : (category || null),
         description: description || null,
         tags,
         banner_url: bannerUrl,
@@ -163,7 +169,8 @@ export default function CreateClub({ onCreated }: Props) {
 
     setLoading(false)
     setSubmitted(true)
-    onCreated()
+    // Show success screen briefly, then close and refresh parent
+    setTimeout(onCreated, 2500)
   }
 
   // ── render ────────────────────────────────────────────────────────────────
@@ -355,12 +362,22 @@ export default function CreateClub({ onCreated }: Props) {
                 <select
                   required
                   value={category}
-                  onChange={e => setCategory(e.target.value)}
+                  onChange={e => { setCategory(e.target.value); setCustomCategory('') }}
                   style={{ ...inputStyle, cursor: 'pointer', appearance: 'none' }}
                 >
                   <option value="">Select club category...</option>
                   {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
+                {category === 'Other' && (
+                  <input
+                    type="text"
+                    required
+                    placeholder="Specify your sector..."
+                    value={customCategory}
+                    onChange={e => setCustomCategory(e.target.value)}
+                    style={{ ...inputStyle, marginTop: 10 }}
+                  />
+                )}
               </div>
             </div>
           </div>
@@ -498,7 +515,7 @@ export default function CreateClub({ onCreated }: Props) {
             </div>
           </div>
 
-          {error && <p style={{ color: '#ff6b6b', fontSize: 13, marginTop: -20 }}>{error}</p>}
+          {error && <p ref={errorRef} style={{ color: '#ff6b6b', fontSize: 13, marginTop: -20, padding: '10px 14px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10 }}>{error}</p>}
         </form>
       </div>
 

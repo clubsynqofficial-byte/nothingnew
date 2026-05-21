@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import rawEmojiData from '@emoji-mart/data'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
@@ -276,7 +276,16 @@ const CSS = `
 .mp-scroll::-webkit-scrollbar-thumb:hover { background: rgba(138,21,56,0.4); }
 
 @media (min-width: 769px) { .left-panel { display: flex !important; } .right-panel { display: flex !important; } .mobile-back-btn { display: none !important; } }
-@media (max-width: 768px) { .mobile-back-btn { display: flex !important; } }
+@media (max-width: 768px) {
+  .mobile-back-btn { display: flex !important; }
+  .mp-panel {
+    position: fixed !important;
+    inset: 0 !important;
+    top: var(--topbar-height) !important;
+    z-index: 30 !important;
+    height: calc(100dvh - var(--topbar-height)) !important;
+  }
+}
 
 @keyframes vc-fade  { from { opacity:0; } to { opacity:1; } }
 @keyframes spin     { to { transform:rotate(360deg); } }
@@ -553,7 +562,7 @@ export default function MessagesPage() {
     if (!groupIds.length) { setGroupChats([]); setLoadingGroups(false); return }
     const [{ data: groups }, { data: allMembers }, { data: lastMsgs }] = await Promise.all([
       supabase.from('group_chats').select('id, name, created_by, last_message_at, created_at').in('id', groupIds).order('last_message_at', { ascending: false }),
-      supabase.from('group_chat_members').select('group_id, user_id, profile:profiles(id,full_name,avatar_url)').in('group_id', groupIds),
+      supabase.from('group_chat_members').select('group_id, user_id, profile:profiles!group_chat_members_user_profile_fkey(id,full_name,avatar_url)').in('group_id', groupIds),
       supabase.from('group_messages').select('group_id, content, created_at, sender_id').in('group_id', groupIds).order('created_at', { ascending: false }),
     ])
     const lastMsgMap: Record<string, string> = {}; const lastAtMap: Record<string, string> = {}
@@ -642,6 +651,21 @@ export default function MessagesPage() {
   }
 
   useEffect(() => { fetchCollabs(); fetchTrades(); fetchLeaders(); fetchGroupChats(); fetchDms() }, [fetchCollabs, fetchTrades, fetchLeaders, fetchGroupChats, fetchDms])
+
+  // Mark all DMs as read when Messages page is opened
+  useEffect(() => {
+    if (!user) return
+    supabase.from('conversations').select('id').or(`participant_1.eq.${user.id},participant_2.eq.${user.id}`)
+      .then(({ data: convs }) => {
+        const ids = (convs ?? []).map((c: { id: string }) => c.id)
+        if (ids.length > 0)
+          supabase.from('direct_messages').update({ read_at: new Date().toISOString() }).in('conversation_id', ids).neq('sender_id', user.id).is('read_at', null).then(() => {})
+      })
+    // Also reset trade lastRead timestamps
+    supabase.from('skill_requests').select('id').in('status', ['accepted', 'completed']).then(({ data }) => {
+      for (const r of data ?? []) localStorage.setItem(`lastRead_${r.id}`, new Date().toISOString())
+    })
+  }, [user])
 
   // ── Realtime: refresh DMs when a message_request is accepted (sender side) ──
   useEffect(() => {
@@ -768,7 +792,7 @@ export default function MessagesPage() {
   const openGroup = async (group: GroupChat) => {
     setActiveGroup(group); setActiveCollab(null); setActiveTrade(null); setActiveLeader(null)
     setInput(''); setSendErr(''); setMobileView('chat'); setLoadingGroupMsgs(true)
-    const { data } = await supabase.from('group_messages').select('*, profile:profiles!sender_id(full_name, avatar_url)').eq('group_id', group.id).order('created_at', { ascending: true })
+    const { data } = await supabase.from('group_messages').select('*, profile:profiles!group_messages_sender_profile_fkey(full_name, avatar_url)').eq('group_id', group.id).order('created_at', { ascending: true })
     setGroupMsgs((data as GroupMessage[]) ?? [])
     setLoadingGroupMsgs(false)
     markLastRead(`group-${group.id}`)
@@ -789,21 +813,23 @@ export default function MessagesPage() {
   }
 
   // ── Create group ──
+  const taggedLeaders = useMemo(() => clubLeaders, [clubLeaders])
+
   const createGroup = async () => {
     if (!user || !newGroupName.trim() || selectedMemberIds.size === 0 || savingGroup) return
     setSavingGroup(true)
-    const { data: grp } = await supabase.from('group_chats').insert({ name: newGroupName.trim(), created_by: user.id }).select('id').single()
-    if (!grp) { setSavingGroup(false); return }
+    const { data: grp, error: grpErr } = await supabase.from('group_chats').insert({ name: newGroupName.trim(), created_by: user.id }).select('id').single()
+    if (grpErr || !grp) { setSavingGroup(false); return }
     const members = [user.id, ...Array.from(selectedMemberIds)].map(uid => ({ group_id: grp.id, user_id: uid }))
-    await supabase.from('group_chat_members').insert(members)
+    const { error: memErr } = await supabase.from('group_chat_members').insert(members)
+    if (memErr) { setSavingGroup(false); return }
     setSavingGroup(false)
     setCreatingGroup(false)
     setNewGroupName('')
     setSelectedMemberIds(new Set())
     await fetchGroupChats()
-    // Open the new group
     const { data: newGrp } = await supabase.from('group_chats').select('id, name, created_by, last_message_at').eq('id', grp.id).single()
-    if (newGrp) openGroup({ id: newGrp.id, name: newGrp.name, createdBy: newGrp.created_by, lastMsg: null, lastAt: newGrp.last_message_at, unread: 0, memberProfiles: clubLeaders.filter(l => selectedMemberIds.has(l.userId)).map(l => l.profile) })
+    if (newGrp) openGroup({ id: newGrp.id, name: newGrp.name, createdBy: newGrp.created_by, lastMsg: null, lastAt: newGrp.last_message_at, unread: 0, memberProfiles: taggedLeaders.filter(l => selectedMemberIds.has(l.userId)).map(l => l.profile) })
   }
 
   useEffect(() => () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }, [])
@@ -839,7 +865,12 @@ export default function MessagesPage() {
       setGroupMsgs(prev => [...prev, { id: optId, group_id: activeGroup.id, sender_id: user.id, content: text, created_at: new Date().toISOString() }])
       const { data: saved } = await supabase.from('group_messages').insert({ group_id: activeGroup.id, sender_id: user.id, content: text }).select().single()
       if (saved) await supabase.from('group_chats').update({ last_message_at: new Date().toISOString() }).eq('id', activeGroup.id)
-      setGroupMsgs(prev => saved ? prev.map(m => m.id === optId ? (saved as GroupMessage) : m) : prev.filter(m => m.id !== optId))
+      setGroupMsgs(prev => {
+        if (!saved) return prev.filter(m => m.id !== optId)
+        // Remove any duplicate already added by realtime before replacing the opt entry
+        const deduped = prev.filter(m => m.id !== saved.id)
+        return deduped.map(m => m.id === optId ? (saved as GroupMessage) : m)
+      })
       setGroupChats(prev => prev.map(g => g.id === activeGroup.id ? { ...g, lastMsg: text, lastAt: new Date().toISOString() } : g))
     } else if (activeDm) {
       const optId = `opt-${Date.now()}`
@@ -881,6 +912,8 @@ export default function MessagesPage() {
   }, [messages])
 
   const [pickerState, setPickerState] = useState<{ msgId: string; openUpward: boolean } | null>(null)
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null)
+  const [editingText, setEditingText] = useState('')
   useEffect(() => {
     if (!pickerState) return
     function handleClick() { setPickerState(null) }
@@ -917,6 +950,22 @@ export default function MessagesPage() {
       setDmMsgs(p => patch(p) as DM[])
       await supabase.from('direct_messages').update({ reactions: newReactions }).eq('id', msgId)
     }
+  }
+
+  async function saveEdit(msgId: string) {
+    const text = editingText.trim()
+    if (!text) return
+    const update = { content: text }
+    if (activeGroup) {
+      await supabase.from('group_messages').update(update).eq('id', msgId)
+      setGroupMsgs(prev => prev.map(m => m.id === msgId ? { ...m, content: text } : m))
+    } else {
+      await supabase.from('direct_messages').update(update).eq('id', msgId)
+      const patchDm = (arr: DM[]) => arr.map(m => m.id === msgId ? { ...m, content: text } : m)
+      setDmMsgs(patchDm); setCollabMsgs(patchDm); setLeaderMsgs(patchDm)
+    }
+    setEditingMsgId(null)
+    setEditingText('')
   }
 
   // ── Video call (WebRTC) ──
@@ -1340,8 +1389,8 @@ export default function MessagesPage() {
                     <input value={newGroupName} onChange={e => setNewGroupName(e.target.value)} placeholder="Group name…" style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-primary)', fontSize: 12.5, outline: 'none', marginBottom: 10 }} />
                     <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>Select members:</div>
                     <div style={{ maxHeight: 160, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
-                      {clubLeaders.length === 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>No co-leaders to add</div>}
-                      {clubLeaders.map(l => (
+                      {taggedLeaders.length === 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>No club members to add</div>}
+                      {taggedLeaders.map(l => (
                         <label key={l.userId} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '5px 4px', borderRadius: 7, background: selectedMemberIds.has(l.userId) ? 'rgba(138,21,56,0.12)' : 'transparent', transition: 'background 0.12s' }}>
                           <input type="checkbox" checked={selectedMemberIds.has(l.userId)} onChange={e => { const s = new Set(selectedMemberIds); e.target.checked ? s.add(l.userId) : s.delete(l.userId); setSelectedMemberIds(s) }} style={{ accentColor: 'var(--accent)', flexShrink: 0 }} />
                           <Av url={l.profile.avatar_url} name={l.profile.full_name} size={24} />
@@ -1491,7 +1540,12 @@ export default function MessagesPage() {
                       }
 
                       // For group messages, show sender info when not mine
-                      const senderProfile = activeGroup && !isMine ? ('profile' in msg ? msg.profile : null) : null
+                      // Realtime messages don't have the profile join — fall back to memberProfiles
+                      const senderProfile = activeGroup && !isMine
+                        ? (('profile' in msg && msg.profile)
+                            ? msg.profile
+                            : activeGroup.memberProfiles.find(m => m.id === msg.sender_id) ?? null)
+                        : null
 
                       const reactions = msg.reactions ?? {}
                       const reactionEntries = Object.entries(reactions).filter(([, ids]) => ids.length > 0)
@@ -1506,19 +1560,46 @@ export default function MessagesPage() {
                           <div style={{ maxWidth: '68%', display: 'flex', flexDirection: 'column', alignItems: isMine ? 'flex-end' : 'flex-start', gap: 2 }}>
                             {!isMine && !sameAsPrev && <span style={{ fontSize: 10.5, color: 'var(--text-muted)', paddingLeft: 6, marginBottom: 2, fontWeight: 500 }}>{senderProfile?.full_name?.split(' ')[0] ?? activeProfile?.full_name?.split(' ')[0] ?? 'User'}</span>}
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexDirection: isMine ? 'row-reverse' : 'row' }}>
-                              <div className="msg-bubble" style={{ padding: '10px 14px', wordBreak: 'break-word', whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.55, background: isMine ? 'linear-gradient(135deg, var(--accent) 0%, #c42057 100%)' : 'rgba(255,255,255,0.07)', color: isMine ? '#fff' : 'var(--text-primary)', border: isMine ? 'none' : '1px solid rgba(255,255,255,0.08)', borderRadius: isMine ? (sameAsPrev && sameAsNext ? '20px 6px 6px 20px' : sameAsPrev ? '20px 6px 20px 20px' : sameAsNext ? '20px 20px 6px 20px' : '20px 6px 20px 20px') : (sameAsPrev && sameAsNext ? '6px 20px 20px 6px' : sameAsPrev ? '6px 20px 20px 20px' : sameAsNext ? '20px 20px 20px 6px' : '6px 20px 20px 20px'), boxShadow: isMine ? '0 4px 16px rgba(138,21,56,0.3)' : '0 2px 8px rgba(0,0,0,0.2)', opacity: isOpt ? 0.75 : 1 }}>
-                                {msg.content}
-                              </div>
-                              {!isOpt && (
-                                <div style={{ position: 'relative', flexShrink: 0 }}>
-                                  <button
-                                    onClick={e => { e.stopPropagation(); if (pickerOpen) { setPickerState(null) } else { const top = (e.currentTarget as HTMLElement).getBoundingClientRect().top; setPickerState({ msgId: msg.id, openUpward: top > 360 }) } }}
-                                    style={{ width: 26, height: 26, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.12)', background: pickerOpen ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.06)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: 'rgba(255,255,255,0.5)', transition: 'background .15s, color .15s' }}
-                                    title="React"
-                                  >☺</button>
-                                  {pickerOpen && (
-                                    <EmojiPicker isMine={isMine} openUpward={pickerState!.openUpward} onSelect={emoji => { toggleReaction(msg.id, emoji); setPickerState(null) }} />
+                              {editingMsgId === msg.id ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 180, maxWidth: '100%' }}>
+                                  <textarea
+                                    autoFocus
+                                    value={editingText}
+                                    onChange={e => setEditingText(e.target.value)}
+                                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(msg.id) } if (e.key === 'Escape') { setEditingMsgId(null) } }}
+                                    style={{ fontFamily: 'inherit', fontSize: 14, lineHeight: 1.55, padding: '10px 14px', borderRadius: 14, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(138,21,56,0.5)', color: 'var(--text-primary)', outline: 'none', resize: 'none', minHeight: 40, maxHeight: 120, overflowY: 'auto', width: '100%', boxSizing: 'border-box' }}
+                                  />
+                                  <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                                    <button onClick={() => setEditingMsgId(null)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+                                    <button onClick={() => saveEdit(msg.id)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 8, background: 'var(--accent)', border: 'none', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>Save</button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="msg-bubble" style={{ padding: '10px 14px', wordBreak: 'break-word', whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.55, background: isMine ? 'linear-gradient(135deg, var(--accent) 0%, #c42057 100%)' : 'rgba(255,255,255,0.07)', color: isMine ? '#fff' : 'var(--text-primary)', border: isMine ? 'none' : '1px solid rgba(255,255,255,0.08)', borderRadius: isMine ? (sameAsPrev && sameAsNext ? '20px 6px 6px 20px' : sameAsPrev ? '20px 6px 20px 20px' : sameAsNext ? '20px 20px 6px 20px' : '20px 6px 20px 20px') : (sameAsPrev && sameAsNext ? '6px 20px 20px 6px' : sameAsPrev ? '6px 20px 20px 20px' : sameAsNext ? '20px 20px 20px 6px' : '6px 20px 20px 20px'), boxShadow: isMine ? '0 4px 16px rgba(138,21,56,0.3)' : '0 2px 8px rgba(0,0,0,0.2)', opacity: isOpt ? 0.75 : 1 }}>
+                                  {msg.content}
+                                </div>
+                              )}
+                              {!isOpt && editingMsgId !== msg.id && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
+                                  {isMine && (
+                                    <button
+                                      onClick={e => { e.stopPropagation(); setEditingMsgId(msg.id); setEditingText(msg.content); setPickerState(null) }}
+                                      style={{ width: 26, height: 26, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.06)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .15s' }}
+                                      title="Edit"
+                                    >
+                                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                    </button>
                                   )}
+                                  <div style={{ position: 'relative' }}>
+                                    <button
+                                      onClick={e => { e.stopPropagation(); if (pickerOpen) { setPickerState(null) } else { const top = (e.currentTarget as HTMLElement).getBoundingClientRect().top; setPickerState({ msgId: msg.id, openUpward: top > 360 }) } }}
+                                      style={{ width: 26, height: 26, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.12)', background: pickerOpen ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.06)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: 'rgba(255,255,255,0.5)', transition: 'background .15s, color .15s' }}
+                                      title="React"
+                                    >☺</button>
+                                    {pickerOpen && (
+                                      <EmojiPicker isMine={isMine} openUpward={pickerState!.openUpward} onSelect={emoji => { toggleReaction(msg.id, emoji); setPickerState(null) }} />
+                                    )}
+                                  </div>
                                 </div>
                               )}
                             </div>
