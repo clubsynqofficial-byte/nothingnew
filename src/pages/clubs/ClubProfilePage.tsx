@@ -298,16 +298,27 @@ export default function ClubProfilePage() {
         .cal-day:hover{background:rgba(255,255,255,0.06)!important;cursor:pointer}
         .thread-row:hover{border-color:rgba(138,21,56,0.3)!important}
         .cal-layout{display:grid;grid-template-columns:1fr 300px;gap:24px;align-items:start}
-        @media(max-width:640px){.cal-layout{grid-template-columns:1fr}}
+        .cp-tabs{display:flex;border-bottom:1px solid rgba(87,65,68,0.3);overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+        .cp-tabs::-webkit-scrollbar{display:none}
+        .cp-tab{padding:11px 22px;background:transparent;border:none;cursor:pointer;white-space:nowrap;flex-shrink:0;transition:color 0.15s;font-family:inherit;display:flex;align-items:center;gap:6px;margin-bottom:-1px}
+        @media(max-width:640px){
+          .cal-layout{grid-template-columns:1fr}
+          .cp-banner-wrap{margin:12px 0 0!important;border-radius:0!important}
+          .cp-back{padding:16px 16px 0!important}
+          .cp-content{padding:0 14px 52px!important}
+          .cp-tab{padding:10px 14px!important;font-size:13px!important}
+          .cp-club-name{font-size:20px!important}
+          .cp-logo{width:56px!important;height:56px!important;border-radius:14px!important}
+        }
       `}</style>
 
       {/* ── Back ── */}
-      <div style={{ padding: '20px 28px 0' }}>
+      <div className="cp-back" style={{ padding: '20px 28px 0' }}>
         <button onClick={() => navigate('/clubs')} style={backBtnStyle}>← My Clubs</button>
       </div>
 
       {/* ── Banner ── */}
-      <div className="cp-banner" style={{ position: 'relative', height: 240, margin: '16px 28px 0', borderRadius: 20, overflow: 'hidden' }}>
+      <div className="cp-banner cp-banner-wrap" style={{ position: 'relative', height: 240, margin: '16px 28px 0', borderRadius: 20, overflow: 'hidden' }}>
         {club.banner_url
           ? <img src={club.banner_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
           : <div style={{ width: '100%', height: '100%', background: `linear-gradient(135deg, var(--bg-card) 0%, var(--bg-muted) 60%, ${catColor}28 100%)` }}/>
@@ -336,7 +347,7 @@ export default function ClubProfilePage() {
             }
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h1 style={{ fontSize: 28, fontWeight: 800, color: '#fff', marginBottom: 7, letterSpacing: '-0.3px', lineHeight: 1.15 }}>
+            <h1 className="cp-club-name" style={{ fontSize: 28, fontWeight: 800, color: '#fff', marginBottom: 7, letterSpacing: '-0.3px', lineHeight: 1.15 }}>
               {club.name}
             </h1>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -352,7 +363,7 @@ export default function ClubProfilePage() {
       </div>
 
       {/* ── Content area ── */}
-      <div style={{ padding: '0 28px 52px' }}>
+      <div className="cp-content" style={{ padding: '0 28px 52px' }}>
 
         {/* ── Stats row ── */}
         <div className="cp-0" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 20 }}>
@@ -388,21 +399,18 @@ export default function ClubProfilePage() {
         />
 
         {/* ── Tabs ── */}
-        <div className="cp-2" style={{ display: 'flex', gap: 0, borderBottom: '1px solid rgba(87,65,68,0.3)', marginTop: 28 }}>
+        <div className="cp-2 cp-tabs" style={{ marginTop: 28 }}>
           {([
-            { key: 'events'    as Tab, label: 'Events',      badge: events.length },
-            { key: 'calendar'  as Tab, label: 'Calendar',    badge: null },
+            { key: 'events'        as Tab, label: 'Events',        badge: events.length },
+            { key: 'calendar'      as Tab, label: 'Calendar',      badge: null },
             { key: 'community'     as Tab, label: 'Community',     badge: members.length },
             { key: 'announcements' as Tab, label: 'Announcements', badge: announcements.length },
             { key: 'threads'       as Tab, label: 'Threads',       badge: threads.length },
           ]).map(({ key, label, badge }) => (
-            <button key={key} onClick={() => setTab(key)} style={{
-              padding: '11px 22px', background: 'transparent', border: 'none',
+            <button key={key} onClick={() => setTab(key)} className="cp-tab" style={{
               borderBottom: tab === key ? '2px solid var(--accent)' : '2px solid transparent',
               color: tab === key ? 'var(--text-primary)' : 'var(--text-muted)',
               fontSize: 14, fontWeight: tab === key ? 600 : 400,
-              cursor: 'pointer', marginBottom: -1, transition: 'color 0.15s',
-              display: 'flex', alignItems: 'center', gap: 6,
             }}>
               {label}
               {badge !== null && badge > 0 && (

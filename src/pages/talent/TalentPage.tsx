@@ -402,7 +402,7 @@ export default function TalentPage() {
             <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', boxShadow: '0 0 8px var(--accent-glow)' }} />
             <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', color: 'var(--accent)', textTransform: 'uppercase' }}>Skill Souq</span>
           </div>
-          <h1 style={{ fontSize: 32, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.5px', lineHeight: 1.1 }}>Trade Skills. Grow Together.</h1>
+          <h1 style={{ fontSize: 'clamp(20px, 5vw, 32px)', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.5px', lineHeight: 1.1 }}>Trade Skills. Grow Together.</h1>
           <p style={{ fontSize: 14, color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.5 }}>Offer what you know. Get what you need. No money required.</p>
         </div>
         <button className="tp-1" onClick={openCreate} style={{
@@ -773,7 +773,7 @@ export default function TalentPage() {
       {/* REQUEST PROMPT MODAL */}
       {requestPrompt && (
         <div onClick={e => { if (e.target === e.currentTarget) setRequestPrompt(null) }} style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-          <div style={{ width: '100%', maxWidth: 480, background: 'var(--bg-card)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, padding: '28px 32px' }}>
+          <div style={{ width: '100%', maxWidth: 480, background: 'var(--bg-card)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, padding: 'clamp(18px, 4vw, 28px) clamp(16px, 4vw, 32px)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--accent)', textTransform: 'uppercase' }}>Trade Request</div>
               <button onClick={() => setRequestPrompt(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 18, cursor: 'pointer', lineHeight: 1 }}>✕</button>
@@ -805,7 +805,7 @@ export default function TalentPage() {
       {/* CREATE / EDIT MODAL */}
       {showModal && (
         <div onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }} style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-          <div style={{ width: '100%', maxWidth: 520, background: 'var(--bg-card)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, padding: '28px 32px', maxHeight: '90vh', overflowY: 'auto' }}>
+          <div style={{ width: '100%', maxWidth: 520, background: 'var(--bg-card)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, padding: 'clamp(18px, 4vw, 28px) clamp(16px, 4vw, 32px)', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
               <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)' }}>{editTarget ? 'Edit Listing' : 'List a Skill'}</h2>
               <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}>✕</button>
@@ -847,7 +847,7 @@ export default function TalentPage() {
       {/* RATING MODAL */}
       {ratingTrade && createPortal(
         <div onClick={e => { if (e.target === e.currentTarget) setRatingTrade(null) }} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-          <div style={{ width: '100%', maxWidth: 420, background: 'var(--bg-card)', border: '1px solid rgba(233,193,118,0.2)', borderRadius: 22, padding: '32px 32px 28px' }}>
+          <div style={{ width: '100%', maxWidth: 420, background: 'var(--bg-card)', border: '1px solid rgba(233,193,118,0.2)', borderRadius: 22, padding: 'clamp(20px, 4vw, 32px) clamp(16px, 4vw, 32px) clamp(18px, 3vw, 28px)' }}>
             <div style={{ textAlign: 'center', marginBottom: 24 }}>
               <div style={{ fontSize: 36, marginBottom: 10 }}>⭐</div>
               <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>Rate your collaborator</h2>
@@ -1166,7 +1166,7 @@ function UserProfileModal({ userId, onClose }: { userId: string; onClose: () => 
     <div onClick={e => { if (e.target === e.currentTarget) onClose() }} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div style={{ width: '100%', maxWidth: 480, background: 'var(--bg-card)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 22, maxHeight: '86vh', overflowY: 'auto' }}>
         {/* Header */}
-        <div style={{ padding: '24px 26px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', position: 'sticky', top: 0, background: 'var(--bg-card)', borderRadius: '22px 22px 0 0', zIndex: 1 }}>
+        <div style={{ padding: 'clamp(16px, 3vw, 24px) clamp(16px, 4vw, 26px) clamp(14px, 2vw, 20px)', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', position: 'sticky', top: 0, background: 'var(--bg-card)', borderRadius: '22px 22px 0 0', zIndex: 1 }}>
           {!loading && profile && (
             <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
               <Avatar name={profile.full_name} size={52} />

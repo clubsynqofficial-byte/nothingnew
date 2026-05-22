@@ -116,7 +116,7 @@ function ClubSelector({
         <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--accent)', letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: 10 }}>
           Leadership
         </div>
-        <h1 style={{ fontSize: 36, fontWeight: 900, color: 'var(--text-primary)', letterSpacing: '-0.5px', marginBottom: 8 }}>
+        <h1 style={{ fontSize: 'clamp(22px, 4vw, 36px)', fontWeight: 900, color: 'var(--text-primary)', letterSpacing: '-0.5px', marginBottom: 8 }}>
           {isEmpty ? 'Start Your Journey' : 'Your Clubs'}
         </h1>
         <p style={{ fontSize: 14, color: 'var(--text-muted)', lineHeight: 1.6 }}>
@@ -335,7 +335,7 @@ export default function LeadershipPage() {
     return (
       <>
         <style>{ANIM_CSS}</style>
-        <div style={{ padding: '28px 28px 0' }}>
+        <div style={{ padding: 'clamp(16px, 3vw, 28px) clamp(16px, 3vw, 28px) 0' }}>
           <button
             onClick={() => setShowCreateForm(false)}
             style={{ display:'flex', alignItems:'center', gap:7, background:'transparent', border:'none', color:'var(--text-muted)', fontSize:13, fontWeight:600, cursor:'pointer', padding:'6px 0', fontFamily:'inherit', transition:'color .15s' }}

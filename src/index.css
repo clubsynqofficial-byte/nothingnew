@@ -162,3 +162,32 @@ button { cursor: pointer; }
   width: 100%;
   box-sizing: border-box;
 }
+
+/* ── Responsive modal ── */
+.r-modal {
+  width: min(100%, 500px);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+/* ── Scrollable pill row (filters, chips) ── */
+.pill-scroll {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+.pill-scroll::-webkit-scrollbar { display: none; }
+.pill-scroll > * { flex-shrink: 0; }
+
+/* ── Clamp heading ── */
+.h-clamp-lg { font-size: clamp(22px, 5vw, 46px) !important; }
+.h-clamp-md { font-size: clamp(18px, 4vw, 28px) !important; }
+
+/* ── Extra small phones ── */
+@media (max-width: 480px) {
+  .page-content { padding: 14px 12px 64px !important; }
+  .r-modal { border-radius: 20px !important; padding: 20px 16px !important; }
+}

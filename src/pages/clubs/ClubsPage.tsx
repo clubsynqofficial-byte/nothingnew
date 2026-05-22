@@ -92,7 +92,7 @@ export default function ClubsPage() {
 
       {/* Header */}
       <div className="cl-0" style={{ marginBottom: 32 }}>
-        <h1 style={{ fontSize: 38, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.5px', marginBottom: 8 }}>
+        <h1 style={{ fontSize: 'clamp(24px, 5vw, 38px)', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.5px', marginBottom: 8 }}>
           My Clubs
         </h1>
         <p style={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.6 }}>

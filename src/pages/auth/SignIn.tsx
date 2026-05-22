@@ -49,7 +49,7 @@ export default function SignIn() {
 
       <form onSubmit={handleSubmit} style={{ display:'flex', flexDirection:'column', gap:14, marginTop:20 }}>
         <Field label="Email">
-          <input type="email" required autoComplete="email" placeholder="you@university.edu"
+          <input type="email" required autoComplete="email" placeholder="you@email.com"
             value={email} onChange={e => setEmail(e.target.value)} className="auth-input" />
         </Field>
 

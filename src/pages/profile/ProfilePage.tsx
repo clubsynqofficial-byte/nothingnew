@@ -126,6 +126,17 @@ const CSS = `
   .pf-post { transition: transform 0.18s, border-color 0.18s, box-shadow 0.18s; }
   .pf-post:hover { transform:translateY(-2px); border-color:rgba(138,21,56,0.3) !important; box-shadow:0 8px 24px rgba(0,0,0,0.3) !important; }
 
+  @media(max-width:600px) {
+    .pf-inner-pad { padding: 0 14px 20px !important; }
+    .pf-stats-grid { grid-template-columns: repeat(2,1fr) !important; }
+    .pf-clubs-grid { grid-template-columns: repeat(2,1fr) !important; }
+    .pf-action-row { flex-wrap: wrap !important; gap: 8px !important; }
+    .pf-tabs-row { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .pf-tabs-row::-webkit-scrollbar { display: none; }
+    .pf-tab { white-space: nowrap; flex-shrink: 0; }
+    .pf-msg-btn span.pf-msg-label { display: none; }
+  }
+
   input:focus, textarea:focus { border-color:rgba(138,21,56,0.55) !important; outline:none; }
 `
 
@@ -678,7 +689,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Body */}
-        <div style={{ padding:'0 28px 28px', marginTop: editing ? 12 : -44 }}>
+        <div className="pf-inner-pad" style={{ padding:'0 28px 28px', marginTop: editing ? 12 : -44 }}>
           {!editing ? (
             <>
               {/* Avatar */}
@@ -828,7 +839,7 @@ export default function ProfilePage() {
               )}
 
               {/* Stats grid */}
-              <div style={{ borderTop:'1px solid rgba(255,255,255,0.055)', paddingTop:20, display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10 }}>
+              <div className="pf-stats-grid" style={{ borderTop:'1px solid rgba(255,255,255,0.055)', paddingTop:20, display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10 }}>
                 {([
                   { label:'Clubs Joined',    value:clubs.length,                           color:'#0ea5e9', icon:'🏛️', t:'clubs'    },
                   { label:'Active Listings', value:listings.filter(l=>l.is_active).length, color:'#a855f7', icon:'⚡', t:'listings' },
@@ -906,7 +917,7 @@ export default function ProfilePage() {
       </div>
 
       {/* ── Tab bar ── */}
-      <div className="pf-1" style={{
+      <div className="pf-1 pf-tabs-row" style={{
         display:'flex', gap:3, background:'rgba(0,0,0,0.22)',
         border:'1px solid rgba(255,255,255,0.055)', borderRadius:15, padding:4, marginBottom:14,
       }}>

@@ -2,12 +2,13 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { parseTS } from '../../lib/time'
 import { useAuth } from '../../contexts/AuthContext'
 
 interface PostRow {
   id: string; user_id: string; content: string | null
   image_url: string | null; image_urls: string[] | null
-  repost_of: string | null; created_at: string
+  repost_of: string | null; created_at: string; is_anonymous: boolean
   profile: { full_name: string | null; avatar_url: string | null } | null
 }
 interface FeedPost extends PostRow {
@@ -81,6 +82,8 @@ export default function HomePage() {
   const [menuId, setMenuId]         = useState<string | null>(null)
   const [openPostId, setOpenPostId] = useState<string | null>(null)
 
+  const [anon, setAnon]             = useState(false)
+
   // Poll compose state
   const [showPoll, setShowPoll]     = useState(false)
   const [pollQuestion, setPollQuestion] = useState('')
@@ -131,7 +134,7 @@ export default function HomePage() {
   async function fetchFeed() {
     setLoading(true)
     const { data: raw } = await supabase
-      .from('posts').select('id,user_id,content,image_url,image_urls,repost_of,created_at,profile:profiles!user_id(full_name,avatar_url)')
+      .from('posts').select('id,user_id,content,image_url,image_urls,repost_of,created_at,is_anonymous,profile:profiles!user_id(full_name,avatar_url)')
       .order('created_at', { ascending: false }).limit(60)
     if (!raw) { setLoading(false); return }
 
@@ -146,7 +149,7 @@ export default function HomePage() {
       ids.length ? supabase.from('post_likes').select('post_id,user_id').in('post_id', ids) : { data: [] as any[] },
       ids.length ? supabase.from('post_comments').select('post_id').in('post_id', ids) : { data: [] as any[] },
       ids.length ? supabase.from('posts').select('repost_of,user_id').in('repost_of', ids).is('content', null).is('image_url', null) : { data: [] as any[] },
-      rids.length ? supabase.from('posts').select('id,user_id,content,image_url,image_urls,repost_of,created_at,profile:profiles!user_id(full_name,avatar_url)').in('id', rids) : { data: [] as any[] },
+      rids.length ? supabase.from('posts').select('id,user_id,content,image_url,image_urls,repost_of,created_at,is_anonymous,profile:profiles!user_id(full_name,avatar_url)').in('id', rids) : { data: [] as any[] },
     ])
     const likeMap: Record<string, string[]> = {}
     for (const l of lk.data ?? []) { if (!likeMap[l.post_id]) likeMap[l.post_id] = []; likeMap[l.post_id].push(l.user_id) }
@@ -248,6 +251,7 @@ export default function HomePage() {
       user_id: user.id, content: txt.trim() || null,
       image_url: imageUrls[0] ?? null,
       image_urls: imageUrls.length > 0 ? imageUrls : null,
+      is_anonymous: anon,
     }).select('id').single()
 
     if (showPoll && newPost) {
@@ -259,7 +263,7 @@ export default function HomePage() {
     }
 
     setTxt(''); setImgs([]); setPreviews([]); setFocused(false)
-    setShowPoll(false); setPollQuestion(''); setPollOptions(['', ''])
+    setShowPoll(false); setPollQuestion(''); setPollOptions(['', '']); setAnon(false)
     if (taRef.current) taRef.current.style.height = 'auto'
     setPosting(false); fetchFeed()
   }
@@ -353,6 +357,12 @@ export default function HomePage() {
     <>
     <style>{`
       @keyframes fadeUp { from { opacity:0; transform:translateY(20px) } to { opacity:1; transform:none } }
+      @keyframes bannerOrb1 { 0%,100%{transform:translate(0,0) scale(1)} 33%{transform:translate(40px,-20px) scale(1.12)} 66%{transform:translate(-20px,30px) scale(0.92)} }
+      @keyframes bannerOrb2 { 0%,100%{transform:translate(0,0) scale(1)} 33%{transform:translate(-35px,25px) scale(0.88)} 66%{transform:translate(25px,-15px) scale(1.08)} }
+      @keyframes bannerOrb3 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(-18px,12px)} }
+      @keyframes bannerShimmer { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+      @keyframes bannerParticle { 0%{transform:translateY(0) scale(1);opacity:.7} 100%{transform:translateY(-80px) scale(0);opacity:0} }
+      @keyframes bannerGlow { 0%,100%{opacity:.5} 50%{opacity:1} }
       @keyframes pop { 0%{transform:scale(1)} 40%{transform:scale(1.55)} 70%{transform:scale(0.88)} 100%{transform:scale(1)} }
       @keyframes shimmer { from{background-position:-200% 0} to{background-position:200% 0} }
       @keyframes menuIn { from{opacity:0;transform:scale(.9) translateY(-6px)} to{opacity:1;transform:none} }
@@ -399,15 +409,34 @@ export default function HomePage() {
         background: 'linear-gradient(135deg, #8a1538 0%, #6b1030 35%, #3d0a1c 70%, #1e0510 100%)',
         position: 'relative', overflow: 'hidden',
       }}>
-        {/* decorative circles */}
-        {[['-40px','-30px',220],['-10px','auto',140,undefined,'-30px'],[undefined,'-10px',90,'30px']].map(([t,r,sz,b,l],i) => (
+        {/* Animated orbs */}
+        <div style={{ position:'absolute', top:'-30%', left:'-5%', width:280, height:280, borderRadius:'50%', background:'radial-gradient(circle,rgba(192,37,90,.55) 0%,transparent 70%)', animation:'bannerOrb1 12s ease-in-out infinite', pointerEvents:'none', filter:'blur(2px)' }}/>
+        <div style={{ position:'absolute', top:'10%', right:'-8%', width:220, height:220, borderRadius:'50%', background:'radial-gradient(circle,rgba(138,21,56,.45) 0%,transparent 70%)', animation:'bannerOrb2 16s ease-in-out infinite', pointerEvents:'none', filter:'blur(1px)' }}/>
+        <div style={{ position:'absolute', bottom:'-40%', left:'40%', width:180, height:180, borderRadius:'50%', background:'radial-gradient(circle,rgba(160,24,64,.3) 0%,transparent 70%)', animation:'bannerOrb3 20s ease-in-out infinite', pointerEvents:'none' }}/>
+
+        {/* Animated aurora sweep */}
+        <div style={{ position:'absolute', inset:0, background:'linear-gradient(90deg,transparent 0%,rgba(192,37,90,.08) 40%,rgba(224,100,140,.12) 60%,transparent 100%)', backgroundSize:'200% 100%', animation:'bannerShimmer 6s ease infinite', pointerEvents:'none' }}/>
+
+        {/* Floating particles */}
+        {[
+          { left:'12%', bottom:'10%', delay:'0s',  dur:'4s',  size:3 },
+          { left:'28%', bottom:'5%',  delay:'1.2s', dur:'5s',  size:2 },
+          { left:'55%', bottom:'15%', delay:'0.6s', dur:'3.5s', size:4 },
+          { left:'72%', bottom:'8%',  delay:'2s',   dur:'6s',  size:2 },
+          { left:'88%', bottom:'12%', delay:'0.3s', dur:'4.5s', size:3 },
+        ].map((p, i) => (
           <div key={i} style={{
-            position:'absolute', top: t as any, right: r as any, bottom: b as any, left: l as any,
-            width: sz as number, height: sz as number, borderRadius:'50%',
-            background:'rgba(255,255,255,0.04)', pointerEvents:'none',
+            position:'absolute', left:p.left, bottom:p.bottom,
+            width:p.size, height:p.size, borderRadius:'50%',
+            background:'rgba(255,180,200,.8)',
+            animation:`bannerParticle ${p.dur} ${p.delay} ease-in infinite`,
+            pointerEvents:'none',
+            boxShadow:`0 0 ${p.size*2}px rgba(192,37,90,.9)`,
           }}/>
         ))}
-        <div style={{ position:'absolute', top:0, left:0, right:0, bottom:0, background:'radial-gradient(ellipse at 20% 50%, rgba(192,24,92,.25) 0%, transparent 60%)', pointerEvents:'none' }}/>
+
+        {/* Glowing border top */}
+        <div style={{ position:'absolute', top:0, left:0, right:0, height:1, background:'linear-gradient(90deg,transparent,rgba(192,37,90,.6),rgba(255,150,180,.8),rgba(192,37,90,.6),transparent)', animation:'bannerGlow 3s ease-in-out infinite', pointerEvents:'none' }}/>
 
         <div style={{ position:'relative', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:16 }}>
           <div>
@@ -416,27 +445,6 @@ export default function HomePage() {
                 {greeting}, {firstName}! 👋
               </div>
             </div>
-            <div className="hero-sub" style={{ fontSize:13, color:'rgba(255,255,255,.6)', fontWeight:500 }}>
-              Your campus community, all in one place. Connect, explore, and make an impact across Qatar.
-            </div>
-          </div>
-
-          {/* quick stats */}
-          <div className="hero-stats" style={{ display:'flex', gap:10 }}>
-            {[
-              { label:'My posts', value: loading ? '…' : myPosts.length, color:'#fca5a5' },
-              { label:'Likes earned', value: loading ? '…' : myLikes, color:'#f87171' },
-              { label:'Points', value: profile?.karak_points ?? 0, color:'#fcd34d' },
-            ].map(s => (
-              <div key={s.label} style={{
-                background:'rgba(255,255,255,.1)', backdropFilter:'blur(12px)',
-                border:'1px solid rgba(255,255,255,.15)',
-                borderRadius:14, padding:'10px 16px', textAlign:'center', minWidth:72,
-              }}>
-                <div style={{ fontSize:20, fontWeight:900, color:s.color, letterSpacing:'-0.5px' }}>{s.value}</div>
-                <div style={{ fontSize:10, color:'rgba(255,255,255,.55)', fontWeight:600, marginTop:1 }}>{s.label}</div>
-              </div>
-            ))}
           </div>
         </div>
       </div>
@@ -620,6 +628,13 @@ export default function HomePage() {
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
                   <span>Poll</span>
                 </button>
+                {/* Anonymous toggle */}
+                <button onClick={() => setAnon(v => !v)} style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'6px 12px', borderRadius:9999, border:'1px solid transparent', cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:600, background: anon ? 'rgba(138,21,56,.2)' : 'transparent', color: anon ? 'var(--accent)' : 'var(--text-muted)', transition:'all .15s' }}
+                  onMouseEnter={e => { e.currentTarget.style.background='rgba(138,21,56,.14)'; e.currentTarget.style.color='var(--accent)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background=anon?'rgba(138,21,56,.2)':'transparent'; e.currentTarget.style.color=anon?'var(--accent)':'var(--text-muted)' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                  <span>Anon</span>
+                </button>
                 {/* AI button */}
                 <button onClick={() => { setShowAI(v => !v); setAiResult(''); }}
                   style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'6px 14px', borderRadius:9999, cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:700, transition:'all .15s',
@@ -714,7 +729,7 @@ export default function HomePage() {
               </div>
               <div style={{ marginBottom:14 }}>
                 <div style={{ fontSize:16, fontWeight:900, color:'var(--text-primary)', marginBottom:1 }}>{profile?.full_name??'Your Name'}</div>
-                <div style={{ fontSize:12, color:'var(--text-muted)' }}>{profile?.university?.short_name??profile?.university?.name??'University'}</div>
+
                 {profile?.role && (
                   <div style={{
                     display:'inline-block', marginTop:6, padding:'2px 9px', borderRadius:9999, fontSize:11, fontWeight:700,
@@ -870,7 +885,8 @@ function Card({
   const isRO = !!post.repost_of && !post.content && effectiveImgs(post).length === 0
   const isOwn = post.user_id === uid
 
-  const dp = isRO ? post.repostSource?.profile : post.profile
+  const isAnon = !isRO && post.is_anonymous
+  const dp = isRO ? post.repostSource?.profile : isAnon ? null : post.profile
   const dUid = isRO ? (post.repostSource?.user_id ?? post.user_id) : post.user_id
   const dTime = isRO ? (post.repostSource?.created_at ?? post.created_at) : post.created_at
   const dContent = isRO ? post.repostSource?.content : post.content
@@ -893,14 +909,20 @@ function Card({
 
         {/* Header */}
         <div style={{ display:'flex', alignItems:'flex-start', gap:12, marginBottom: dContent||dImgs.length ? 11 : 0 }}>
-          <Av url={dp?.avatar_url??null} name={dp?.full_name??null} size={44} onClick={e=>{e.stopPropagation();onProfile(dUid)}}/>
+          <Av url={isAnon ? null : dp?.avatar_url??null} name={isAnon ? 'A' : dp?.full_name??null} size={44} onClick={isAnon ? undefined : e=>{e.stopPropagation();onProfile(dUid)}}/>
 
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:2 }}>
-              <span onClick={e=>{e.stopPropagation();onProfile(dUid)}} style={{ fontSize:14.5, fontWeight:800, color:'var(--text-primary)', cursor:'pointer', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', transition:'color .15s' }}
-                onMouseEnter={e=>e.currentTarget.style.color='var(--accent)'} onMouseLeave={e=>e.currentTarget.style.color='var(--text-primary)'}>
-                {dp?.full_name??'User'}
-              </span>
+              {isAnon ? (
+                <span style={{ fontSize:14.5, fontWeight:800, color:'var(--text-muted)', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                  Anonymous{isOwn && <span style={{ fontSize:11, fontWeight:600, color:'rgba(255,255,255,.3)', marginLeft:5 }}>(You)</span>}
+                </span>
+              ) : (
+                <span onClick={e=>{e.stopPropagation();onProfile(dUid)}} style={{ fontSize:14.5, fontWeight:800, color:'var(--text-primary)', cursor:'pointer', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', transition:'color .15s' }}
+                  onMouseEnter={e=>e.currentTarget.style.color='var(--accent)'} onMouseLeave={e=>e.currentTarget.style.color='var(--text-primary)'}>
+                  {dp?.full_name??'User'}
+                </span>
+              )}
               <span style={{ fontSize:11, color:'var(--text-muted)', flexShrink:0, fontVariantNumeric:'tabular-nums' }}>{reltime(dTime)}</span>
             </div>
             {dContent && (
@@ -1078,7 +1100,9 @@ function PostModal({
   const cinRef = useRef<HTMLInputElement>(null)
   const effectiveImgs = (p: PostRow) => (p.image_urls && p.image_urls.length > 0) ? p.image_urls : (p.image_url ? [p.image_url] : [])
   const isRO = !!post.repost_of && !post.content && effectiveImgs(post).length === 0
-  const dp = isRO ? post.repostSource?.profile : post.profile
+  const isOwn = post.user_id === uid
+  const isAnon = !isRO && post.is_anonymous
+  const dp = isRO ? post.repostSource?.profile : isAnon ? null : post.profile
   const dUid = isRO ? (post.repostSource?.user_id ?? post.user_id) : post.user_id
   const dTime = isRO ? (post.repostSource?.created_at ?? post.created_at) : post.created_at
   const dContent = isRO ? post.repostSource?.content : post.content
@@ -1159,21 +1183,27 @@ function PostModal({
             {/* Author row */}
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 13, marginBottom: 16 }}>
               <div style={{ position: 'relative', flexShrink: 0 }}>
-                <Av url={dp?.avatar_url ?? null} name={dp?.full_name ?? null} size={50}
-                  onClick={e => { e.stopPropagation(); onProfile(dUid) }} />
+                <Av url={isAnon ? null : dp?.avatar_url ?? null} name={isAnon ? 'A' : dp?.full_name ?? null} size={50}
+                  onClick={isAnon ? undefined : e => { e.stopPropagation(); onProfile(dUid) }} />
                 {/* connector dot */}
                 {dContent && <div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: 54, width: 2, height: 'calc(100% + 12px)', background: 'linear-gradient(180deg,rgba(138,21,56,.4),transparent)', borderRadius: 1 }} />}
               </div>
               <div style={{ flex: 1, minWidth: 0, paddingTop: 2 }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, flexWrap: 'wrap' }}>
-                  <span onClick={() => onProfile(dUid)} style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)', cursor: 'pointer', transition: 'color .15s', letterSpacing: '-.2px' }}
-                    onMouseEnter={e => e.currentTarget.style.color = 'var(--accent)'}
-                    onMouseLeave={e => e.currentTarget.style.color = 'var(--text-primary)'}>
-                    {dp?.full_name ?? 'User'}
-                  </span>
+                  {isAnon ? (
+                    <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '-.2px' }}>
+                      Anonymous{isOwn && <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,.3)', marginLeft: 6 }}>(You)</span>}
+                    </span>
+                  ) : (
+                    <span onClick={() => onProfile(dUid)} style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)', cursor: 'pointer', transition: 'color .15s', letterSpacing: '-.2px' }}
+                      onMouseEnter={e => e.currentTarget.style.color = 'var(--accent)'}
+                      onMouseLeave={e => e.currentTarget.style.color = 'var(--text-primary)'}>
+                      {dp?.full_name ?? 'User'}
+                    </span>
+                  )}
                 </div>
                 <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,.32)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
-                  {new Date(dTime).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} · {reltime(dTime)}
+                  {parseTS(dTime).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} · {parseTS(dTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
                 </div>
               </div>
             </div>
@@ -1396,10 +1426,10 @@ function Empty() {
 
 // ─── Util ─────────────────────────────────────────────────────────────────────
 function reltime(iso: string): string {
-  const d = Date.now()-new Date(iso).getTime(), s=Math.floor(d/1000)
+  const d = Date.now()-parseTS(iso).getTime(), s=Math.floor(d/1000)
   if(s<60) return `${s}s`; const m=Math.floor(s/60)
   if(m<60) return `${m}m`; const h=Math.floor(m/60)
   if(h<24) return `${h}h`; const dy=Math.floor(h/24)
   if(dy<7) return `${dy}d`
-  return new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric'})
+  return parseTS(iso).toLocaleDateString('en-US',{month:'short',day:'numeric'})
 }

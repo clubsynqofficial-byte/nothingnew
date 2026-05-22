@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import rawEmojiData from '@emoji-mart/data'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { parseTS } from '../../lib/time'
 import { useAuth } from '../../contexts/AuthContext'
 import { usePresence, type PresenceStatus } from '../../contexts/PresenceContext'
 import { filterText } from '../../lib/contentFilter'
@@ -66,7 +67,7 @@ interface GroupMessage {
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function reltime(iso: string) {
-  const diff = Date.now() - new Date(iso).getTime()
+  const diff = Date.now() - parseTS(iso).getTime()
   const m = Math.floor(diff / 60000)
   if (m < 1) return 'now'
   if (m < 60) return `${m}m`
@@ -74,11 +75,11 @@ function reltime(iso: string) {
   if (h < 24) return `${h}h`
   const d = Math.floor(h / 24)
   if (d < 7) return `${d}d`
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  return parseTS(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 function fmtDate(iso: string) {
-  const d = new Date(iso), now = new Date()
+  const d = parseTS(iso), now = new Date()
   if (d.toDateString() === now.toDateString()) return 'Today'
   const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1)
   if (d.toDateString() === yesterday.toDateString()) return 'Yesterday'
@@ -1532,7 +1533,7 @@ export default function MessagesPage() {
                           <div key={msg.id} style={{ display: 'flex', justifyContent: 'center', margin: '10px 0', animation: 'mp-msg-in 0.22s ease both' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 14px', background: 'rgba(74,222,128,0.07)', border: '1px solid rgba(74,222,128,0.18)', borderRadius: 9999, fontSize: 12, color: 'rgba(74,222,128,0.85)', fontWeight: 500 }}>
                               {msg.content}
-                              <span style={{ fontSize: 10, opacity: 0.5, marginLeft: 2 }}>{new Date(msg.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</span>
+                              <span style={{ fontSize: 10, opacity: 0.5, marginLeft: 2 }}>{parseTS(msg.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</span>
                             </div>
                           </div>
                         )
@@ -1612,7 +1613,7 @@ export default function MessagesPage() {
                                 ))}
                               </div>
                             )}
-                            {showTime && <span style={{ fontSize: 10, color: 'var(--text-muted)', paddingInline: 6, opacity: 0.6, marginTop: 1 }}>{new Date(msg.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}{isMine && <span style={{ marginLeft: 3, opacity: 0.8 }}>{isOpt ? '·' : '✓'}</span>}</span>}
+                            {showTime && <span style={{ fontSize: 10, color: 'var(--text-muted)', paddingInline: 6, opacity: 0.6, marginTop: 1 }}>{parseTS(msg.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}{isMine && <span style={{ marginLeft: 3, opacity: 0.8 }}>{isOpt ? '·' : '✓'}</span>}</span>}
                           </div>
                         </div>
                       )

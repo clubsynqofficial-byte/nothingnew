@@ -697,6 +697,12 @@ export default function CommandCenter({ club, onDeleted, onPresidencyTransferred
         .cc-panel { animation: cc-pop 0.25s cubic-bezier(0.22,1,0.36,1) both; }
         .cc-tab { font-family:inherit; cursor:pointer; transition:all 0.18s; border:none; }
         .cc-tab:hover { color:var(--text-primary) !important; }
+        .cc-tabs { display:flex; gap:3px; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.07); border-radius:14px; padding:4px; margin-bottom:20px; }
+        @media(max-width:640px) {
+          .cc-tabs { overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; border-radius:12px; }
+          .cc-tabs::-webkit-scrollbar { display:none; }
+          .cc-tab { flex:0 0 auto !important; padding:9px 14px !important; font-size:12px !important; white-space:nowrap; }
+        }
       `}</style>
 
       {/* ── Club switcher (injected by LeadershipPage when user has access to multiple clubs) ── */}
@@ -752,7 +758,7 @@ export default function CommandCenter({ club, onDeleted, onPresidencyTransferred
       )}
 
       {/* ── Tab bar ── */}
-      <div style={{ display:'flex', gap:3, background:'rgba(0,0,0,0.2)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:14, padding:4, marginBottom:20 }}>
+      <div className="cc-tabs">
         {TABS.map(t => (
           <button key={t.key} className="cc-tab" onClick={() => setActiveTab(t.key)} style={{
             flex:1, padding:'9px 10px', borderRadius:11, fontSize:13,

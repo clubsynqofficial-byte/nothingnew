@@ -205,7 +205,7 @@ export default function TopBar({ onMenuToggle }: Props) {
   }
 
   const toastPortal = createPortal(
-    <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 99999, display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-end', pointerEvents: 'none' }}>
+    <div style={{ position: 'fixed', bottom: 24, right: 16, left: 16, zIndex: 99999, display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-end', pointerEvents: 'none' }}>
       {toasts.map(t => {
         const meta = NOTIF_META[t.notif.type] ?? NOTIF_META.announcement
         return (
@@ -219,7 +219,7 @@ export default function TopBar({ onMenuToggle }: Props) {
               borderLeft: `3px solid ${meta.color}`,
               borderRadius: 14, padding: '12px 16px',
               boxShadow: '0 16px 48px rgba(0,0,0,0.55)',
-              maxWidth: 320, pointerEvents: 'auto',
+              width: 'min(320px, calc(100vw - 32px))', pointerEvents: 'auto',
             }}
           >
             <div style={{ width: 32, height: 32, borderRadius: 9, flexShrink: 0, background: meta.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>
@@ -402,7 +402,7 @@ export default function TopBar({ onMenuToggle }: Props) {
           {open && (
             <div className="notif-panel" style={{
               position: 'absolute', top: 'calc(100% + 10px)', right: 0,
-              width: 360, maxHeight: 500,
+              width: 'min(360px, calc(100vw - 32px))', maxHeight: 500,
               background: 'rgba(27,16,18,0.98)', backdropFilter: 'blur(24px)',
               border: '1px solid rgba(87,65,68,0.35)', borderRadius: 16,
               boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
@@ -509,7 +509,7 @@ export default function TopBar({ onMenuToggle }: Props) {
           {profileOpen && (
             <div className="profile-dropdown" style={{
               position: 'absolute', top: 'calc(100% + 10px)', right: 0,
-              width: 220,
+              width: 'min(220px, calc(100vw - 32px))',
               background: 'rgba(20,10,14,0.98)', backdropFilter: 'blur(24px)',
               border: '1px solid rgba(87,65,68,0.35)', borderRadius: 14,
               boxShadow: '0 20px 56px rgba(0,0,0,0.65)',
@@ -644,6 +644,8 @@ export default function TopBar({ onMenuToggle }: Props) {
         .notif-toast { animation: notif-toast-in 0.3s cubic-bezier(0.34,1.56,0.64,1) both; }
         .notif-toast.leaving { animation: notif-toast-out 0.25s ease forwards; }
         @media(max-width:600px) { .tb-search { display:none!important; } }
+        .notif-panel { animation: notif-panel 0.22s cubic-bezier(0.22,1,0.36,1) both; right: 0; }
+        @media(max-width:480px) { .notif-panel { right: -16px !important; } .profile-dropdown { right: -8px !important; } }
         @keyframes pd-in { from{opacity:0;transform:translateY(-8px) scale(0.96)} to{opacity:1;transform:none} }
         .profile-dropdown { animation: pd-in 0.2s cubic-bezier(0.22,1,0.36,1) both; }
         .pd-item:hover { background: rgba(255,255,255,0.05) !important; color: #fff !important; }

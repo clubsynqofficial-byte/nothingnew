@@ -30,6 +30,15 @@ const CSS = `
   .st-av-wrap:hover .st-av-overlay { opacity: 1; }
   .st-row-hover { transition: background .12s; }
   .st-row-hover:hover { background: rgba(255,255,255,.03) !important; }
+  @media(max-width:640px) {
+    .st-outer-pad { padding: 20px 16px 80px !important; }
+    .st-layout { flex-direction: column !important; }
+    .st-sidebar { width: 100% !important; position: static !important; flex-direction: row !important; overflow-x: auto !important; scrollbar-width: none !important; border-radius: 12px !important; }
+    .st-sidebar::-webkit-scrollbar { display: none; }
+    .st-sidebar button { flex-shrink: 0 !important; border-left: none !important; border-bottom: 3px solid transparent !important; white-space: nowrap !important; padding: 11px 14px !important; }
+    .st-sidebar button.st-tab-active { border-bottom-color: #c0185c !important; }
+    .st-del-modal { padding: 24px 18px !important; }
+  }
 `
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -115,7 +124,7 @@ export default function SettingsPage() {
   ]
 
   return (
-    <div style={{ minHeight: '100vh', padding: '32px 24px 80px', maxWidth: 860, margin: '0 auto' }}>
+    <div className="st-outer-pad" style={{ minHeight: '100vh', padding: '32px 24px 80px', maxWidth: 860, margin: '0 auto' }}>
       <style>{CSS}</style>
 
       <div style={{ marginBottom: 32 }}>
@@ -123,9 +132,9 @@ export default function SettingsPage() {
         <div style={{ fontSize: 14, color: 'rgba(255,255,255,.38)' }}>Manage your profile, account and preferences</div>
       </div>
 
-      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+      <div className="st-layout" style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
         {/* Sidebar */}
-        <div style={{ width: 196, flexShrink: 0, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.07)', borderRadius: 16, overflow: 'hidden', position: 'sticky', top: 24 }}>
+        <div className="st-sidebar" style={{ width: 196, flexShrink: 0, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.07)', borderRadius: 16, overflow: 'hidden', position: 'sticky', top: 24 }}>
           {TABS.map(t => {
             const active = activeTab === t.key
             return (
@@ -522,7 +531,7 @@ function AccountTab({ addToast }: { addToast: (msg: string, type?: 'success' | '
       {deleteOpen && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 99999, background: 'rgba(0,0,0,.7)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
           onClick={e => { if (e.target === e.currentTarget) { setDeleteOpen(false); setDeleteConfirm('') } }}>
-          <div style={{ width: '100%', maxWidth: 440, background: '#130810', border: '1px solid rgba(239,68,68,.25)', borderRadius: 20, padding: '32px 28px', animation: 'st-modal .22s cubic-bezier(.22,1,.36,1) both' }}>
+          <div className="st-del-modal" style={{ width: '100%', maxWidth: 440, background: '#130810', border: '1px solid rgba(239,68,68,.25)', borderRadius: 20, padding: '32px 28px', animation: 'st-modal .22s cubic-bezier(.22,1,.36,1) both' }}>
             <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 18 }}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f87171" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
             </div>

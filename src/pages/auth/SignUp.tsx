@@ -9,9 +9,10 @@ export default function SignUp() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const redirect = searchParams.get('redirect')
-  const [fullName, setFullName]   = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName]   = useState('')
   const [username, setUsername]   = useState('')
-  const [school, setSchool]       = useState('')
+
   const [email, setEmail]         = useState('')
   const [password, setPassword]   = useState('')
   const [showPw, setShowPw]       = useState(false)
@@ -45,12 +46,11 @@ export default function SignUp() {
     setLoading(true)
     const { data, error: signUpError } = await supabase.auth.signUp({
       email, password,
-      options: { data: { full_name: fullName } },
+      options: { data: { full_name: `${firstName} ${lastName}`.trim() } },
     })
     if (signUpError) { setError(signUpError.message); setLoading(false); return }
     if (data.user) {
       const updates: Record<string, string> = {}
-      if (school)    updates.school   = school
       if (username)  updates.username = username
       if (Object.keys(updates).length) {
         await supabase.from('profiles').update(updates).eq('id', data.user.id)
@@ -109,13 +109,13 @@ export default function SignUp() {
 
       <form onSubmit={handleSubmit} style={{ display:'flex', flexDirection:'column', gap:13, marginTop:20 }}>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-          <Field label="Full Name">
-            <input type="text" required autoComplete="name" placeholder="Ahmad Khalil"
-              value={fullName} onChange={e => setFullName(e.target.value)} className="auth-input" />
+          <Field label="First Name">
+            <input type="text" required autoComplete="given-name" placeholder="First name"
+              value={firstName} onChange={e => setFirstName(e.target.value)} className="auth-input" />
           </Field>
-          <Field label="University">
-            <input type="text" required placeholder="QU, CMU-Q…"
-              value={school} onChange={e => setSchool(e.target.value)} className="auth-input" />
+          <Field label="Last Name">
+            <input type="text" required autoComplete="family-name" placeholder="Last name"
+              value={lastName} onChange={e => setLastName(e.target.value)} className="auth-input" />
           </Field>
         </div>
 
@@ -145,7 +145,7 @@ export default function SignUp() {
         </Field>
 
         <Field label="Email">
-          <input type="email" required autoComplete="email" placeholder="you@university.edu"
+          <input type="email" required autoComplete="email" placeholder="you@email.com"
             value={email} onChange={e => setEmail(e.target.value)} className="auth-input" />
         </Field>
 

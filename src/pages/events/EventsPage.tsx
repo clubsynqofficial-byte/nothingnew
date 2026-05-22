@@ -176,7 +176,7 @@ export default function EventsPage() {
       </div>
 
       {/* Filters */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
+      <div className="pill-scroll" style={{ gap: 8, marginBottom: 24 }}>
         {FILTERS.map(f => (
           <button
             key={f.key}

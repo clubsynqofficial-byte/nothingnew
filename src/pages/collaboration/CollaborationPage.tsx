@@ -482,7 +482,7 @@ export default function CollaborationPage() {
       {/* ── Header ── */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:26 }}>
         <div>
-          <h1 style={{ fontSize:30, fontWeight:900, color:'var(--text-primary)', letterSpacing:'-1px', lineHeight:1.1, marginBottom:5 }}>Founder Match</h1>
+          <h1 style={{ fontSize:'clamp(20px, 4vw, 30px)', fontWeight:900, color:'var(--text-primary)', letterSpacing:'-1px', lineHeight:1.1, marginBottom:5 }}>Founder Match</h1>
           <p style={{ fontSize:13, color:'var(--text-muted)', lineHeight:1.5 }}>
             Find student founders and connect with people building something you believe in.
           </p>
@@ -731,7 +731,7 @@ export default function CollaborationPage() {
       {/* ══════════ MY IDEAS MODAL ══════════ */}
       {modalView !== null && (
         <div onClick={e => { if (e.target === e.currentTarget) setModalView(null) }} style={{ position:'fixed', inset:0, zIndex:50, background:'rgba(0,0,0,.8)', backdropFilter:'blur(14px)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
-          <div style={{ width:'100%', maxWidth:500, background:'rgba(22,13,17,.98)', border:'1px solid rgba(255,255,255,.07)', borderRadius:22, padding:'28px 30px', maxHeight:'88vh', overflowY:'auto', animation:'col-spring .32s cubic-bezier(.34,1.4,.64,1)', boxShadow:'0 40px 90px rgba(0,0,0,.7)' }}>
+          <div style={{ width:'100%', maxWidth:500, background:'rgba(22,13,17,.98)', border:'1px solid rgba(255,255,255,.07)', borderRadius:22, padding:'clamp(18px, 4vw, 28px) clamp(16px, 4vw, 30px)', maxHeight:'88vh', overflowY:'auto', animation:'col-spring .32s cubic-bezier(.34,1.4,.64,1)', boxShadow:'0 40px 90px rgba(0,0,0,.7)' }}>
 
             {/* ── LIST VIEW ── */}
             {modalView === 'list' && (

@@ -277,7 +277,7 @@ export default function DiscoveryPage() {
             </div>
 
             <h1 style={{
-              fontSize: 46, fontWeight: 800,
+              fontSize: 'clamp(26px, 5vw, 46px)', fontWeight: 800,
               color: 'var(--text-primary)',
               letterSpacing: '-1.5px', lineHeight: 1.08,
               marginBottom: 14,
@@ -327,7 +327,7 @@ export default function DiscoveryPage() {
         </div>
 
         {/* ── Category filters ── */}
-        <div style={{ display: 'flex', gap: 7, marginBottom: 36, flexWrap: 'wrap' }}>
+        <div className="pill-scroll" style={{ gap: 7, marginBottom: 36 }}>
           {CATEGORIES.map((cat, i) => {
             const active = cat === activeCategory
             const catColor = CATEGORY_COLORS[cat]

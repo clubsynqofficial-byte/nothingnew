@@ -135,7 +135,7 @@ export default function PositionsPage() {
       <div className="page-content" style={{ maxWidth: 1000 }}>
         {/* Header */}
         <div style={{ marginBottom: 32, animation: 'pos-fade-up 0.4s ease both' }}>
-          <h1 style={{ fontSize: 32, fontWeight: 900, color: 'var(--text-primary)', letterSpacing: '-0.8px', marginBottom: 8 }}>
+          <h1 style={{ fontSize: 'clamp(22px, 5vw, 32px)', fontWeight: 900, color: 'var(--text-primary)', letterSpacing: '-0.8px', marginBottom: 8 }}>
             Club Positions
           </h1>
           <p style={{ fontSize: 14, color: 'var(--text-muted)', lineHeight: 1.6 }}>
@@ -144,7 +144,7 @@ export default function PositionsPage() {
         </div>
 
         {/* Search + Filters */}
-        <div style={{ display: 'flex', gap: 10, marginBottom: 24, flexWrap: 'wrap', animation: 'pos-fade-up 0.4s 0.06s ease both' }}>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 24, flexWrap: 'wrap', alignItems: 'flex-start', animation: 'pos-fade-up 0.4s 0.06s ease both' }}>
           <input
             className="pos-search"
             value={search}
@@ -159,7 +159,7 @@ export default function PositionsPage() {
               fontFamily: 'inherit', transition: 'border-color 0.15s, box-shadow 0.15s',
             }}
           />
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <div className="pill-scroll" style={{ minWidth: 0 }}>
             {TYPES.map(t => (
               <button
                 key={t}
@@ -347,7 +347,7 @@ export default function PositionsPage() {
             onClick={e => e.stopPropagation()}
             style={{
               background: 'var(--bg-card)', border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: 22, padding: 30, width: '100%', maxWidth: 500,
+              borderRadius: 22, padding: 'clamp(18px, 4vw, 30px)', width: '100%', maxWidth: 500,
               animation: 'pos-modal-in 0.3s cubic-bezier(0.34,1.56,0.64,1)',
             }}
           >
