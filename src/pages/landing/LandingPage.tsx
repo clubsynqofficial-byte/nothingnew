@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 
@@ -825,8 +825,8 @@ function HowItWorksSection() {
         </h2>
         <div ref={ref} className="lnd-steps-row" style={{ display:'flex', alignItems:'stretch', gap:20 }}>
           {STEPS.map((s, i) => (
-            <>
-              <div key={s.num} style={{ flex:1, borderRadius:22, background:'rgba(10,4,8,.88)', border:'1px solid rgba(87,65,68,.16)', padding:'32px 28px', position:'relative', overflow:'hidden', opacity:visible?1:0, animation:visible?`lCardIn .65s ${i*.14}s ease both`:'none' }}>
+            <React.Fragment key={s.num}>
+              <div style={{ flex:1, borderRadius:22, background:'rgba(10,4,8,.88)', border:'1px solid rgba(87,65,68,.16)', padding:'32px 28px', position:'relative', overflow:'hidden', opacity:visible?1:0, animation:visible?`lCardIn .65s ${i*.14}s ease both`:'none' }}>
                 <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:'linear-gradient(90deg,rgba(192,37,90,.85) 0%,rgba(138,21,56,.35) 50%,transparent 100%)' }} />
                 <div style={{ position:'absolute', top:-8, right:16, fontSize:96, fontWeight:900, color:'rgba(192,37,90,.07)', lineHeight:1, letterSpacing:'-4px', userSelect:'none', pointerEvents:'none' }}>{s.num}</div>
                 <div style={{ position:'relative', width:48, height:48, borderRadius:16, background:'rgba(138,21,56,.18)', border:'1px solid rgba(138,21,56,.38)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, color:'#c0255a', marginBottom:24, flexShrink:0 }}>
@@ -837,14 +837,14 @@ function HowItWorksSection() {
                 <p style={{ fontSize:13.5, color:'rgba(243,221,223,.36)', lineHeight:1.78 }}>{s.sub}</p>
               </div>
               {i < STEPS.length-1 && (
-                <div key={`c${i}`} className="lnd-step-conn" style={{ display:'flex', alignItems:'center', flexShrink:0 }}>
+                <div className="lnd-step-conn" style={{ display:'flex', alignItems:'center', flexShrink:0 }}>
                   <div style={{ width:44, height:1, background:'linear-gradient(90deg,rgba(138,21,56,.4),rgba(138,21,56,.1))', position:'relative', overflow:'hidden' }}>
                     {visible && <div style={{ position:'absolute', inset:0, background:'linear-gradient(90deg,transparent,rgba(192,37,90,.95),transparent)', backgroundSize:'200% 100%', animation:`lShimmer 2.6s ${i*.5}s linear infinite` }} />}
                   </div>
                   <div style={{ width:5, height:5, borderRadius:'50%', background:'rgba(138,21,56,.4)' }} />
                 </div>
               )}
-            </>
+            </React.Fragment>
           ))}
         </div>
       </div>

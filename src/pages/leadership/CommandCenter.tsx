@@ -97,7 +97,7 @@ interface Props {
   clubSwitcher?: React.ReactNode
 }
 
-export default function CommandCenter({ club, onDeleted, onPresidencyTransferred, userPermissions, clubSwitcher }: Props) {
+export default function CommandCenter({ club, onDeleted, userPermissions, clubSwitcher }: Props) {
   const { user, profile } = useAuth()
   const isPresident = userPermissions === undefined
   const canDo = (perm: string) => isPresident || (userPermissions ?? []).includes(perm)
@@ -545,22 +545,24 @@ export default function CommandCenter({ club, onDeleted, onPresidencyTransferred
     setActionLoading(null)
   }
 
-  async function handleTransferPresidency(membershipId: string, newPresidentUserId: string) {
+  async function handleDemotePresident(membershipId: string) {
     setActionLoading(membershipId)
-    // Membership updates FIRST (while current user still satisfies the president RLS check)
-    const { error: e1 } = await supabase.from('club_memberships').update({ role: 'president', custom_role: null, permissions: [] }).eq('id', membershipId)
-    let e2 = null
-    if (user) {
-      const { error } = await supabase.from('club_memberships').update({ role: 'member', custom_role: null, permissions: [] }).eq('club_id', club.id).eq('user_id', user.id).neq('id', membershipId)
-      e2 = error
-    }
-    // Update clubs.president_id last so RLS stays valid for the above updates
-    const { error: e3 } = await supabase.from('clubs').update({ president_id: newPresidentUserId }).eq('id', club.id)
+    await supabase.rpc('demote_from_president', { p_club_id: club.id, p_membership_id: membershipId })
     setActionLoading(null)
-    if (e1 || e2 || e3) return
+    fetchAll()
+  }
+
+  async function handleMakeCoPresident(membershipId: string) {
+    setActionLoading(membershipId)
+    const { error } = await supabase.rpc('promote_to_president', {
+      p_club_id: club.id,
+      p_membership_id: membershipId,
+    })
+    setActionLoading(null)
+    if (error) return
     setTransferSuccess(true)
-    await fetchAll()
-    setTimeout(() => { onPresidencyTransferred?.() }, 2200)
+    setTimeout(() => setTransferSuccess(false), 3000)
+    fetchAll()
   }
 
   async function handleDeleteClub() {
@@ -726,7 +728,7 @@ export default function CommandCenter({ club, onDeleted, onPresidencyTransferred
           whiteSpace: 'nowrap',
         }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-          Presidency transferred! Redirecting…
+          Co-president added!
         </div>
       )}
 
@@ -956,7 +958,7 @@ export default function CommandCenter({ club, onDeleted, onPresidencyTransferred
                         <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:10, fontWeight:800, letterSpacing:'.08em', padding:'4px 12px', borderRadius:9999, background:'rgba(233,193,118,.12)', color:'#e9c176', border:'1px solid rgba(233,193,118,.25)' }}><IcoCrown size={11} style={{ animation:'crownGlow 2.5s ease-in-out infinite' }}/>President</span>
                       </div>
                     )
-                    if (existing) return <ExistingMemberRow key={p.id} profile={p} membership={existing} isLoading={isLoadingRow} canRemove={isPresident || canDo('remove_members')} canEditRole={isPresident} canMakePresident={isPresident} onRoleChange={handleRoleChange} onRemove={handleRemoveMember} onMakePresident={handleTransferPresidency} onPermissionsChange={handlePermissionsChange}/>
+                    if (existing) return <ExistingMemberRow key={p.id} profile={p} membership={existing} isLoading={isLoadingRow} canRemove={isPresident || canDo('remove_members')} canEditRole={isPresident} canMakePresident={isPresident} onRoleChange={handleRoleChange} onRemove={handleRemoveMember} onMakePresident={handleMakeCoPresident} onDemotePresident={handleDemotePresident} onPermissionsChange={handlePermissionsChange}/>
                     return <NewMemberRow key={p.id} profile={p} isLoading={isLoadingRow} onAdd={handleAddMember}/>
                   })}
                 </div>
@@ -977,15 +979,7 @@ export default function CommandCenter({ club, onDeleted, onPresidencyTransferred
                   <div style={{ marginBottom:4 }}>
                     <div style={{ fontSize:9, fontWeight:800, color:'rgba(255,255,255,.25)', letterSpacing:'.14em', textTransform:'uppercase', marginBottom:8 }}>President</div>
                     {presidents.map((m, idx) => (
-                      <div key={m.id} className="tm-card" style={{ display:'flex', alignItems:'center', gap:14, padding:'16px 18px', borderRadius:16, background:'rgba(233,193,118,.04)', border:'1px solid rgba(233,193,118,.15)', animationDelay:`${idx*.05}s` }}>
-                        <TeamAvatar name={m.profile?.full_name} size={42}/>
-                        <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontSize:15, fontWeight:800, color:'var(--text-primary)', marginBottom:3 }}>{m.profile?.full_name ?? 'Unknown'}</div>
-                          {m.profile?.school && <div style={{ fontSize:11, color:'var(--text-muted)' }}>{m.profile.school}</div>}
-                          {m.profile?.email  && <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:1 }}>{m.profile.email}</div>}
-                        </div>
-                        <span style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, fontWeight:800, padding:'5px 14px', borderRadius:9999, background:'rgba(233,193,118,.12)', color:'#e9c176', border:'1px solid rgba(233,193,118,.25)', flexShrink:0 }}><IcoCrown size={12} style={{ animation:'crownGlow 2.5s ease-in-out infinite' }}/>President</span>
-                      </div>
+                      <PresidentRow key={m.id} member={m} idx={idx} isLoading={actionLoading === m.id} canDemote={isPresident} onDemote={handleDemotePresident} />
                     ))}
                   </div>
                 )}
@@ -996,7 +990,7 @@ export default function CommandCenter({ club, onDeleted, onPresidencyTransferred
                     <div style={{ fontSize:9, fontWeight:800, color:'rgba(255,255,255,.25)', letterSpacing:'.14em', textTransform:'uppercase', marginBottom:8 }}>Admins</div>
                     <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                       {officers.map((m, idx) => (
-                        <ExistingMemberRow key={m.id} profile={{ id:m.user_id, full_name:m.profile?.full_name??null, school:m.profile?.school??null, email:m.profile?.email??null }} membership={m} isLoading={actionLoading===m.id} canRemove={isPresident||canDo('remove_members')} canEditRole={isPresident} canMakePresident={isPresident} onRoleChange={handleRoleChange} onRemove={handleRemoveMember} onMakePresident={handleTransferPresidency} onPermissionsChange={handlePermissionsChange} animDelay={idx*.05}/>
+                        <ExistingMemberRow key={m.id} profile={{ id:m.user_id, full_name:m.profile?.full_name??null, school:m.profile?.school??null, email:m.profile?.email??null }} membership={m} isLoading={actionLoading===m.id} canRemove={isPresident||canDo('remove_members')} canEditRole={isPresident} canMakePresident={isPresident} onRoleChange={handleRoleChange} onRemove={handleRemoveMember} onMakePresident={handleMakeCoPresident} onDemotePresident={handleDemotePresident} onPermissionsChange={handlePermissionsChange} animDelay={idx*.05}/>
                       ))}
                     </div>
                   </div>
@@ -1008,7 +1002,7 @@ export default function CommandCenter({ club, onDeleted, onPresidencyTransferred
                     <div style={{ fontSize:9, fontWeight:800, color:'rgba(255,255,255,.25)', letterSpacing:'.14em', textTransform:'uppercase', marginBottom:8 }}>Members</div>
                     <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                       {members.map((m, idx) => (
-                        <ExistingMemberRow key={m.id} profile={{ id:m.user_id, full_name:m.profile?.full_name??null, school:m.profile?.school??null, email:m.profile?.email??null }} membership={m} isLoading={actionLoading===m.id} canRemove={isPresident||canDo('remove_members')} canEditRole={isPresident} canMakePresident={isPresident} onRoleChange={handleRoleChange} onRemove={handleRemoveMember} onMakePresident={handleTransferPresidency} onPermissionsChange={handlePermissionsChange} animDelay={(officers.length+idx)*.05}/>
+                        <ExistingMemberRow key={m.id} profile={{ id:m.user_id, full_name:m.profile?.full_name??null, school:m.profile?.school??null, email:m.profile?.email??null }} membership={m} isLoading={actionLoading===m.id} canRemove={isPresident||canDo('remove_members')} canEditRole={isPresident} canMakePresident={isPresident} onRoleChange={handleRoleChange} onRemove={handleRemoveMember} onMakePresident={handleMakeCoPresident} onDemotePresident={handleDemotePresident} onPermissionsChange={handlePermissionsChange} animDelay={(officers.length+idx)*.05}/>
                       ))}
                     </div>
                   </div>
@@ -2352,10 +2346,55 @@ function NewMemberRow({
   )
 }
 
+// ─── PresidentRow ───────────────────────────────────────────────────────────
+
+function PresidentRow({ member, idx, isLoading, canDemote, onDemote }: {
+  member: MembershipRow; idx: number; isLoading: boolean; canDemote: boolean; onDemote: (id: string) => void
+}) {
+  const [confirm, setConfirm] = useState(false)
+  return (
+    <div className="tm-card" style={{ display:'flex', alignItems:'center', gap:14, padding:'16px 18px', borderRadius:16, background:'rgba(233,193,118,.04)', border:'1px solid rgba(233,193,118,.15)', animationDelay:`${idx*.05}s`, marginBottom:8 }}>
+      <TeamAvatar name={member.profile?.full_name} size={42}/>
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ fontSize:15, fontWeight:800, color:'var(--text-primary)', marginBottom:3 }}>{member.profile?.full_name ?? 'Unknown'}</div>
+        {member.profile?.school && <div style={{ fontSize:11, color:'var(--text-muted)' }}>{member.profile.school}</div>}
+        {member.profile?.email  && <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:1 }}>{member.profile.email}</div>}
+      </div>
+      <span style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, fontWeight:800, padding:'5px 14px', borderRadius:9999, background:'rgba(233,193,118,.12)', color:'#e9c176', border:'1px solid rgba(233,193,118,.25)', flexShrink:0 }}>
+        <IcoCrown size={12} style={{ animation:'crownGlow 2.5s ease-in-out infinite' }}/>President
+      </span>
+      {canDemote && !confirm && (
+        <button onClick={() => setConfirm(true)} disabled={isLoading} title="Remove presidency"
+          style={{ height:28, padding:'0 10px', borderRadius:9, background:'rgba(233,193,118,.08)', border:'1px solid rgba(233,193,118,.25)', color:'#e9c176', cursor: isLoading ? 'default':'pointer', flexShrink:0, display:'flex', alignItems:'center', gap:5, opacity: isLoading ? .5:1, transition:'all .15s' }}
+          onMouseEnter={e => { e.currentTarget.style.background='rgba(248,113,113,.12)'; e.currentTarget.style.borderColor='rgba(248,113,113,.45)'; e.currentTarget.style.color='#f87171' }}
+          onMouseLeave={e => { e.currentTarget.style.background='rgba(233,193,118,.08)'; e.currentTarget.style.borderColor='rgba(233,193,118,.25)'; e.currentTarget.style.color='#e9c176' }}
+        >
+          <IcoCrown size={11}/><span style={{ fontSize:11, fontWeight:800 }}>✕</span>
+        </button>
+      )}
+      {canDemote && confirm && (
+        <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0, animation:'confirmIn .18s cubic-bezier(.22,1,.36,1) both' }}>
+          <span style={{ fontSize:11, fontWeight:700, color:'#f87171', whiteSpace:'nowrap' }}>Remove?</span>
+          <button onClick={() => { onDemote(member.id); setConfirm(false) }} disabled={isLoading}
+            style={{ padding:'5px 12px', borderRadius:8, background:'rgba(248,113,113,.12)', border:'1px solid rgba(248,113,113,.4)', color:'#f87171', fontSize:11, fontWeight:800, cursor:'pointer', fontFamily:'inherit', lineHeight:1 }}
+            onMouseEnter={e => { e.currentTarget.style.background='rgba(248,113,113,.25)' }}
+            onMouseLeave={e => { e.currentTarget.style.background='rgba(248,113,113,.12)' }}
+          >Yes</button>
+          <button onClick={() => setConfirm(false)}
+            style={{ padding:'5px 10px', borderRadius:8, background:'transparent', border:'1px solid rgba(255,255,255,.12)', color:'rgba(255,255,255,.45)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit', lineHeight:1 }}
+            onMouseEnter={e => { e.currentTarget.style.background='rgba(255,255,255,.07)' }}
+            onMouseLeave={e => { e.currentTarget.style.background='transparent' }}
+          >No</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── ExistingMemberRow ──────────────────────────────────────────────────────
 
 function ExistingMemberRow({
-  profile, membership, isLoading, canRemove = true, canEditRole = true, canMakePresident = false, onRoleChange, onRemove, onMakePresident, onPermissionsChange, animDelay = 0,
+  profile, membership, isLoading, canRemove = true, canEditRole = true, canMakePresident = false, onRoleChange, onRemove, onMakePresident, onDemotePresident, onPermissionsChange, animDelay = 0,
 }: {
   profile: ProfileSearchRow
   membership: MembershipRow
@@ -2366,7 +2405,8 @@ function ExistingMemberRow({
   animDelay?: number
   onRoleChange: (membershipId: string, role: 'officer' | 'member', customRole?: string) => void
   onRemove: (membershipId: string) => void
-  onMakePresident?: (membershipId: string, userId: string) => void
+  onMakePresident?: (membershipId: string) => void
+  onDemotePresident?: (membershipId: string) => void
   onPermissionsChange: (membershipId: string, permissions: string[]) => void
 }) {
   const [hasCustomRole, setHasCustomRole] = useState(!!membership.custom_role)
@@ -2433,21 +2473,48 @@ function ExistingMemberRow({
           </button>
         )}
 
-        {/* Make President */}
-        {canMakePresident && !confirmTransfer && !confirmRemove && (
-          <button onClick={() => setConfirmTransfer(true)} disabled={isLoading} title="Transfer presidency"
+        {/* Make Co-President (only for non-presidents) */}
+        {canMakePresident && membership.role !== 'president' && !confirmTransfer && !confirmRemove && (
+          <button onClick={() => setConfirmTransfer(true)} disabled={isLoading} title="Make co-president"
             style={{ width:32, height:32, borderRadius:9, background:'transparent', border:'1px solid rgba(255,255,255,.08)', color:'rgba(255,255,255,.3)', cursor: isLoading ? 'default':'pointer', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', opacity: isLoading ? .5:1, transition:'all .15s' }}
             onMouseEnter={e => { e.currentTarget.style.background='rgba(233,193,118,.1)'; e.currentTarget.style.borderColor='rgba(233,193,118,.4)'; e.currentTarget.style.color='#e9c176' }}
             onMouseLeave={e => { e.currentTarget.style.background='transparent'; e.currentTarget.style.borderColor='rgba(255,255,255,.08)'; e.currentTarget.style.color='rgba(255,255,255,.3)' }}
           ><IcoCrown size={13}/></button>
         )}
-        {canMakePresident && confirmTransfer && (
+        {canMakePresident && membership.role !== 'president' && confirmTransfer && (
           <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0, animation:'confirmIn .18s cubic-bezier(.22,1,.36,1) both' }}>
             <span style={{ fontSize:11, fontWeight:700, color:'#e9c176', whiteSpace:'nowrap' }}>Make president?</span>
-            <button onClick={() => { onMakePresident?.(membership.id, membership.user_id); setConfirmTransfer(false) }} disabled={isLoading}
+            <button onClick={() => { onMakePresident?.(membership.id); setConfirmTransfer(false) }} disabled={isLoading}
               style={{ padding:'5px 12px', borderRadius:8, background:'rgba(233,193,118,.15)', border:'1px solid rgba(233,193,118,.45)', color:'#e9c176', fontSize:11, fontWeight:800, cursor:'pointer', fontFamily:'inherit', transition:'all .12s', lineHeight:1 }}
               onMouseEnter={e => { e.currentTarget.style.background='rgba(233,193,118,.28)' }}
               onMouseLeave={e => { e.currentTarget.style.background='rgba(233,193,118,.15)' }}
+            >Yes</button>
+            <button onClick={() => setConfirmTransfer(false)}
+              style={{ padding:'5px 10px', borderRadius:8, background:'transparent', border:'1px solid rgba(255,255,255,.12)', color:'rgba(255,255,255,.45)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit', transition:'all .12s', lineHeight:1 }}
+              onMouseEnter={e => { e.currentTarget.style.background='rgba(255,255,255,.07)' }}
+              onMouseLeave={e => { e.currentTarget.style.background='transparent' }}
+            >No</button>
+          </div>
+        )}
+
+        {/* Remove Presidency (only for co-presidents) */}
+        {canMakePresident && membership.role === 'president' && !confirmTransfer && !confirmRemove && (
+          <button onClick={() => setConfirmTransfer(true)} disabled={isLoading} title="Remove presidency"
+            style={{ height:28, padding:'0 10px', borderRadius:9, background:'rgba(233,193,118,.08)', border:'1px solid rgba(233,193,118,.25)', color:'#e9c176', cursor: isLoading ? 'default':'pointer', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', gap:5, opacity: isLoading ? .5:1, transition:'all .15s' }}
+            onMouseEnter={e => { e.currentTarget.style.background='rgba(248,113,113,.12)'; e.currentTarget.style.borderColor='rgba(248,113,113,.45)'; e.currentTarget.style.color='#f87171' }}
+            onMouseLeave={e => { e.currentTarget.style.background='rgba(233,193,118,.08)'; e.currentTarget.style.borderColor='rgba(233,193,118,.25)'; e.currentTarget.style.color='#e9c176' }}
+          >
+            <IcoCrown size={11}/>
+            <span style={{ fontSize:11, fontWeight:800, lineHeight:1 }}>✕</span>
+          </button>
+        )}
+        {canMakePresident && membership.role === 'president' && confirmTransfer && (
+          <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0, animation:'confirmIn .18s cubic-bezier(.22,1,.36,1) both' }}>
+            <span style={{ fontSize:11, fontWeight:700, color:'#f87171', whiteSpace:'nowrap' }}>Remove presidency?</span>
+            <button onClick={() => { onDemotePresident?.(membership.id); setConfirmTransfer(false) }} disabled={isLoading}
+              style={{ padding:'5px 12px', borderRadius:8, background:'rgba(248,113,113,.12)', border:'1px solid rgba(248,113,113,.4)', color:'#f87171', fontSize:11, fontWeight:800, cursor:'pointer', fontFamily:'inherit', transition:'all .12s', lineHeight:1 }}
+              onMouseEnter={e => { e.currentTarget.style.background='rgba(248,113,113,.25)' }}
+              onMouseLeave={e => { e.currentTarget.style.background='rgba(248,113,113,.12)' }}
             >Yes</button>
             <button onClick={() => setConfirmTransfer(false)}
               style={{ padding:'5px 10px', borderRadius:8, background:'transparent', border:'1px solid rgba(255,255,255,.12)', color:'rgba(255,255,255,.45)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit', transition:'all .12s', lineHeight:1 }}

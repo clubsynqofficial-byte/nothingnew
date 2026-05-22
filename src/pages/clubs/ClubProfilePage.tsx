@@ -251,7 +251,7 @@ export default function ClubProfilePage() {
   const shownEvents    = eventFilter === 'live' ? liveEvents : eventFilter === 'past' ? pastEvents : upcomingEvents
   const myMember   = members.find(m => m.profile?.id === user?.id)
   const canPost    = myMember?.role === 'president' || authProfile?.role === 'admin'
-  const president        = members.find(m => m.role === 'president')
+  const presidents       = members.filter(m => m.role === 'president')
   const officers         = members.filter(m => m.role === 'officer')
   const assignedMembers  = members.filter(m => m.role === 'member' && !!m.custom_role)
   const regularMembers   = members.filter(m => m.role === 'member' && !m.custom_role)
@@ -493,11 +493,11 @@ export default function ClubProfilePage() {
           {tab === 'community' && (() => {
             const term = communitySearch.trim().toLowerCase()
             const match = (m: MemberRow) => !term || (m.profile?.full_name ?? '').toLowerCase().includes(term)
-            const filteredPresident  = president && match(president) ? president : null
+            const filteredPresidents = presidents.filter(match)
             const filteredOfficers   = officers.filter(match)
             const filteredAssigned   = assignedMembers.filter(match)
             const filteredRegular    = regularMembers.filter(match)
-            const noResults = term && !filteredPresident && filteredOfficers.length === 0 && filteredAssigned.length === 0 && filteredRegular.length === 0
+            const noResults = term && filteredPresidents.length === 0 && filteredOfficers.length === 0 && filteredAssigned.length === 0 && filteredRegular.length === 0
 
             return (
               <div className="cp-panel" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -519,14 +519,14 @@ export default function ClubProfilePage() {
                   )}
                 </div>
 
-                {/* President + officers + custom-role members */}
-                {(filteredPresident || filteredOfficers.length > 0 || filteredAssigned.length > 0) && (
+                {/* Presidents + officers + custom-role members */}
+                {(filteredPresidents.length > 0 || filteredOfficers.length > 0 || filteredAssigned.length > 0) && (
                   <section>
                     <SectionLabel>Leadership Team</SectionLabel>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {filteredPresident && <MemberCard member={filteredPresident} highlight index={0} />}
-                      {filteredOfficers.map((m, i) => <MemberCard key={m.id} member={m} index={filteredPresident ? i + 1 : i} />)}
-                      {filteredAssigned.map((m, i) => <MemberCard key={m.id} member={m} index={(filteredPresident ? 1 : 0) + filteredOfficers.length + i} />)}
+                      {filteredPresidents.map((m, i) => <MemberCard key={m.id} member={m} highlight index={i} />)}
+                      {filteredOfficers.map((m, i) => <MemberCard key={m.id} member={m} index={filteredPresidents.length + i} />)}
+                      {filteredAssigned.map((m, i) => <MemberCard key={m.id} member={m} index={filteredPresidents.length + filteredOfficers.length + i} />)}
                     </div>
                   </section>
                 )}

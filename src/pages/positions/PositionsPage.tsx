@@ -46,7 +46,8 @@ export default function PositionsPage() {
   const [search, setSearch] = useState('')
   const [activeType, setActiveType] = useState('All')
 
-  // Apply modal state
+  // Detail + apply modal state
+  const [selected, setSelected] = useState<Position | null>(null)
   const [applying, setApplying] = useState<Position | null>(null)
   const [coverLetter, setCoverLetter] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -204,6 +205,7 @@ export default function PositionsPage() {
                 <div
                   key={pos.id}
                   className="pos-card"
+                  onClick={() => setSelected(pos)}
                   style={{
                     background: 'linear-gradient(145deg, #231518, #1e1214)',
                     border: '1px solid rgba(255,255,255,0.08)',
@@ -212,6 +214,7 @@ export default function PositionsPage() {
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 14,
+                    cursor: 'pointer',
                     animation: 'pos-fade-up 0.4s ease both',
                     animationDelay: `${Math.min(i, 8) * 0.04}s`,
                   }}
@@ -219,7 +222,7 @@ export default function PositionsPage() {
                   {/* Club info */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div
-                      onClick={() => navigate(`/clubs/${pos.club_id}`)}
+                      onClick={e => { e.stopPropagation(); navigate(`/clubs/${pos.club_id}`) }}
                       style={{
                         width: 38, height: 38, borderRadius: 10, flexShrink: 0,
                         background: pos.club?.logo_url ? 'transparent' : 'rgba(138,21,56,0.2)',
@@ -235,7 +238,7 @@ export default function PositionsPage() {
                     </div>
                     <div style={{ minWidth: 0 }}>
                       <div
-                        onClick={() => navigate(`/clubs/${pos.club_id}`)}
+                        onClick={e => { e.stopPropagation(); navigate(`/clubs/${pos.club_id}`) }}
                         style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', transition: 'color 0.15s' }}
                         onMouseEnter={e => e.currentTarget.style.color = 'var(--accent)'}
                         onMouseLeave={e => e.currentTarget.style.color = 'var(--text-secondary)'}
@@ -291,7 +294,7 @@ export default function PositionsPage() {
                     <button
                       className="pos-apply-btn"
                       disabled={applied || expired || !user}
-                      onClick={() => { setApplying(pos); setCoverLetter(''); setApplyError('') }}
+                      onClick={e => { e.stopPropagation(); setApplying(pos); setCoverLetter(''); setApplyError('') }}
                       style={{
                         marginLeft: 'auto', padding: '8px 18px',
                         borderRadius: 10, border: 'none',
@@ -331,6 +334,93 @@ export default function PositionsPage() {
           </div>
         )}
       </div>
+
+      {/* Detail Modal */}
+      {selected && (() => {
+        const tc = TYPE_COLORS[selected.type]
+        const appStatus = applicationStatus.get(selected.id)
+        const applied = !!appStatus
+        const tl = timeLeft(selected.deadline)
+        const expired = tl === 'Expired'
+        return (
+          <div
+            onClick={() => setSelected(null)}
+            style={{ position:'fixed', inset:0, zIndex:9998, background:'rgba(0,0,0,0.78)', backdropFilter:'blur(8px)', display:'flex', alignItems:'center', justifyContent:'center', padding:'20px 16px', animation:'pos-backdrop-in 0.2s ease' }}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{ background:'var(--bg-card)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:24, width:'100%', maxWidth:560, maxHeight:'88vh', overflow:'hidden', display:'flex', flexDirection:'column', animation:'pos-modal-in 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}
+            >
+              {/* Scrollable body */}
+              <div style={{ overflowY:'auto', padding:'clamp(20px,4vw,32px)', flex:1 }}>
+                {/* Club row */}
+                <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:18 }}>
+                  <div
+                    onClick={e => { e.stopPropagation(); navigate(`/clubs/${selected.club_id}`); setSelected(null) }}
+                    style={{ width:36, height:36, borderRadius:10, flexShrink:0, background: selected.club?.logo_url ? 'transparent' : 'rgba(138,21,56,0.2)', border:'1px solid rgba(138,21,56,0.25)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:800, color:'var(--accent)', cursor:'pointer', overflow:'hidden' }}
+                  >
+                    {selected.club?.logo_url ? <img src={selected.club.logo_url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : initials(selected.club?.name ?? '?')}
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:12, fontWeight:700, color:'var(--text-secondary)' }}>{selected.club?.name}</div>
+                    {selected.club?.category && <div style={{ fontSize:10, color:'var(--text-muted)' }}>{selected.club.category}</div>}
+                  </div>
+                  <span style={{ fontSize:11, fontWeight:700, padding:'3px 10px', borderRadius:9999, background:tc.bg, border:`1px solid ${tc.border}`, color:tc.color, flexShrink:0 }}>{selected.type}</span>
+                  <button onClick={() => setSelected(null)} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)', fontSize:20, lineHeight:1, padding:4, flexShrink:0 }}>✕</button>
+                </div>
+
+                {/* Title */}
+                <h2 style={{ fontSize:'clamp(20px,4vw,26px)', fontWeight:900, color:'var(--text-primary)', letterSpacing:'-0.5px', marginBottom:16, lineHeight:1.25 }}>{selected.title}</h2>
+
+                {/* Deadline */}
+                {tl && (
+                  <div style={{ fontSize:12, fontWeight:600, color: expired ? '#f87171' : 'var(--text-muted)', marginBottom:16 }}>
+                    {expired ? '⛔ Closed' : `📅 ${tl}`}
+                  </div>
+                )}
+
+                {/* Description */}
+                {selected.description && (
+                  <div style={{ marginBottom:20 }}>
+                    <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>About this role</div>
+                    <p style={{ fontSize:14, color:'var(--text-secondary)', lineHeight:1.75, margin:0, whiteSpace:'pre-wrap' }}>{selected.description}</p>
+                  </div>
+                )}
+
+                {/* Requirements */}
+                {selected.requirements && (
+                  <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:14, padding:'16px 18px' }}>
+                    <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:10 }}>Requirements</div>
+                    <p style={{ fontSize:13.5, color:'var(--text-secondary)', lineHeight:1.75, margin:0, whiteSpace:'pre-wrap' }}>{selected.requirements}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Sticky footer with apply button */}
+              <div style={{ padding:'16px clamp(20px,4vw,32px)', borderTop:'1px solid rgba(255,255,255,0.07)', background:'var(--bg-card)', display:'flex', gap:10 }}>
+                <button
+                  onClick={() => setSelected(null)}
+                  style={{ flex:1, padding:'12px', background:'transparent', border:'1px solid rgba(255,255,255,0.1)', borderRadius:12, color:'var(--text-muted)', fontSize:14, cursor:'pointer', fontFamily:'inherit' }}
+                >Close</button>
+                <button
+                  disabled={applied || expired || !user}
+                  onClick={() => { setSelected(null); setApplying(selected); setCoverLetter(''); setApplyError('') }}
+                  style={{
+                    flex:2, padding:'12px', border:'none', borderRadius:12,
+                    fontSize:14, fontWeight:700, fontFamily:'inherit',
+                    cursor: (applied || expired) ? 'default' : 'pointer',
+                    background: appStatus === 'accepted' ? 'rgba(74,222,128,0.12)' : appStatus === 'rejected' ? 'rgba(248,113,113,0.1)' : appStatus === 'pending' ? 'rgba(233,193,118,0.1)' : expired ? 'rgba(255,255,255,0.05)' : 'var(--accent)',
+                    color: appStatus === 'accepted' ? '#4ade80' : appStatus === 'rejected' ? '#f87171' : appStatus === 'pending' ? 'rgba(233,193,118,0.85)' : expired ? 'var(--text-muted)' : '#fff',
+                    boxShadow: applied || expired ? 'none' : '0 4px 18px rgba(138,21,56,0.35)',
+                  }}
+                >
+                  {appStatus === 'accepted' ? '✓ Accepted' : appStatus === 'rejected' ? '✕ Rejected' : appStatus === 'pending' ? '⏳ Applied' : expired ? 'Closed' : 'Apply Now'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Apply Modal */}
       {applying && (
