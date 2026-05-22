@@ -438,6 +438,9 @@ export default function HomePage() {
         {/* Glowing border top */}
         <div style={{ position:'absolute', top:0, left:0, right:0, height:1, background:'linear-gradient(90deg,transparent,rgba(192,37,90,.6),rgba(255,150,180,.8),rgba(192,37,90,.6),transparent)', animation:'bannerGlow 3s ease-in-out infinite', pointerEvents:'none' }}/>
 
+        {/* Logo watermark */}
+        <img src="/clubsynqlogo.png" alt="" style={{ position:'absolute', right:24, top:'50%', transform:'translateY(-50%)', width:72, height:72, borderRadius:18, objectFit:'contain', opacity:0.18, pointerEvents:'none', userSelect:'none' }} />
+
         <div style={{ position:'relative', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:16 }}>
           <div>
             <div style={{ marginBottom:6 }}>

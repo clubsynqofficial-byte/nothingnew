@@ -1041,12 +1041,7 @@ function LandingFooter() {
               onMouseLeave={e => (e.currentTarget.style.color='rgba(243,221,223,.24)')}>{label}</button>
           ))}
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:20 }}>
-          <div style={{ fontSize:12, color:'rgba(243,221,223,.14)' }}>© 2026 CLUBSYNQ</div>
-          <button onClick={() => navigate('/signin')} style={{ background:'none', border:'none', color:'rgba(243,221,223,.12)', fontSize:11, cursor:'pointer', padding:0, fontFamily:'inherit', transition:'color .15s' }}
-            onMouseEnter={e => (e.currentTarget.style.color='rgba(243,221,223,.45)')}
-            onMouseLeave={e => (e.currentTarget.style.color='rgba(243,221,223,.12)')}>Team Login</button>
-        </div>
+        <div style={{ fontSize:12, color:'rgba(243,221,223,.14)' }}>© 2026 CLUBSYNQ</div>
       </div>
     </footer>
   )
