@@ -160,6 +160,9 @@ export default function CommandCenter({ club, onDeleted, onPresidencyTransferred
   const [postingEvtAnn, setPostingEvtAnn] = useState(false)
   const [evtAnnouncements, setEvtAnnouncements] = useState<EventAnnouncementRow[]>([])
 
+  // Transfer presidency state
+  const [transferSuccess, setTransferSuccess] = useState(false)
+
   // Delete club state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleteConfirmName, setDeleteConfirmName] = useState('')
@@ -544,16 +547,18 @@ export default function CommandCenter({ club, onDeleted, onPresidencyTransferred
 
   async function handleTransferPresidency(membershipId: string, newPresidentUserId: string) {
     setActionLoading(membershipId)
-    // Update the club's president_id
-    await supabase.from('clubs').update({ president_id: newPresidentUserId }).eq('id', club.id)
-    // Promote the new president's membership
-    await supabase.from('club_memberships').update({ role: 'president', custom_role: null, permissions: [] }).eq('id', membershipId)
-    // Demote the old president to member
+    const { error: e1 } = await supabase.from('clubs').update({ president_id: newPresidentUserId }).eq('id', club.id)
+    const { error: e2 } = await supabase.from('club_memberships').update({ role: 'president', custom_role: null, permissions: [] }).eq('id', membershipId)
+    let e3 = null
     if (user) {
-      await supabase.from('club_memberships').update({ role: 'member', custom_role: null, permissions: [] }).eq('club_id', club.id).eq('user_id', user.id).neq('id', membershipId)
+      const { error } = await supabase.from('club_memberships').update({ role: 'member', custom_role: null, permissions: [] }).eq('club_id', club.id).eq('user_id', user.id).neq('id', membershipId)
+      e3 = error
     }
     setActionLoading(null)
-    onPresidencyTransferred?.()
+    if (e1 || e2 || e3) return
+    setTransferSuccess(true)
+    await fetchAll()
+    setTimeout(() => { onPresidencyTransferred?.() }, 2200)
   }
 
   async function handleDeleteClub() {
@@ -703,7 +708,25 @@ export default function CommandCenter({ club, onDeleted, onPresidencyTransferred
           .cc-tabs::-webkit-scrollbar { display:none; }
           .cc-tab { flex:0 0 auto !important; padding:9px 14px !important; font-size:12px !important; white-space:nowrap; }
         }
+        @keyframes cc-toast { from{opacity:0;transform:translateY(12px) scale(.97)} to{opacity:1;transform:none} }
       `}</style>
+
+      {/* ── Presidency transfer success toast ── */}
+      {transferSuccess && (
+        <div style={{
+          position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)',
+          background: 'rgba(22,163,74,0.18)', border: '1px solid rgba(22,163,74,0.45)',
+          backdropFilter: 'blur(12px)', borderRadius: 14,
+          padding: '14px 24px', color: '#4ade80', fontSize: 14, fontWeight: 600,
+          display: 'flex', alignItems: 'center', gap: 10,
+          zIndex: 9999, animation: 'cc-toast .25s cubic-bezier(.22,1,.36,1) both',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+          whiteSpace: 'nowrap',
+        }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Presidency transferred! Redirecting…
+        </div>
+      )}
 
       {/* ── Club switcher (injected by LeadershipPage when user has access to multiple clubs) ── */}
       {clubSwitcher}

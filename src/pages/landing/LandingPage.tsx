@@ -1026,7 +1026,6 @@ function CTASection() {
 // ── Footer ────────────────────────────────────────────────────────────────────
 
 function LandingFooter() {
-  const navigate = useNavigate()
   return (
     <footer style={{ padding:'32px 36px', borderTop:'1px solid rgba(87,65,68,.1)', background:'rgba(0,0,0,.32)' }}>
       <div style={{ maxWidth:1200, margin:'0 auto', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:20 }}>
