@@ -547,13 +547,15 @@ export default function CommandCenter({ club, onDeleted, onPresidencyTransferred
 
   async function handleTransferPresidency(membershipId: string, newPresidentUserId: string) {
     setActionLoading(membershipId)
-    const { error: e1 } = await supabase.from('clubs').update({ president_id: newPresidentUserId }).eq('id', club.id)
-    const { error: e2 } = await supabase.from('club_memberships').update({ role: 'president', custom_role: null, permissions: [] }).eq('id', membershipId)
-    let e3 = null
+    // Membership updates FIRST (while current user still satisfies the president RLS check)
+    const { error: e1 } = await supabase.from('club_memberships').update({ role: 'president', custom_role: null, permissions: [] }).eq('id', membershipId)
+    let e2 = null
     if (user) {
       const { error } = await supabase.from('club_memberships').update({ role: 'member', custom_role: null, permissions: [] }).eq('club_id', club.id).eq('user_id', user.id).neq('id', membershipId)
-      e3 = error
+      e2 = error
     }
+    // Update clubs.president_id last so RLS stays valid for the above updates
+    const { error: e3 } = await supabase.from('clubs').update({ president_id: newPresidentUserId }).eq('id', club.id)
     setActionLoading(null)
     if (e1 || e2 || e3) return
     setTransferSuccess(true)
