@@ -211,6 +211,7 @@ function LandingStyles() {
         .lnd-hero-btns         { flex-direction:column !important; align-items:stretch !important; }
         .lnd-hero-btns button  { width:100% !important; }
         .lnd-nav-signin        { display:none !important; }
+        .lnd-nav-getstarted    { padding:7px 14px !important; font-size:12px !important; }
         .lnd-nav               { padding:0 20px !important; }
         .lnd-mock-lsidebar     { width:48px !important; }
         .lnd-mock-nav-label    { display:none !important; }
@@ -238,6 +239,7 @@ function SectionEyebrow({ text, mb = 12 }: { text: string; mb?: number }) {
 // ── Nav ───────────────────────────────────────────────────────────────────────
 
 function LandingNav({ scrolled }: { scrolled:boolean }) {
+  const navigate = useNavigate()
   return (
     <nav className="lnd-nav" style={{ position:'fixed', top:0, left:0, right:0, zIndex:200, padding:'0 36px', height:64, display:'flex', alignItems:'center', justifyContent:'space-between', background:scrolled?'rgba(5,2,10,0.86)':'transparent', backdropFilter:scrolled?'blur(32px) saturate(200%)':'none', borderBottom:scrolled?'1px solid rgba(192,37,90,.14)':'1px solid transparent', boxShadow:scrolled?'0 1px 0 rgba(192,37,90,.06),0 8px 32px rgba(0,0,0,.24)':'none', transition:'all .4s' }}>
       <div style={{ display:'flex', alignItems:'center', gap:10, cursor:'pointer' }} onClick={() => window.scrollTo({ top:0, behavior:'smooth' })}>
@@ -248,9 +250,17 @@ function LandingNav({ scrolled }: { scrolled:boolean }) {
           <button key={label} className="lnd-nav-link" onClick={() => document.getElementById(id)?.scrollIntoView({ behavior:'smooth' })}>{label}</button>
         ))}
       </div>
-      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 16px', background:'rgba(192,37,90,.08)', border:'1px solid rgba(192,37,90,.28)', borderRadius:9999 }}>
-        <span style={{ width:7, height:7, borderRadius:'50%', background:'#c0255a', display:'inline-block', boxShadow:'0 0 8px rgba(192,37,90,1)', animation:'lPulse 2s ease-in-out infinite', flexShrink:0 }} />
-        <span style={{ fontSize:12.5, fontWeight:700, letterSpacing:'.08em', color:'rgba(243,221,223,.75)', whiteSpace:'nowrap' }}>Coming Soon</span>
+      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+        <button className="lnd-nav-signin" onClick={() => navigate('/signin')} style={{ padding:'8px 16px', background:'transparent', border:'1px solid rgba(192,37,90,.35)', borderRadius:9999, color:'rgba(243,221,223,.7)', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', transition:'all .2s', whiteSpace:'nowrap' }}
+          onMouseEnter={e => { e.currentTarget.style.background='rgba(192,37,90,.12)'; e.currentTarget.style.color='#f3dddf' }}
+          onMouseLeave={e => { e.currentTarget.style.background='transparent'; e.currentTarget.style.color='rgba(243,221,223,.7)' }}>
+          Sign In
+        </button>
+        <button className="lnd-nav-getstarted" onClick={() => navigate('/signup')} style={{ padding:'8px 18px', background:'linear-gradient(135deg,#8a1538,#c0185c)', border:'none', borderRadius:9999, color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer', fontFamily:'inherit', boxShadow:'0 0 16px rgba(192,37,90,.35)', transition:'all .2s', whiteSpace:'nowrap' }}
+          onMouseEnter={e => { e.currentTarget.style.boxShadow='0 0 24px rgba(192,37,90,.6)'; e.currentTarget.style.filter='brightness(1.1)' }}
+          onMouseLeave={e => { e.currentTarget.style.boxShadow='0 0 16px rgba(192,37,90,.35)'; e.currentTarget.style.filter='brightness(1)' }}>
+          Get Started
+        </button>
       </div>
     </nav>
   )
@@ -259,6 +269,7 @@ function LandingNav({ scrolled }: { scrolled:boolean }) {
 // ── Hero ──────────────────────────────────────────────────────────────────────
 
 function HeroSection() {
+  const navigate = useNavigate()
   const mouse = useMouseParallax()
   return (
     <section style={{ minHeight:'100vh', position:'relative', display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', textAlign:'center', padding:'120px clamp(20px,5vw,64px) 80px', overflow:'hidden' }}>
@@ -283,7 +294,7 @@ function HeroSection() {
           <div style={{ display:'inline-block', padding:1, borderRadius:9999, background:'linear-gradient(135deg,rgba(192,37,90,.7) 0%,rgba(138,21,56,.25) 50%,rgba(192,37,90,.5) 100%)' }}>
             <div style={{ display:'inline-flex', alignItems:'center', gap:9, padding:'8px 22px', background:'rgba(5,2,10,.93)', borderRadius:9999, backdropFilter:'blur(16px)' }}>
               <span style={{ width:7, height:7, borderRadius:'50%', background:'#c0255a', display:'inline-block', boxShadow:'0 0 14px rgba(192,37,90,1)', animation:'lPulse 2s ease-in-out infinite' }} />
-              <span style={{ fontSize:12, fontWeight:800, letterSpacing:'.14em', color:'#e0aab4', textTransform:'uppercase' }}>Coming Soon</span>
+              <span style={{ fontSize:12, fontWeight:800, letterSpacing:'.14em', color:'#e0aab4', textTransform:'uppercase' }}>Early Access Now Open</span>
             </div>
           </div>
         </div>
@@ -306,10 +317,18 @@ function HeroSection() {
           ClubSynq is the first platform built for the full student experience — social network, skill trading, club management, co-founder matching, and gamified reputation. All in one place.
         </p>
 
-        {/* Launch badge */}
-        <div style={{ display:'inline-flex', alignItems:'center', gap:12, padding:'14px 32px', background:'rgba(192,37,90,.07)', border:'1px solid rgba(192,37,90,.25)', borderRadius:16, animation:'lFadeUp .7s .65s ease both', backdropFilter:'blur(8px)' }}>
-          <span style={{ width:8, height:8, borderRadius:'50%', background:'#c0255a', display:'inline-block', boxShadow:'0 0 10px rgba(192,37,90,1)', animation:'lPulse 2s ease-in-out infinite', flexShrink:0 }} />
-          <span style={{ fontSize:16, fontWeight:700, color:'rgba(243,221,223,.8)', letterSpacing:'.04em' }}>Launching Soon — Stay tuned</span>
+        {/* CTA buttons */}
+        <div className="lnd-hero-btns" style={{ display:'inline-flex', alignItems:'center', gap:12, animation:'lFadeUp .7s .65s ease both' }}>
+          <button onClick={() => navigate('/signup')} style={{ padding:'16px 40px', background:'linear-gradient(135deg,#8a1538,#c0185c)', border:'none', borderRadius:14, color:'#fff', fontSize:16, fontWeight:800, cursor:'pointer', fontFamily:'inherit', boxShadow:'0 0 32px rgba(192,37,90,.45),0 8px 24px rgba(0,0,0,.4)', letterSpacing:'.02em', transition:'all .2s' }}
+            onMouseEnter={e => { e.currentTarget.style.filter='brightness(1.1)'; e.currentTarget.style.transform='translateY(-2px)' }}
+            onMouseLeave={e => { e.currentTarget.style.filter='brightness(1)'; e.currentTarget.style.transform='translateY(0)' }}>
+            Get Started — It's Free
+          </button>
+          <button onClick={() => navigate('/signin')} style={{ padding:'16px 32px', background:'rgba(255,255,255,.04)', border:'1px solid rgba(192,37,90,.3)', borderRadius:14, color:'rgba(243,221,223,.7)', fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:'inherit', backdropFilter:'blur(8px)', transition:'all .2s' }}
+            onMouseEnter={e => { e.currentTarget.style.background='rgba(192,37,90,.1)'; e.currentTarget.style.color='#f3dddf' }}
+            onMouseLeave={e => { e.currentTarget.style.background='rgba(255,255,255,.04)'; e.currentTarget.style.color='rgba(243,221,223,.7)' }}>
+            Sign In
+          </button>
         </div>
       </div>
     </section>
@@ -963,6 +982,7 @@ function ContactSection() {
 // ── CTA ───────────────────────────────────────────────────────────────────────
 
 function CTASection() {
+  const navigate = useNavigate()
   const { ref, visible } = useScrollReveal(.18)
   return (
     <section style={{ padding:'clamp(72px,9vw,110px) 32px', position:'relative', overflow:'hidden' }}>
@@ -983,11 +1003,19 @@ function CTASection() {
             <span className="lnd-gradient-text">something that lasts?</span>
           </h2>
           <p style={{ fontSize:16, color:'rgba(243,221,223,.38)', lineHeight:1.78, maxWidth:420, margin:'0 auto 48px' }}>
-            Something big is coming. ClubSynq launches May 22nd — your network, your skills, your future.
+            ClubSynq is live. Join your campus network, trade skills, and build something that matters — starting today.
           </p>
-          <div style={{ display:'inline-flex', alignItems:'center', gap:12, padding:'16px 40px', background:'rgba(192,37,90,.08)', border:'1px solid rgba(192,37,90,.3)', borderRadius:16, backdropFilter:'blur(8px)' }}>
-            <span style={{ width:9, height:9, borderRadius:'50%', background:'#c0255a', display:'inline-block', boxShadow:'0 0 12px rgba(192,37,90,1)', animation:'lPulse 2s ease-in-out infinite', flexShrink:0 }} />
-            <span style={{ fontSize:17, fontWeight:800, color:'rgba(243,221,223,.85)', letterSpacing:'.04em' }}>Launching May 22nd</span>
+          <div className="lnd-hero-btns" style={{ display:'inline-flex', alignItems:'center', gap:12 }}>
+            <button onClick={() => navigate('/signup')} style={{ padding:'16px 40px', background:'linear-gradient(135deg,#8a1538,#c0185c)', border:'none', borderRadius:14, color:'#fff', fontSize:16, fontWeight:800, cursor:'pointer', fontFamily:'inherit', boxShadow:'0 0 32px rgba(192,37,90,.45),0 8px 24px rgba(0,0,0,.4)', letterSpacing:'.02em', transition:'all .2s' }}
+              onMouseEnter={e => { e.currentTarget.style.filter='brightness(1.1)'; e.currentTarget.style.transform='translateY(-2px)' }}
+              onMouseLeave={e => { e.currentTarget.style.filter='brightness(1)'; e.currentTarget.style.transform='translateY(0)' }}>
+              Create Your Account
+            </button>
+            <button onClick={() => navigate('/signin')} style={{ padding:'16px 32px', background:'rgba(255,255,255,.04)', border:'1px solid rgba(192,37,90,.3)', borderRadius:14, color:'rgba(243,221,223,.7)', fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:'inherit', backdropFilter:'blur(8px)', transition:'all .2s' }}
+              onMouseEnter={e => { e.currentTarget.style.background='rgba(192,37,90,.1)'; e.currentTarget.style.color='#f3dddf' }}
+              onMouseLeave={e => { e.currentTarget.style.background='rgba(255,255,255,.04)'; e.currentTarget.style.color='rgba(243,221,223,.7)' }}>
+              Sign In
+            </button>
           </div>
         </div>
       </div>
