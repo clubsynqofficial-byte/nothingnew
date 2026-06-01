@@ -397,9 +397,9 @@ export default function CollaborationPage() {
         <div onClick={e => { if (e.target === e.currentTarget) setExpandedCard(null) }} style={{ position:'fixed', inset:0, zIndex:100, background:'rgba(0,0,0,0.84)', backdropFilter:'blur(16px)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
           <div style={{ width:'100%', maxWidth:540, background:'rgba(27,16,20,0.98)', border:'1px solid rgba(255,255,255,.08)', borderRadius:24, overflow:'hidden', animation:'col-spring .32s cubic-bezier(.34,1.4,.64,1)', boxShadow:'0 40px 90px rgba(0,0,0,.7)', maxHeight:'90vh', display:'flex', flexDirection:'column' }}>
             <div style={{ padding:'22px 26px 18px', background:'linear-gradient(160deg,rgba(138,21,56,.18),transparent)', borderBottom:'1px solid rgba(255,255,255,.05)', display:'flex', alignItems:'center', gap:14, flexShrink:0 }}>
-              <Av name={expandedCard.profile?.full_name} url={expandedCard.profile?.avatar_url} size={52} />
+              <div onClick={() => navigate(`/profile/${expandedCard.user_id}`)} style={{ cursor:'pointer', flexShrink:0 }}><Av name={expandedCard.profile?.full_name} url={expandedCard.profile?.avatar_url} size={52} /></div>
               <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:17, fontWeight:700, color:'var(--text-primary)', marginBottom:2 }}>{expandedCard.profile?.full_name ?? 'Unknown'}</div>
+                <div onClick={() => navigate(`/profile/${expandedCard.user_id}`)} style={{ fontSize:17, fontWeight:700, color:'var(--text-primary)', marginBottom:2, cursor:'pointer' }}>{expandedCard.profile?.full_name ?? 'Unknown'}</div>
                 {expandedCard.university && <div style={{ fontSize:11.5, color:'var(--text-muted)' }}>📍 {expandedCard.university.name}</div>}
               </div>
               {getMatching(expandedCard).length > 0 && (
@@ -589,9 +589,9 @@ export default function CollaborationPage() {
                   <div key={f.id} className={`col-card${matching.length > 0 ? ' col-card-match' : ''}`} onClick={() => setExpandedCard(f)} style={{ background:'rgba(30,18,22,.85)', border:'1px solid rgba(255,255,255,.07)', borderRadius:18, overflow:'hidden', display:'flex', flexDirection:'column', boxShadow:'0 6px 28px rgba(0,0,0,.35)', animation:`col-up .3s cubic-bezier(.22,1,.36,1) ${Math.min(i,7)*.05}s both` }}>
                     {/* Top */}
                     <div style={{ padding:'16px 18px 12px', background: matching.length > 0 ? 'linear-gradient(160deg,rgba(74,222,128,.07),transparent)' : 'linear-gradient(160deg,rgba(138,21,56,.1),transparent)', display:'flex', alignItems:'center', gap:11 }}>
-                      <Av name={f.profile?.full_name} url={f.profile?.avatar_url} size={42} />
+                      <div onClick={e => { e.stopPropagation(); navigate(`/profile/${f.user_id}`) }} style={{ cursor:'pointer', flexShrink:0 }}><Av name={f.profile?.full_name} url={f.profile?.avatar_url} size={42} /></div>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:14, fontWeight:700, color:'var(--text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{f.profile?.full_name ?? 'Unknown'}</div>
+                        <div onClick={e => { e.stopPropagation(); navigate(`/profile/${f.user_id}`) }} style={{ fontSize:14, fontWeight:700, color:'var(--text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', cursor:'pointer' }}>{f.profile?.full_name ?? 'Unknown'}</div>
                         {f.university && <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:1 }}>{f.university.short_name ?? f.university.name}</div>}
                       </div>
                       {matching.length > 0 && (

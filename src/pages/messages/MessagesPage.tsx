@@ -1462,7 +1462,7 @@ export default function MessagesPage() {
 
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {activeGroup ? activeGroup.name : (activeProfile?.full_name ?? 'User')}
+                  {activeGroup ? activeGroup.name : <span onClick={() => activeProfile && navigate(`/profile/${activeProfile.id}`)} style={{ cursor: activeProfile ? 'pointer' : 'default' }}>{activeProfile?.full_name ?? 'User'}</span>}
                   {!activeGroup && activeProfile && (() => {
                     const uid = activeCollab?.matchUserId ?? activeTrade?.otherUserId ?? activeLeader?.userId ?? activeDm?.otherId ?? ''
                     const st = getStatus(uid, connectedSet, statusMap, activeProfile.last_seen_at)

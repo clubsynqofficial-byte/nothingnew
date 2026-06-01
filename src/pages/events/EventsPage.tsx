@@ -61,6 +61,7 @@ export default function EventsPage() {
   const [memberClubIds, setMemberClubIds] = useState<Set<string>>(new Set())
   const [pendingClubIds, setPendingClubIds] = useState<Set<string>>(new Set())
   const [joiningId, setJoiningId] = useState<string | null>(null)
+  const [selectedEvent, setSelectedEvent] = useState<EventRow | null>(null)
   const [applyClub, setApplyClub] = useState<{ id: string; name: string } | null>(null)
   const fetchMemberships = useCallback(async () => {
     if (!user) return
@@ -235,12 +236,74 @@ export default function EventsPage() {
               isMember={memberClubIds.has(event.club_id)}
               isPending={pendingClubIds.has(event.club_id)}
               joining={joiningId === event.club_id}
+              onClick={() => setSelectedEvent(event)}
               onClubClick={() => navigate(`/clubs/${event.club_id}`)}
               onJoin={() => handleJoin(event.club_id, event.club?.name ?? 'Club')}
             />
           ))}
         </div>
       )}
+
+      {/* Event detail modal */}
+      {selectedEvent && (() => {
+        const ev = selectedEvent
+        const catColor = CATEGORY_COLORS[ev.club?.category ?? ''] ?? 'var(--accent)'
+        const isMember = memberClubIds.has(ev.club_id)
+        const isPending = pendingClubIds.has(ev.club_id)
+        const joining = joiningId === ev.club_id
+        return (
+          <div onClick={() => setSelectedEvent(null)} style={{ position:'fixed', inset:0, zIndex:9999, background:'rgba(0,0,0,0.78)', backdropFilter:'blur(8px)', display:'flex', alignItems:'center', justifyContent:'center', padding:'20px 16px' }}>
+            <div onClick={e => e.stopPropagation()} style={{ background:'var(--bg-card)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:24, width:'100%', maxWidth:520, maxHeight:'88vh', overflow:'hidden', display:'flex', flexDirection:'column', animation:'evUp 0.3s cubic-bezier(0.34,1.56,0.64,1) both' }}>
+              <div style={{ overflowY:'auto', padding:'clamp(20px,4vw,30px)', flex:1 }}>
+                {/* Club + close */}
+                <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:18 }}>
+                  <button onClick={e => { e.stopPropagation(); navigate(`/clubs/${ev.club_id}`); setSelectedEvent(null) }} style={{ display:'flex', alignItems:'center', gap:6, background:'transparent', border:'none', padding:0, cursor:'pointer' }}>
+                    <div style={{ width:22, height:22, borderRadius:6, background:ev.club?.logo_url?'transparent':`${catColor}22`, border:`1px solid ${catColor}44`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:700, color:catColor, overflow:'hidden', flexShrink:0 }}>
+                      {ev.club?.logo_url ? <img src={ev.club.logo_url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }}/> : (ev.club?.name?.[0] ?? '?')}
+                    </div>
+                    <span style={{ fontSize:12, fontWeight:700, color:catColor }}>{ev.club?.name ?? 'Unknown Club'}</span>
+                  </button>
+                  {ev.is_live && <span style={{ fontSize:10, fontWeight:800, color:'var(--live-red)', background:'rgba(239,68,68,0.12)', border:'1px solid rgba(239,68,68,0.3)', borderRadius:9999, padding:'2px 8px', letterSpacing:'.07em' }}>● LIVE</span>}
+                  <button onClick={() => setSelectedEvent(null)} style={{ marginLeft:'auto', background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)', fontSize:20, lineHeight:1, padding:4, flexShrink:0 }}>✕</button>
+                </div>
+
+                {/* Title */}
+                <h2 style={{ fontSize:'clamp(20px,4vw,26px)', fontWeight:900, color:'var(--text-primary)', letterSpacing:'-0.5px', marginBottom:16, lineHeight:1.25 }}>{ev.title}</h2>
+
+                {/* Meta */}
+                <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:20 }}>
+                  {ev.start_time && <div style={{ fontSize:13, color:'var(--text-muted)' }}>🕐 {formatEventDate(ev.start_time)}</div>}
+                  {ev.location   && <div style={{ fontSize:13, color:'var(--text-muted)' }}>📍 {ev.location}</div>}
+                  {ev.max_attendees !== null
+                    ? <div style={{ fontSize:13, color:'var(--text-muted)' }}>👥 {ev.attendee_count} / {ev.max_attendees} attending</div>
+                    : ev.attendee_count > 0 && <div style={{ fontSize:13, color:'var(--text-muted)' }}>👥 {ev.attendee_count} attending</div>}
+                  {ev.karak_points_reward > 0 && <div style={{ fontSize:13, color:'var(--gold)' }}>⭐ +{ev.karak_points_reward} Karak points for attending</div>}
+                </div>
+
+                {/* Description */}
+                {ev.description && (
+                  <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:14, padding:'16px 18px' }}>
+                    <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:10 }}>About</div>
+                    <p style={{ fontSize:14, color:'var(--text-secondary)', lineHeight:1.75, margin:0, whiteSpace:'pre-wrap' }}>{ev.description}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div style={{ padding:'14px clamp(20px,4vw,30px)', borderTop:'1px solid rgba(255,255,255,0.07)', background:'var(--bg-card)', display:'flex', gap:10 }}>
+                <button onClick={() => setSelectedEvent(null)} style={{ flex:1, padding:'11px', background:'transparent', border:'1px solid rgba(255,255,255,0.1)', borderRadius:12, color:'var(--text-muted)', fontSize:14, cursor:'pointer', fontFamily:'inherit' }}>Close</button>
+                {!isMember && !isPending && (
+                  <button onClick={() => { setSelectedEvent(null); handleJoin(ev.club_id, ev.club?.name ?? 'Club') }} disabled={joining} style={{ flex:2, padding:'11px', background:'var(--accent)', border:'none', borderRadius:12, color:'#fff', fontSize:14, fontWeight:700, cursor:joining?'default':'pointer', fontFamily:'inherit', opacity:joining?0.6:1 }}>
+                    {joining ? '…' : 'Join Club to Attend'}
+                  </button>
+                )}
+                {isMember && <div style={{ flex:2, padding:'11px', background:'rgba(34,197,94,0.08)', border:'1px solid rgba(34,197,94,0.25)', borderRadius:12, color:'#4ade80', fontSize:14, fontWeight:600, textAlign:'center' }}>✓ You're a member</div>}
+                {isPending && <div style={{ flex:2, padding:'11px', background:'rgba(251,146,60,0.08)', border:'1px solid rgba(251,146,60,0.25)', borderRadius:12, color:'#fb923c', fontSize:14, fontWeight:600, textAlign:'center' }}>⏳ Membership pending</div>}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {applyClub && (
         <ClubApplicationModal
@@ -254,23 +317,25 @@ export default function EventsPage() {
   )
 }
 
-function EventCard({ event, index, isMember, isPending, joining, onClubClick, onJoin }: {
+function EventCard({ event, index, isMember, isPending, joining, onClick, onClubClick, onJoin }: {
   event: EventRow
   index: number
   isMember: boolean
   isPending: boolean
   joining: boolean
+  onClick: () => void
   onClubClick: () => void
   onJoin: () => void
 }) {
   const catColor = CATEGORY_COLORS[event.club?.category ?? ''] ?? 'var(--accent)'
 
   return (
-    <div className="ev-row" style={{
+    <div className="ev-row" onClick={onClick} style={{
       background: event.is_live ? 'rgba(255,180,171,0.05)' : 'rgba(255,255,255,0.03)',
       border: event.is_live ? '1px solid rgba(255,180,171,0.18)' : '1px solid rgba(255,255,255,0.07)',
       borderRadius: 14, padding: '16px 20px',
       display: 'flex', gap: 16, alignItems: 'flex-start',
+      cursor: 'pointer',
       animation: `evUp 0.38s cubic-bezier(0.22,1,0.36,1) ${index * 0.045}s both`,
     }}>
       {/* Date block */}
@@ -302,7 +367,7 @@ function EventCard({ event, index, isMember, isPending, joining, onClubClick, on
       {/* Body */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <button
-          onClick={onClubClick}
+          onClick={e => { e.stopPropagation(); onClubClick() }}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', marginBottom: 6 }}
         >
           <div style={{
@@ -371,7 +436,7 @@ function EventCard({ event, index, isMember, isPending, joining, onClubClick, on
             Pending
           </span>
         ) : (
-          <button className="ev-join-btn" onClick={onJoin} disabled={!!joining} style={{ padding: '7px 16px', borderRadius: 9, background: 'var(--accent)', border: '1px solid rgba(138,21,56,0.5)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: joining ? 'default' : 'pointer', opacity: joining ? 0.6 : 1, whiteSpace: 'nowrap', fontFamily: 'inherit' }}>
+          <button className="ev-join-btn" onClick={e => { e.stopPropagation(); onJoin() }} disabled={!!joining} style={{ padding: '7px 16px', borderRadius: 9, background: 'var(--accent)', border: '1px solid rgba(138,21,56,0.5)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: joining ? 'default' : 'pointer', opacity: joining ? 0.6 : 1, whiteSpace: 'nowrap', fontFamily: 'inherit' }}>
             {joining ? '…' : 'Join Club'}
           </button>
         )}

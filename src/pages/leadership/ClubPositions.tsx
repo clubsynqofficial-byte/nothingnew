@@ -359,7 +359,7 @@ export default function ClubPositions({ club }: { club: Club }) {
                   }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: app.cover_letter ? 12 : 0, gap: 10 }}>
                       <div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>
+                        <div onClick={() => navigate(`/profile/${app.user_id}`)} style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2, cursor: 'pointer' }}>
                           {app.profile?.full_name ?? 'Unknown User'}
                         </div>
                         <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>

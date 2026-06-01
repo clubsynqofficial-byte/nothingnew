@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
 import { createPortal } from 'react-dom'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { filterText, validateImage } from '../../lib/contentFilter'
@@ -141,6 +142,7 @@ function StarPicker({ value, onChange }: { value: number; onChange: (v: number) 
 
 export default function TalentPage() {
   const { user, profile } = useAuth()
+  const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('browse')
   const [listings, setListings] = useState<ListingRow[]>([])
   const [myListings, setMyListings] = useState<ListingRow[]>([])
@@ -168,7 +170,7 @@ export default function TalentPage() {
   const [ratingComment, setRatingComment] = useState('')
   const [submittingRating, setSubmittingRating] = useState(false)
   const [myReviews, setMyReviews] = useState<ReviewRow[]>([])
-  const [viewingUserId, setViewingUserId] = useState<string | null>(null)
+
   const [unreadCount, setUnreadCount] = useState(0)
 
   // ── Fetchers ──
@@ -510,7 +512,7 @@ export default function TalentPage() {
               {listings.map((l, i) => {
                 const already = alreadyRequestedIds.has(l.id)
                 return (
-                  <ListingCard key={l.id} listing={l} index={i} onViewUser={() => setViewingUserId(l.user_id)} action={
+                  <ListingCard key={l.id} listing={l} index={i} onViewUser={() => navigate(`/profile/${l.user_id}`)} action={
                     <button className="req-btn" onClick={() => !already && setRequestPrompt(l)} disabled={!!requestingId || already}
                       style={{ width: '100%', padding: '10px', background: already ? 'rgba(138,21,56,0.08)' : 'rgba(138,21,56,0.12)', border: '1px solid rgba(138,21,56,0.3)', borderRadius: 9, color: already ? 'var(--accent)' : 'var(--text-secondary)', fontSize: 13, fontWeight: 600, cursor: already || requestingId ? 'default' : 'pointer', opacity: requestingId === l.id ? 0.6 : 1, transition: 'all 0.15s' }}>
                       {requestingId === l.id ? 'Sending…' : already ? '✓ Requested' : 'Request Trade'}
@@ -577,7 +579,7 @@ export default function TalentPage() {
                       onReject={() => handleRequestAction(req.id, 'rejected')}
                       onOpenChat={() => req.status === 'accepted' && setChatTrade(req)}
                       onLeaveReview={() => { setRatingValue(5); setRatingComment(''); setRatingTrade(req) }}
-                      onViewUser={setViewingUserId}
+                      onViewUser={uid => navigate(`/profile/${uid}`)}
                     />
                   ))}
                 </div>
@@ -597,7 +599,7 @@ export default function TalentPage() {
                     <ReqCard key={req.id} req={req} index={i} mode="outgoing" currentUserId={user?.id ?? ''} actionId={actionId} hasReviewed={reviewedIds.has(req.id)}
                       onOpenChat={() => req.status === 'accepted' && setChatTrade(req)}
                       onLeaveReview={() => { setRatingValue(5); setRatingComment(''); setRatingTrade(req) }}
-                      onViewUser={setViewingUserId}
+                      onViewUser={uid => navigate(`/profile/${uid}`)}
                     />
                   ))}
                 </div>
@@ -628,6 +630,7 @@ export default function TalentPage() {
                 const partnerName = isRequester
                   ? (listing?.profile?.full_name ?? 'Partner')
                   : (trade.requester?.full_name ?? 'Partner')
+                const partnerId = isRequester ? (listing?.user_id ?? '') : trade.requester_id
                 const mySkill = isRequester ? listing?.skill_wanted : listing?.skill_offered
                 const theirSkill = isRequester ? listing?.skill_offered : listing?.skill_wanted
                 const iAskedToEnd = trade.end_requested_by === user?.id
@@ -644,12 +647,12 @@ export default function TalentPage() {
                   }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
-                        <div style={{ position: 'relative', flexShrink: 0 }}>
+                        <div onClick={() => partnerId && navigate(`/profile/${partnerId}`)} style={{ position: 'relative', flexShrink: 0, cursor: partnerId ? 'pointer' : 'default' }}>
                           <Avatar name={partnerName} size={44} />
                           <div style={{ position: 'absolute', bottom: 1, right: 1, width: 11, height: 11, borderRadius: '50%', background: '#4ade80', border: '2px solid var(--bg-card)', boxShadow: '0 0 6px rgba(74,222,128,0.5)' }} />
                         </div>
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{partnerName}</div>
+                          <div onClick={() => partnerId && navigate(`/profile/${partnerId}`)} style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2, cursor: partnerId ? 'pointer' : 'default' }}>{partnerName}</div>
                           <div style={{ fontSize: 12, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {listing?.title ?? 'Skill Trade'}
                           </div>
@@ -872,11 +875,6 @@ export default function TalentPage() {
         document.body
       )}
 
-      {/* USER PROFILE MODAL */}
-      {viewingUserId && createPortal(
-        <UserProfileModal userId={viewingUserId} onClose={() => setViewingUserId(null)} />,
-        document.body
-      )}
     </div>
   )
 }

@@ -680,6 +680,7 @@ function EventCard({ event, onAttend, attending, onViewAnn, index = 0 }: { event
 // ──────────────────────────────── MemberCard ────────
 
 function MemberCard({ member, highlight, index = 0 }: { member: MemberRow; highlight?: boolean; index?: number }) {
+  const navigate = useNavigate()
   const rs = ROLE_STYLES[member.role] ?? ROLE_STYLES.member
   const p = member.profile
   const hasCustom   = !!member.custom_role
@@ -698,10 +699,10 @@ function MemberCard({ member, highlight, index = 0 }: { member: MemberRow; highl
       display: 'flex', alignItems: 'center', gap: 12,
       animation: `cp-up 0.4s cubic-bezier(0.22,1,0.36,1) ${index * 0.045}s both`,
     }}>
-      <Avatar name={p?.full_name} size={highlight ? 44 : 38} />
+      <div onClick={() => navigate(`/profile/${member.user_id}`)} style={{ cursor: 'pointer', flexShrink: 0 }}><Avatar name={p?.full_name} size={highlight ? 44 : 38} /></div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: highlight ? 15 : 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>
+        <div onClick={() => navigate(`/profile/${member.user_id}`)} style={{ fontSize: highlight ? 15 : 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2, cursor: 'pointer' }}>
           {p?.full_name ?? 'Unknown'}
         </div>
 
@@ -1197,9 +1198,9 @@ function AnnouncementsSection({
                 )}
                 {/* Author row */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                  <Avatar name={ann.profile?.full_name} size={34} />
+                  <div onClick={() => navigate(`/profile/${ann.user_id}`)} style={{ cursor: 'pointer', flexShrink: 0 }}><Avatar name={ann.profile?.full_name} size={34} /></div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                    <div onClick={() => navigate(`/profile/${ann.user_id}`)} style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer' }}>
                       {ann.profile?.full_name ?? 'Admin'}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
@@ -1456,7 +1457,7 @@ function ThreadsSection({ clubId, threads, onRefresh }: { clubId: string; thread
                   onClick={() => handleExpand(thread.id)}
                   style={{ padding: '14px 18px', display: 'flex', gap: 12, alignItems: 'flex-start', cursor: 'pointer', transition: 'border-color 0.2s' }}
                 >
-                  <Avatar name={thread.profile?.full_name} size={36} />
+                  <div onClick={e => { e.stopPropagation(); navigate(`/profile/${thread.user_id}`) }} style={{ cursor: 'pointer', flexShrink: 0 }}><Avatar name={thread.profile?.full_name} size={36} /></div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 3, lineHeight: 1.3 }}>
                       {thread.title}
@@ -1467,7 +1468,7 @@ function ThreadsSection({ clubId, threads, onRefresh }: { clubId: string; thread
                       </div>
                     )}
                     <div style={{ display: 'flex', gap: 12, marginTop: 5 }}>
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{thread.profile?.full_name ?? 'Unknown'}</span>
+                      <span onClick={e => { e.stopPropagation(); navigate(`/profile/${thread.user_id}`) }} style={{ fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer' }}>{thread.profile?.full_name ?? 'Unknown'}</span>
                       <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>·</span>
                       <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{timeAgo(thread.created_at)}</span>
                       <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>·</span>
@@ -1498,10 +1499,10 @@ function ThreadsSection({ clubId, threads, onRefresh }: { clubId: string; thread
                             padding: '12px 0',
                             borderTop: idx === 0 ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(255,255,255,0.04)',
                           }}>
-                            <Avatar name={rep.profile?.full_name} size={28} />
+                            <div onClick={() => navigate(`/profile/${rep.user_id}`)} style={{ cursor: 'pointer', flexShrink: 0 }}><Avatar name={rep.profile?.full_name} size={28} /></div>
                             <div style={{ flex: 1 }}>
                               <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBottom: 4 }}>
-                                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{rep.profile?.full_name ?? 'Unknown'}</span>
+                                <span onClick={() => navigate(`/profile/${rep.user_id}`)} style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer' }}>{rep.profile?.full_name ?? 'Unknown'}</span>
                                 <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{timeAgo(rep.created_at)}</span>
                               </div>
                               <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>{rep.content}</div>
@@ -1626,9 +1627,9 @@ function EventAnnouncementsModal({
                   padding: '14px 18px',
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                    <Avatar name={ann.profile?.full_name} size={28} />
+                    <div onClick={() => navigate(`/profile/${ann.user_id}`)} style={{ cursor: 'pointer', flexShrink: 0 }}><Avatar name={ann.profile?.full_name} size={28} /></div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
+                      <div onClick={() => navigate(`/profile/${ann.user_id}`)} style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer' }}>
                         {ann.profile?.full_name ?? 'Organizer'}
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>

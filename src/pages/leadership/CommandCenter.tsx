@@ -1099,11 +1099,11 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
                       onClick={() => setExpandedApp(isExpanded ? null : app.id)}
                       style={{ display:'flex', alignItems:'center', gap:14, padding:'16px 18px 12px', cursor:'pointer' }}
                     >
-                      <div style={{ width:40, height:40, borderRadius:'50%', background:'linear-gradient(135deg,#8a1538,#c0185c)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, color:'#fff', flexShrink:0 }}>
+                      <div onClick={e => { e.stopPropagation(); navigate(`/profile/${app.user_id}`) }} style={{ width:40, height:40, borderRadius:'50%', background:'linear-gradient(135deg,#8a1538,#c0185c)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, color:'#fff', flexShrink:0, cursor:'pointer' }}>
                         {name.split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase()}
                       </div>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:14, fontWeight:700, color:'var(--text-primary)', marginBottom:2 }}>{name}</div>
+                        <div onClick={e => { e.stopPropagation(); navigate(`/profile/${app.user_id}`) }} style={{ fontSize:14, fontWeight:700, color:'var(--text-primary)', marginBottom:2, cursor:'pointer' }}>{name}</div>
                         <div style={{ fontSize:11, color:'var(--text-muted)' }}>
                           {app.profile?.school && <span style={{ marginRight:10 }}>{app.profile.school}</span>}
                           Applied {submittedAt}
@@ -1452,10 +1452,15 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
               .an-card  { animation: anFadeUp .4s cubic-bezier(.22,1,.36,1) both }
               .an-ring  { animation: anRingIn 1.1s cubic-bezier(.22,1,.36,1) both; animation-delay:.15s }
               .an-spin  { animation: anSpin .7s linear infinite }
+              @media(max-width:640px){
+                .an-hero { padding: 18px 16px !important }
+                .an-kpi-grid { grid-template-columns: 1fr 1fr !important }
+                .an-bottom-row { grid-template-columns: 1fr !important }
+              }
             `}</style>
 
             {/* ── Hero banner ── */}
-            <div style={{ position:'relative', overflow:'hidden', borderRadius:20, marginBottom:20, background:'linear-gradient(135deg,rgba(138,21,56,.3) 0%,rgba(12,6,9,0) 55%)', border:'1px solid rgba(138,21,56,.35)', padding:'26px 28px' }}>
+            <div className="an-hero" style={{ position:'relative', overflow:'hidden', borderRadius:20, marginBottom:20, background:'linear-gradient(135deg,rgba(138,21,56,.3) 0%,rgba(12,6,9,0) 55%)', border:'1px solid rgba(138,21,56,.35)', padding:'26px 28px' }}>
               <div style={{ position:'absolute', top:-60, right:-60, width:260, height:260, borderRadius:'50%', background:'radial-gradient(circle,rgba(192,24,92,.18) 0%,transparent 68%)', pointerEvents:'none' }} />
               <div style={{ position:'absolute', bottom:-40, left:80, width:160, height:160, borderRadius:'50%', background:'radial-gradient(circle,rgba(96,165,250,.07) 0%,transparent 70%)', pointerEvents:'none' }} />
               <div style={{ fontSize:10, fontWeight:800, color:'var(--accent)', letterSpacing:'.14em', textTransform:'uppercase', marginBottom:8 }}>Analytics Dashboard</div>
@@ -1476,7 +1481,7 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
             </div>
 
             {/* ── KPI row ── */}
-            <div style={{ display:'grid', gridTemplateColumns:'160px 1fr 1fr 1fr', gap:14, marginBottom:20 }}>
+            <div className="an-kpi-grid" style={{ display:'grid', gridTemplateColumns:'160px 1fr 1fr 1fr', gap:14, marginBottom:20 }}>
 
               {/* Engagement ring */}
               <div className="an-card" style={{ background:'rgba(255,255,255,.04)', border:`1px solid ${eColor}28`, borderRadius:18, padding:'18px 14px', display:'flex', flexDirection:'column', alignItems:'center', gap:8 }}>
@@ -1580,7 +1585,7 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
             </div>
 
             {/* ── Bottom row: Leaderboard + Donut ── */}
-            <div style={{ display:'grid', gridTemplateColumns: categories.length > 0 ? '1fr 260px' : '1fr', gap:16 }}>
+            <div className="an-bottom-row" style={{ display:'grid', gridTemplateColumns: categories.length > 0 ? '1fr 260px' : '1fr', gap:16 }}>
 
               {/* Event Leaderboard */}
               {sortedEvents.length > 0 && (
@@ -2373,12 +2378,13 @@ function NewMemberRow({
 function PresidentRow({ member, idx, isLoading, canDemote, onDemote }: {
   member: MembershipRow; idx: number; isLoading: boolean; canDemote: boolean; onDemote: (id: string) => void
 }) {
+  const navigate = useNavigate()
   const [confirm, setConfirm] = useState(false)
   return (
     <div className="tm-card" style={{ display:'flex', alignItems:'center', gap:14, padding:'16px 18px', borderRadius:16, background:'rgba(233,193,118,.04)', border:'1px solid rgba(233,193,118,.15)', animationDelay:`${idx*.05}s`, marginBottom:8 }}>
-      <TeamAvatar name={member.profile?.full_name} size={42}/>
+      <div onClick={() => navigate(`/profile/${member.user_id}`)} style={{ cursor:'pointer', flexShrink:0 }}><TeamAvatar name={member.profile?.full_name} size={42}/></div>
       <div style={{ flex:1, minWidth:0 }}>
-        <div style={{ fontSize:15, fontWeight:800, color:'var(--text-primary)', marginBottom:3 }}>{member.profile?.full_name ?? 'Unknown'}</div>
+        <div onClick={() => navigate(`/profile/${member.user_id}`)} style={{ fontSize:15, fontWeight:800, color:'var(--text-primary)', marginBottom:3, cursor:'pointer' }}>{member.profile?.full_name ?? 'Unknown'}</div>
         {member.profile?.school && <div style={{ fontSize:11, color:'var(--text-muted)' }}>{member.profile.school}</div>}
         {member.profile?.email  && <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:1 }}>{member.profile.email}</div>}
       </div>
@@ -2431,6 +2437,7 @@ function ExistingMemberRow({
   onDemotePresident?: (membershipId: string) => void
   onPermissionsChange: (membershipId: string, permissions: string[]) => void
 }) {
+  const navigate = useNavigate()
   const [hasCustomRole, setHasCustomRole] = useState(!!membership.custom_role)
   const [perms, setPerms] = useState<string[]>(membership.permissions ?? [])
   const [showPerms, setShowPerms] = useState(false)
@@ -2452,9 +2459,9 @@ function ExistingMemberRow({
       onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.borderColor='rgba(255,255,255,.07)'}>
       {/* Main row */}
       <div style={{ display:'flex', alignItems:'center', gap:14, padding:'14px 16px' }}>
-        <TeamAvatar name={profile.full_name} size={40}/>
+        <div onClick={() => navigate(`/profile/${profile.id}`)} style={{ cursor:'pointer', flexShrink:0 }}><TeamAvatar name={profile.full_name} size={40}/></div>
         <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontSize:14, fontWeight:700, color:'var(--text-primary)', marginBottom:3 }}>{profile.full_name ?? 'Unknown'}</div>
+          <div onClick={() => navigate(`/profile/${profile.id}`)} style={{ fontSize:14, fontWeight:700, color:'var(--text-primary)', marginBottom:3, cursor:'pointer' }}>{profile.full_name ?? 'Unknown'}</div>
           <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
             {profile.school && <span style={{ fontSize:11, color:'rgba(255,255,255,.4)' }}>{profile.school}</span>}
             {profile.email  && <span style={{ fontSize:11, color:'rgba(255,255,255,.25)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:160 }}>{profile.email}</span>}
