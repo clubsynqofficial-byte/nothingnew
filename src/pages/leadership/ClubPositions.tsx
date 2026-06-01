@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
 import type { Club } from '../../types'
 
 interface Position {
@@ -46,6 +48,8 @@ const sectionBox: React.CSSProperties = {
 }
 
 export default function ClubPositions({ club }: { club: Club }) {
+  const navigate = useNavigate()
+  const { user } = useAuth()
   const [positions, setPositions] = useState<Position[]>([])
   const [applications, setApplications] = useState<Application[]>([])
   const [loading, setLoading] = useState(true)
@@ -121,6 +125,26 @@ export default function ClubPositions({ club }: { club: Club }) {
     setPositions(ps => ps.filter(p => p.id !== posId))
     setApplications(as => as.filter(a => a.position_id !== posId))
     setActionId(null)
+  }
+
+  async function handleMessage(userId: string, name: string | null) {
+    if (!user) return
+    const { data: existing } = await supabase
+      .from('conversations')
+      .select('id')
+      .or(`and(participant_1.eq.${user.id},participant_2.eq.${userId}),and(participant_1.eq.${userId},participant_2.eq.${user.id})`)
+      .eq('type', 'dm')
+      .maybeSingle()
+    let convId = existing?.id
+    if (!convId) {
+      const { data: created } = await supabase
+        .from('conversations')
+        .insert({ participant_1: user.id, participant_2: userId, type: 'dm' })
+        .select('id').single()
+      convId = created?.id
+    }
+    if (!convId) return
+    navigate('/messages', { state: { dmConvId: convId, dmOtherId: userId, dmOtherName: name } })
   }
 
   async function handleAppAction(app: Application, status: 'accepted' | 'rejected') {
@@ -347,6 +371,9 @@ export default function ClubPositions({ club }: { club: Club }) {
                           <>
                             <button onClick={() => handleAppAction(app, 'accepted')} disabled={actionId === app.id} style={{ padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', border: 'none', background: 'rgba(74,222,128,0.15)', color: '#4ade80' }}>
                               {actionId === app.id ? '…' : 'Accept'}
+                            </button>
+                            <button onClick={() => handleMessage(app.user_id, app.profile?.full_name ?? null)} style={{ padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', border: 'none', background: 'rgba(96,165,250,0.12)', color: '#60a5fa' }}>
+                              💬 Message
                             </button>
                             <button onClick={() => handleAppAction(app, 'rejected')} disabled={actionId === app.id} style={{ padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', border: 'none', background: 'rgba(248,113,113,0.1)', color: '#f87171' }}>
                               Reject

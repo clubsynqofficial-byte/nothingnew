@@ -1094,12 +1094,11 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
                 const submittedAt = new Date(app.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
                 return (
                   <div key={app.id} className="app-card" style={{ animationDelay:`${idx*.06}s` }}>
-                    {/* Row header */}
+                    {/* Top: name + meta */}
                     <div
                       onClick={() => setExpandedApp(isExpanded ? null : app.id)}
-                      style={{ display:'flex', alignItems:'center', gap:14, padding:'16px 18px', cursor:'pointer' }}
+                      style={{ display:'flex', alignItems:'center', gap:14, padding:'16px 18px 12px', cursor:'pointer' }}
                     >
-                      {/* Avatar */}
                       <div style={{ width:40, height:40, borderRadius:'50%', background:'linear-gradient(135deg,#8a1538,#c0185c)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, color:'#fff', flexShrink:0 }}>
                         {name.split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase()}
                       </div>
@@ -1112,60 +1111,50 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
                       </div>
                       <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
                         <span style={{ fontSize:10, fontWeight:700, color:'#fbbf24', background:'rgba(251,191,36,0.1)', border:'1px solid rgba(251,191,36,0.25)', borderRadius:9999, padding:'3px 9px', letterSpacing:'.06em' }}>PENDING</span>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color:'var(--text-muted)', transform:isExpanded?'rotate(180deg)':'none', transition:'transform .2s' }}>
-                          <polyline points="6 9 12 15 18 9"/>
-                        </svg>
+                        {fields.length > 0 && (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color:'var(--text-muted)', transform:isExpanded?'rotate(180deg)':'none', transition:'transform .2s' }}>
+                            <polyline points="6 9 12 15 18 9"/>
+                          </svg>
+                        )}
                       </div>
                     </div>
 
-                    {/* Expanded answers */}
-                    {isExpanded && (
-                      <div style={{ padding:'0 18px 18px', borderTop:'1px solid rgba(255,255,255,0.06)', animation:'appExpand .22s ease both' }}>
-                        {/* Answers */}
-                        {fields.length > 0 ? (
-                          <div style={{ display:'flex', flexDirection:'column', gap:12, marginTop:16, marginBottom:18 }}>
-                            {fields.map(f => (
-                              <div key={f.id}>
-                                <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', letterSpacing:'.06em', textTransform:'uppercase', marginBottom:5 }}>{f.label}</div>
-                                <div style={{ fontSize:13, color:'var(--text-primary)', lineHeight:1.6, background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:10, padding:'10px 13px', whiteSpace:'pre-wrap' }}>
-                                  {app.answers[f.id] || <span style={{ color:'var(--text-muted)', fontStyle:'italic' }}>No answer</span>}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div style={{ fontSize:13, color:'var(--text-muted)', padding:'14px 0 10px', fontStyle:'italic' }}>No questions were in this form.</div>
-                        )}
+                    {/* Always-visible action buttons */}
+                    <div style={{ display:'flex', gap:8, padding:'0 18px 16px' }}>
+                      <button
+                        onClick={() => handleRejectApplication(app.id)}
+                        disabled={isLoading}
+                        style={{ flex:1, padding:'9px', background:'rgba(248,113,113,0.08)', border:'1px solid rgba(248,113,113,0.3)', borderRadius:10, color:'#f87171', fontSize:13, fontWeight:700, cursor:isLoading?'default':'pointer', fontFamily:'inherit', opacity:isLoading?0.5:1, transition:'all .15s' }}
+                        onMouseEnter={e => { if(!isLoading) { e.currentTarget.style.background='rgba(248,113,113,0.16)'; e.currentTarget.style.borderColor='rgba(248,113,113,0.5)' }}}
+                        onMouseLeave={e => { e.currentTarget.style.background='rgba(248,113,113,0.08)'; e.currentTarget.style.borderColor='rgba(248,113,113,0.3)' }}
+                      >{isLoading ? '…' : '✕ Reject'}</button>
+                      <button
+                        onClick={() => handleMessageApplicant(app.user_id, app.profile?.full_name ?? null)}
+                        style={{ flex:1, padding:'9px', background:'rgba(96,165,250,0.08)', border:'1px solid rgba(96,165,250,0.3)', borderRadius:10, color:'#60a5fa', fontSize:13, fontWeight:700, cursor:'pointer', fontFamily:'inherit', transition:'all .15s' }}
+                        onMouseEnter={e => { e.currentTarget.style.background='rgba(96,165,250,0.16)'; e.currentTarget.style.borderColor='rgba(96,165,250,0.5)' }}
+                        onMouseLeave={e => { e.currentTarget.style.background='rgba(96,165,250,0.08)'; e.currentTarget.style.borderColor='rgba(96,165,250,0.3)' }}
+                      >💬 Message</button>
+                      <button
+                        onClick={() => handleAcceptApplication(app.id, app.user_id)}
+                        disabled={isLoading}
+                        style={{ flex:1, padding:'9px', background:isLoading?'rgba(34,197,94,0.1)':'rgba(34,197,94,0.15)', border:'1px solid rgba(34,197,94,0.4)', borderRadius:10, color:'#4ade80', fontSize:13, fontWeight:700, cursor:isLoading?'default':'pointer', fontFamily:'inherit', opacity:isLoading?0.5:1, transition:'all .15s' }}
+                        onMouseEnter={e => { if(!isLoading) { e.currentTarget.style.background='rgba(34,197,94,0.25)'; e.currentTarget.style.borderColor='rgba(34,197,94,0.6)' }}}
+                        onMouseLeave={e => { e.currentTarget.style.background='rgba(34,197,94,0.15)'; e.currentTarget.style.borderColor='rgba(34,197,94,0.4)' }}
+                      >{isLoading ? '…' : '✓ Accept'}</button>
+                    </div>
 
-                        {/* Actions */}
-                        <div style={{ display:'flex', gap:8 }}>
-                          <button
-                            onClick={() => handleRejectApplication(app.id)}
-                            disabled={isLoading}
-                            style={{ flex:1, padding:'10px', background:'rgba(248,113,113,0.08)', border:'1px solid rgba(248,113,113,0.3)', borderRadius:10, color:'#f87171', fontSize:13, fontWeight:700, cursor:isLoading?'default':'pointer', fontFamily:'inherit', opacity:isLoading?0.5:1, transition:'all .15s' }}
-                            onMouseEnter={e => { if(!isLoading) { e.currentTarget.style.background='rgba(248,113,113,0.16)'; e.currentTarget.style.borderColor='rgba(248,113,113,0.5)' }}}
-                            onMouseLeave={e => { e.currentTarget.style.background='rgba(248,113,113,0.08)'; e.currentTarget.style.borderColor='rgba(248,113,113,0.3)' }}
-                          >
-                            {isLoading ? '…' : '✕  Reject'}
-                          </button>
-                          <button
-                            onClick={() => handleMessageApplicant(app.user_id, app.profile?.full_name ?? null)}
-                            disabled={isLoading}
-                            style={{ flex:1, padding:'10px', background:'rgba(96,165,250,0.08)', border:'1px solid rgba(96,165,250,0.3)', borderRadius:10, color:'#60a5fa', fontSize:13, fontWeight:700, cursor:isLoading?'default':'pointer', fontFamily:'inherit', transition:'all .15s' }}
-                            onMouseEnter={e => { e.currentTarget.style.background='rgba(96,165,250,0.16)'; e.currentTarget.style.borderColor='rgba(96,165,250,0.5)' }}
-                            onMouseLeave={e => { e.currentTarget.style.background='rgba(96,165,250,0.08)'; e.currentTarget.style.borderColor='rgba(96,165,250,0.3)' }}
-                          >
-                            💬 Message
-                          </button>
-                          <button
-                            onClick={() => handleAcceptApplication(app.id, app.user_id)}
-                            disabled={isLoading}
-                            style={{ flex:1, padding:'10px', background:isLoading?'rgba(34,197,94,0.1)':'rgba(34,197,94,0.15)', border:'1px solid rgba(34,197,94,0.4)', borderRadius:10, color:'#4ade80', fontSize:13, fontWeight:700, cursor:isLoading?'default':'pointer', fontFamily:'inherit', opacity:isLoading?0.5:1, transition:'all .15s' }}
-                            onMouseEnter={e => { if(!isLoading) { e.currentTarget.style.background='rgba(34,197,94,0.25)'; e.currentTarget.style.borderColor='rgba(34,197,94,0.6)' }}}
-                            onMouseLeave={e => { e.currentTarget.style.background='rgba(34,197,94,0.15)'; e.currentTarget.style.borderColor='rgba(34,197,94,0.4)' }}
-                          >
-                            {isLoading ? '…' : '✓  Accept'}
-                          </button>
+                    {/* Expandable answers (only if form has fields) */}
+                    {isExpanded && fields.length > 0 && (
+                      <div style={{ padding:'0 18px 18px', borderTop:'1px solid rgba(255,255,255,0.06)', animation:'appExpand .22s ease both' }}>
+                        <div style={{ display:'flex', flexDirection:'column', gap:12, marginTop:16 }}>
+                          {fields.map(f => (
+                            <div key={f.id}>
+                              <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', letterSpacing:'.06em', textTransform:'uppercase', marginBottom:5 }}>{f.label}</div>
+                              <div style={{ fontSize:13, color:'var(--text-primary)', lineHeight:1.6, background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:10, padding:'10px 13px', whiteSpace:'pre-wrap' }}>
+                                {app.answers[f.id] || <span style={{ color:'var(--text-muted)', fontStyle:'italic' }}>No answer</span>}
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     )}
