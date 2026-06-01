@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
+import { useNavigate } from 'react-router-dom'
 import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -99,6 +100,7 @@ interface Props {
 
 export default function CommandCenter({ club, onDeleted, userPermissions, clubSwitcher }: Props) {
   const { user, profile } = useAuth()
+  const navigate = useNavigate()
   const isPresident = userPermissions === undefined
   const canDo = (perm: string) => isPresident || (userPermissions ?? []).includes(perm)
   const [stats, setStats] = useState<Stats>({ memberCount: 0, eventCount: 0, totalAttendees: 0, threadCount: 0, newMembersThisMonth: 0 })
@@ -304,6 +306,28 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
     await supabase.from('club_form_responses').update({ status: 'rejected' }).eq('id', appId)
     setApplications(prev => prev.filter(a => a.id !== appId))
     setAppActionLoading(null)
+  }
+
+  async function handleMessageApplicant(userId: string, name: string | null) {
+    if (!user) return
+    // Find existing conversation or create one
+    const { data: existing } = await supabase
+      .from('conversations')
+      .select('id')
+      .or(`and(participant_1.eq.${user.id},participant_2.eq.${userId}),and(participant_1.eq.${userId},participant_2.eq.${user.id})`)
+      .eq('type', 'dm')
+      .maybeSingle()
+    let convId = existing?.id
+    if (!convId) {
+      const { data: created } = await supabase
+        .from('conversations')
+        .insert({ participant_1: user.id, participant_2: userId, type: 'dm' })
+        .select('id')
+        .single()
+      convId = created?.id
+    }
+    if (!convId) return
+    navigate('/messages', { state: { dmConvId: convId, dmOtherId: userId, dmOtherName: name } })
   }
 
   async function handleCreateEvent(e: FormEvent) {
@@ -1114,7 +1138,7 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
                         )}
 
                         {/* Actions */}
-                        <div style={{ display:'flex', gap:10 }}>
+                        <div style={{ display:'flex', gap:8 }}>
                           <button
                             onClick={() => handleRejectApplication(app.id)}
                             disabled={isLoading}
@@ -1125,9 +1149,18 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
                             {isLoading ? '…' : '✕  Reject'}
                           </button>
                           <button
+                            onClick={() => handleMessageApplicant(app.user_id, app.profile?.full_name ?? null)}
+                            disabled={isLoading}
+                            style={{ flex:1, padding:'10px', background:'rgba(96,165,250,0.08)', border:'1px solid rgba(96,165,250,0.3)', borderRadius:10, color:'#60a5fa', fontSize:13, fontWeight:700, cursor:isLoading?'default':'pointer', fontFamily:'inherit', transition:'all .15s' }}
+                            onMouseEnter={e => { e.currentTarget.style.background='rgba(96,165,250,0.16)'; e.currentTarget.style.borderColor='rgba(96,165,250,0.5)' }}
+                            onMouseLeave={e => { e.currentTarget.style.background='rgba(96,165,250,0.08)'; e.currentTarget.style.borderColor='rgba(96,165,250,0.3)' }}
+                          >
+                            💬 Message
+                          </button>
+                          <button
                             onClick={() => handleAcceptApplication(app.id, app.user_id)}
                             disabled={isLoading}
-                            style={{ flex:2, padding:'10px', background:isLoading?'rgba(34,197,94,0.1)':'rgba(34,197,94,0.15)', border:'1px solid rgba(34,197,94,0.4)', borderRadius:10, color:'#4ade80', fontSize:13, fontWeight:700, cursor:isLoading?'default':'pointer', fontFamily:'inherit', opacity:isLoading?0.5:1, transition:'all .15s' }}
+                            style={{ flex:1, padding:'10px', background:isLoading?'rgba(34,197,94,0.1)':'rgba(34,197,94,0.15)', border:'1px solid rgba(34,197,94,0.4)', borderRadius:10, color:'#4ade80', fontSize:13, fontWeight:700, cursor:isLoading?'default':'pointer', fontFamily:'inherit', opacity:isLoading?0.5:1, transition:'all .15s' }}
                             onMouseEnter={e => { if(!isLoading) { e.currentTarget.style.background='rgba(34,197,94,0.25)'; e.currentTarget.style.borderColor='rgba(34,197,94,0.6)' }}}
                             onMouseLeave={e => { e.currentTarget.style.background='rgba(34,197,94,0.15)'; e.currentTarget.style.borderColor='rgba(34,197,94,0.4)' }}
                           >
