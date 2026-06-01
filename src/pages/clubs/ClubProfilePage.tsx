@@ -56,7 +56,7 @@ interface AnnouncementRow {
 }
 
 interface EventAnnouncementRow {
-  id: string; event_id: string
+  id: string; event_id: string; user_id: string
   content: string; created_at: string
   profile?: { full_name: string | null } | null
 }
@@ -237,7 +237,7 @@ export default function ClubProfilePage() {
     setLoadingEvtAnns(true)
     const { data } = await supabase
       .from('event_announcements')
-      .select('id, event_id, content, created_at, profile:profiles(full_name)')
+      .select('id, event_id, user_id, content, created_at, profile:profiles(full_name)')
       .eq('event_id', event.id)
       .order('created_at', { ascending: false })
     setEvtAnns((data as unknown as EventAnnouncementRow[]) ?? [])
@@ -699,10 +699,10 @@ function MemberCard({ member, highlight, index = 0 }: { member: MemberRow; highl
       display: 'flex', alignItems: 'center', gap: 12,
       animation: `cp-up 0.4s cubic-bezier(0.22,1,0.36,1) ${index * 0.045}s both`,
     }}>
-      <div onClick={() => navigate(`/profile/${member.user_id}`)} style={{ cursor: 'pointer', flexShrink: 0 }}><Avatar name={p?.full_name} size={highlight ? 44 : 38} /></div>
+      <div onClick={() => p?.id && navigate(`/profile/${p.id}`)} style={{ cursor: 'pointer', flexShrink: 0 }}><Avatar name={p?.full_name} size={highlight ? 44 : 38} /></div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div onClick={() => navigate(`/profile/${member.user_id}`)} style={{ fontSize: highlight ? 15 : 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2, cursor: 'pointer' }}>
+        <div onClick={() => p?.id && navigate(`/profile/${p.id}`)} style={{ fontSize: highlight ? 15 : 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2, cursor: 'pointer' }}>
           {p?.full_name ?? 'Unknown'}
         </div>
 
@@ -1051,6 +1051,7 @@ function AnnouncementsSection({
   canPost: boolean
   onRefresh: () => void
 }) {
+  const navigate = useNavigate()
   const { user, profile } = useAuth()
   const [showForm, setShowForm]     = useState(false)
   const [content,  setContent]     = useState('')
@@ -1322,6 +1323,7 @@ function AnnouncementsSection({
 // ─────────────────────────── ThreadsSection ─────────
 
 function ThreadsSection({ clubId, threads, onRefresh }: { clubId: string; threads: ThreadRow[]; onRefresh: () => void }) {
+  const navigate = useNavigate()
   const { user } = useAuth()
   const [expanded, setExpanded] = useState<string | null>(null)
   const [replies, setReplies] = useState<Record<string, ReplyRow[]>>({})
@@ -1561,6 +1563,7 @@ function EventAnnouncementsModal({
   loading: boolean
   onClose: () => void
 }) {
+  const navigate = useNavigate()
   return (
     <div
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
