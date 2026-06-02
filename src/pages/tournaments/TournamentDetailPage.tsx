@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -24,6 +24,7 @@ interface Tournament {
   prizes: Array<{ place: string; description: string }> | null
   registration_fields: Array<{ id: string; label: string; type: string; options?: string[] }> | null
   logo_url: string | null
+  type: 'bracket' | 'head_to_head' | 'scoresheet' | 'scoreboard' | null
   created_at: string
   club: { id: string; name: string; logo_url: string | null } | null
 }
@@ -58,6 +59,21 @@ interface Match {
   scheduled_at: string | null
   location: string | null
   notes: string | null
+}
+
+interface TournamentTeamMember {
+  id: string
+  tournament_team_id: string
+  user_id: string
+  role: string
+  status: 'pending' | 'accepted' | 'declined'
+  invite_type: 'invite' | 'request'
+  created_at: string
+  profile?: { full_name: string | null; avatar_url: string | null; school: string | null } | null
+}
+
+interface ProfileSearchResult {
+  id: string; full_name: string | null; avatar_url: string | null; school: string | null
 }
 
 const SPORT_EMOJIS: Record<string, string> = {
@@ -115,6 +131,11 @@ export default function TournamentDetailPage() {
   const adminLogoRef = useRef<HTMLInputElement>(null)
   const [uploadingTourLogo, setUploadingTourLogo] = useState(false)
 
+  // Admin — direct team adding in bracket
+  const [directTeamName, setDirectTeamName] = useState('')
+  const [addingDirectTeam, setAddingDirectTeam] = useState(false)
+  const [directTeamError, setDirectTeamError] = useState('')
+
   // Admin — status update
   const [updatingStatus, setUpdatingStatus] = useState(false)
 
@@ -123,12 +144,40 @@ export default function TournamentDetailPage() {
   const [deleteInput, setDeleteInput] = useState('')
   const [deletingTournament, setDeletingTournament] = useState(false)
 
+  // Admin — edit tournament
+  const [editMode, setEditMode] = useState(false)
+  const [editName, setEditName] = useState('')
+  const [editSport, setEditSport] = useState('')
+  const [editDesc, setEditDesc] = useState('')
+  const [editRules, setEditRules] = useState('')
+  const [editLocation, setEditLocation] = useState('')
+  const [editStartDate, setEditStartDate] = useState('')
+  const [editRegDeadline, setEditRegDeadline] = useState('')
+  const [editMaxTeams, setEditMaxTeams] = useState('')
+  const [editPrizes, setEditPrizes] = useState<Array<{ _id: string; place: string; description: string }>>([])
+  const [editCustomFields, setEditCustomFields] = useState<Array<{ _id: string; id: string; label: string; type: string; options: string[] }>>([])
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [editError, setEditError] = useState('')
+
+  // Team detail modal
+  const [selectedTeam, setSelectedTeam] = useState<Team | null>(null)
+
   // Admin — match editing
   const [editMatch, setEditMatch] = useState<string | null>(null)
   const [editScore1, setEditScore1] = useState('')
   const [editScore2, setEditScore2] = useState('')
   const [savingMatch, setSavingMatch] = useState(false)
   const [generatingBracket, setGeneratingBracket] = useState(false)
+  const [assigningSlot, setAssigningSlot] = useState<{ matchId: string; slot: 'team1_id' | 'team2_id' } | null>(null)
+  const [assignLoading, setAssignLoading] = useState(false)
+
+  // Roster management
+  const [rosterMembers, setRosterMembers] = useState<TournamentTeamMember[]>([])
+  const [profileSearch, setProfileSearch] = useState('')
+  const [profileResults, setProfileResults] = useState<ProfileSearchResult[]>([])
+  const [searchingProfiles, setSearchingProfiles] = useState(false)
+  const [invitingUser, setInvitingUser] = useState<string | null>(null)
+  const [rosterActionLoading, setRosterActionLoading] = useState<string | null>(null)
 
   const fetchAll = useCallback(async () => {
     if (!tournamentId) return
@@ -260,6 +309,32 @@ export default function TournamentDetailPage() {
     e.target.value = ''
   }
 
+  async function handleAddTeamDirectly() {
+    if (!directTeamName.trim() || !tournament || !user) return
+    if (teams.some(t => t.team_name.toLowerCase() === directTeamName.trim().toLowerCase() && t.status === 'accepted')) {
+      setDirectTeamError('A team with this name already exists')
+      return
+    }
+    setAddingDirectTeam(true)
+    setDirectTeamError('')
+    const { error } = await supabase.from('tournament_teams').insert({
+      tournament_id: tournament.id,
+      captain_id: user.id,
+      team_name: directTeamName.trim(),
+      status: 'accepted',
+      player_names: [],
+    })
+    setAddingDirectTeam(false)
+    if (error) { setDirectTeamError(error.message); return }
+    setDirectTeamName('')
+    await fetchAll()
+  }
+
+  async function handleRemoveDirectTeam(teamId: string) {
+    await supabase.from('tournament_teams').delete().eq('id', teamId)
+    setTeams(prev => prev.filter(t => t.id !== teamId))
+  }
+
   async function handleStatusUpdate(newStatus: Tournament['status']) {
     if (!tournament) return
     setUpdatingStatus(true)
@@ -275,22 +350,176 @@ export default function TournamentDetailPage() {
     navigate('/tournaments')
   }
 
+  function enterEditMode() {
+    if (!tournament) return
+    setEditName(tournament.name)
+    setEditSport(tournament.sport)
+    setEditDesc(tournament.description ?? '')
+    setEditRules(tournament.rules ?? '')
+    setEditLocation(tournament.location ?? '')
+    setEditStartDate(tournament.start_date ? new Date(tournament.start_date).toISOString().slice(0, 16) : '')
+    setEditRegDeadline(tournament.registration_deadline ? new Date(tournament.registration_deadline).toISOString().slice(0, 16) : '')
+    setEditMaxTeams(String(tournament.max_teams))
+    const basePrizes = tournament.prizes?.length
+      ? tournament.prizes
+      : [{ place: '1st Place', description: '' }, { place: '2nd Place', description: '' }, { place: '3rd Place', description: '' }]
+    setEditPrizes(basePrizes.map((p, i) => ({ ...p, _id: `ep_${i}_${Date.now()}` })))
+    setEditCustomFields((tournament.registration_fields ?? []).map((f, i) => ({ ...f, _id: `ef_${i}_${Date.now()}`, options: f.options ?? [] })))
+    setEditError('')
+    setEditMode(true)
+  }
+
+  async function handleSaveEdit() {
+    if (!tournament) return
+    if (!editName.trim()) { setEditError('Tournament name is required'); return }
+    if (!editLocation.trim()) { setEditError('Location is required'); return }
+    setSavingEdit(true)
+    setEditError('')
+    // Strip internal _id before saving
+    const filledPrizes = editPrizes.filter(p => p.description.trim()).map(({ _id, ...p }) => p)
+    const filledFields = editCustomFields.filter(f => f.label.trim()).map(({ _id, ...f }) => f)
+    const { error } = await supabase.from('tournaments').update({
+      name: editName.trim(),
+      sport: editSport,
+      description: editDesc.trim() || null,
+      rules: editRules.trim() || null,
+      location: editLocation.trim(),
+      start_date: editStartDate || null,
+      registration_deadline: editRegDeadline || null,
+      max_teams: parseInt(editMaxTeams) || 16,
+      prizes: filledPrizes.length > 0 ? filledPrizes : null,
+      registration_fields: filledFields,
+    }).eq('id', tournament.id)
+    setSavingEdit(false)
+    if (error) { setEditError(error.message); return }
+    setTournament(prev => prev ? { ...prev, name: editName.trim(), sport: editSport, description: editDesc.trim() || null, rules: editRules.trim() || null, location: editLocation.trim(), start_date: editStartDate || null, registration_deadline: editRegDeadline || null, max_teams: parseInt(editMaxTeams) || 16, prizes: filledPrizes.length > 0 ? filledPrizes : null, registration_fields: filledFields } : prev)
+    setEditMode(false)
+  }
+
   async function handleSaveScore(matchId: string, winnerId: string | null) {
     setSavingMatch(true)
     const s1 = parseInt(editScore1) || 0
     const s2 = parseInt(editScore2) || 0
-    const autoWinner = winnerId ?? (s1 > s2 ? matches.find(m => m.id === matchId)?.team1_id ?? null : s2 > s1 ? matches.find(m => m.id === matchId)?.team2_id ?? null : null)
+    const m = matches.find(mx => mx.id === matchId)
+    const autoWinner = winnerId ?? (s1 > s2 ? m?.team1_id ?? null : s2 > s1 ? m?.team2_id ?? null : null)
+    const isCompleted = !!(winnerId || s1 !== s2)
     await supabase.from('tournament_matches').update({
       score1: s1, score2: s2,
       winner_id: autoWinner,
-      status: winnerId || s1 !== s2 ? 'completed' : 'live',
+      status: isCompleted ? 'completed' : 'live',
     }).eq('id', matchId)
+    // Auto-advance winner to next bracket slot (single elimination only)
+    if (autoWinner && isCompleted && m && tournament?.format === 'single_elimination') {
+      await advanceWinner({ ...m, winner_id: autoWinner, status: 'completed', score1: s1, score2: s2 }, matches)
+    }
+    await fetchAll()
     setSavingMatch(false)
     setEditMatch(null)
   }
 
   async function handleSetMatchLive(matchId: string) {
     await supabase.from('tournament_matches').update({ status: 'live' }).eq('id', matchId)
+  }
+
+  // Advance a winner from a completed single-elimination match into the next round slot.
+  // Standard formula: winner of match M in round R goes to match ceil(M/2) in round R+1.
+  // Odd match number → team1 slot; even match number → team2 slot.
+  async function advanceWinner(completedMatch: Match, currentMatches: Match[]) {
+    if (!completedMatch.winner_id) return
+    const nextRound = completedMatch.round + 1
+    const nextMatchNum = Math.ceil(completedMatch.match_number / 2)
+    const slot = completedMatch.match_number % 2 === 1 ? 'team1_id' : 'team2_id'
+    const nextMatch = currentMatches.find(m => m.round === nextRound && m.match_number === nextMatchNum)
+    if (!nextMatch) return
+    await supabase.from('tournament_matches').update({ [slot]: completedMatch.winner_id }).eq('id', nextMatch.id)
+  }
+
+  async function handleManualAssign(teamId: string) {
+    if (!assigningSlot) return
+    setAssignLoading(true)
+    await supabase.from('tournament_matches').update({ [assigningSlot.slot]: teamId, winner_id: null, score1: 0, score2: 0, status: 'scheduled' }).eq('id', assigningSlot.matchId)
+    setAssigningSlot(null)
+    setAssignLoading(false)
+    await fetchAll()
+  }
+
+  async function clearMatchSlot(matchId: string, slot: 'team1_id' | 'team2_id') {
+    await supabase.from('tournament_matches').update({ [slot]: null }).eq('id', matchId)
+    await fetchAll()
+  }
+
+  // ── Roster management ──────────────────────────────────────────────────────
+
+  const fetchRoster = useCallback(async (teamId: string) => {
+    const { data } = await supabase
+      .from('tournament_team_members')
+      .select('*, profile:profiles(full_name, avatar_url, school)')
+      .eq('tournament_team_id', teamId)
+    setRosterMembers(data ?? [])
+  }, [])
+
+  useEffect(() => {
+    if (myRegistration) fetchRoster(myRegistration.id)
+  }, [myRegistration, fetchRoster])
+
+  async function searchProfiles(q: string) {
+    if (q.trim().length < 2) { setProfileResults([]); return }
+    setSearchingProfiles(true)
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, full_name, avatar_url, school')
+      .ilike('full_name', `%${q.trim()}%`)
+      .neq('id', user?.id ?? '')
+      .limit(8)
+    setProfileResults(data ?? [])
+    setSearchingProfiles(false)
+  }
+
+  async function inviteUser(profileId: string) {
+    if (!myRegistration || !user) return
+    if (rosterMembers.some(m => m.user_id === profileId)) return
+    setInvitingUser(profileId)
+    await supabase.from('tournament_team_members').insert({
+      tournament_team_id: myRegistration.id,
+      user_id: profileId,
+      role: 'player',
+      status: 'pending',
+      invite_type: 'invite',
+    })
+    await fetchRoster(myRegistration.id)
+    setProfileSearch('')
+    setProfileResults([])
+    setInvitingUser(null)
+  }
+
+  async function handleRosterAction(memberId: string, status: 'accepted' | 'declined') {
+    setRosterActionLoading(memberId)
+    await supabase.from('tournament_team_members').update({ status }).eq('id', memberId)
+    setRosterMembers(prev => prev.map(m => m.id === memberId ? { ...m, status } : m))
+    setRosterActionLoading(null)
+  }
+
+  async function removeMember(memberId: string) {
+    setRosterActionLoading(memberId)
+    await supabase.from('tournament_team_members').delete().eq('id', memberId)
+    setRosterMembers(prev => prev.filter(m => m.id !== memberId))
+    setRosterActionLoading(null)
+  }
+
+  async function requestToJoin(teamId: string) {
+    if (!user) return
+    const existing = await supabase
+      .from('tournament_team_members')
+      .select('id').eq('tournament_team_id', teamId).eq('user_id', user.id).single()
+    if (existing.data) return
+    await supabase.from('tournament_team_members').insert({
+      tournament_team_id: teamId,
+      user_id: user.id,
+      role: 'player',
+      status: 'pending',
+      invite_type: 'request',
+    })
+    await fetchAll()
   }
 
   async function generateBracket() {
@@ -344,6 +573,18 @@ export default function TournamentDetailPage() {
         }
       }
       await supabase.from('tournament_matches').insert(newMatches)
+      // Immediately advance all bye-match winners so next-round slots are pre-populated.
+      // This fixes the "Team vs TBD" display when odd numbers of teams create byes.
+      const { data: createdMatches } = await supabase
+        .from('tournament_matches').select('*')
+        .eq('tournament_id', tournament.id)
+        .order('round').order('match_number')
+      if (createdMatches) {
+        const byeMatches = createdMatches.filter(m => m.status === 'completed' && m.winner_id)
+        for (const bye of byeMatches) {
+          await advanceWinner(bye, createdMatches)
+        }
+      }
     } else {
       // Round robin: every team plays every other team
       let matchNum = 1
@@ -399,7 +640,7 @@ export default function TournamentDetailPage() {
   const TABS: { key: Tab; label: string; badge?: number }[] = [
     { key: 'info', label: 'Info' },
     { key: 'teams', label: 'Teams', badge: isAdmin ? pendingTeams.length : acceptedTeams.length },
-    { key: 'bracket', label: matches.length > 0 ? 'Bracket / Scores' : 'Bracket', badge: matches.filter(m => m.status === 'live').length || undefined },
+    { key: 'bracket', label: matches.length > 0 ? 'Scoreboard' : 'Bracket', badge: matches.filter(m => m.status === 'live').length || undefined },
     ...(user ? [{ key: 'register' as Tab, label: myRegistration ? 'My Registration' : 'Register' }] : []),
   ]
 
@@ -418,11 +659,57 @@ export default function TournamentDetailPage() {
         .match-card.live { border-color:rgba(249,115,22,0.4) !important; animation:score-glow 2s ease-in-out infinite; }
       `}</style>
 
+      {/* ── Assign Team Modal ─────────────────────────────────────────────────── */}
+      {assigningSlot && (
+        <div onClick={() => setAssigningSlot(null)} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'rgba(18,10,14,0.98)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: 24, width: '100%', maxWidth: 420, boxShadow: '0 32px 80px rgba(0,0,0,0.7)', animation: 'td-in 0.2s cubic-bezier(0.22,1,0.36,1) both' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>Assign Team</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                  Select a team for the {assigningSlot.slot === 'team1_id' ? 'top' : 'bottom'} slot
+                </div>
+              </div>
+              <button onClick={() => setAssigningSlot(null)} style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {acceptedTeams.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-muted)', fontSize: 13 }}>No accepted teams yet</div>
+              )}
+              {acceptedTeams.map(team => {
+                const initials = team.team_name.trim().split(/\s+/).map((w: string) => w[0]).slice(0, 2).join('').toUpperCase()
+                return (
+                  <button key={team.id} onClick={() => handleManualAssign(team.id)} disabled={assignLoading} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 11, cursor: assignLoading ? 'default' : 'pointer', fontFamily: 'inherit', textAlign: 'left', transition: 'all 0.12s', opacity: assignLoading ? 0.6 : 1 }}
+                    onMouseEnter={e => !assignLoading && (e.currentTarget.style.background = 'rgba(138,21,56,0.12)', e.currentTarget.style.borderColor = 'rgba(138,21,56,0.3)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)', e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)')}
+                  >
+                    <div style={{ width: 36, height: 36, borderRadius: 9, background: 'rgba(138,21,56,0.18)', border: '1px solid rgba(138,21,56,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: 'var(--accent)', overflow: 'hidden', flexShrink: 0 }}>
+                      {team.logo_url ? <img src={team.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
+                    </div>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{team.team_name}</span>
+                    {assignLoading && <div style={{ marginLeft: 'auto', width: 14, height: 14, border: '2px solid rgba(255,255,255,0.15)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Back nav */}
-      <button onClick={() => navigate('/tournaments')} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0 0 18px', fontSize: 13 }}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-        Tournaments
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+        <button onClick={() => navigate('/tournaments')} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0, fontSize: 13 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+          Tournaments
+        </button>
+        <button onClick={() => window.open(`/tournaments/${tournament.id}/scoreboard`, '_blank')} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: matches.filter(m => m.status === 'live').length > 0 ? 'rgba(249,115,22,0.12)' : 'rgba(255,255,255,0.05)', border: `1px solid ${matches.filter(m => m.status === 'live').length > 0 ? 'rgba(249,115,22,0.35)' : 'rgba(255,255,255,0.12)'}`, borderRadius: 9, color: matches.filter(m => m.status === 'live').length > 0 ? '#f97316' : 'var(--text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit', transition: 'all 0.15s' }}>
+          {matches.filter(m => m.status === 'live').length > 0 && <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#f97316', animation: 'live-pulse 1.4s ease-in-out infinite' }} />}
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9l6 6"/><path d="M15 9H9v6"/></svg>
+          View Scoreboard
+        </button>
+      </div>
 
       {/* Tournament Header */}
       <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, padding: 24, marginBottom: 20, animation: 'td-in 0.3s cubic-bezier(0.22,1,0.36,1) both' }}>
@@ -569,6 +856,21 @@ export default function TournamentDetailPage() {
         </div>
       )}
 
+      {/* Team detail modal */}
+      {selectedTeam && (
+        <TeamDetailModal
+          team={selectedTeam}
+          registrationFields={tournament.registration_fields ?? []}
+          isAdmin={isAdmin}
+          actionLoading={actionLoading}
+          deleteLoading={deleteLoading}
+          onAccept={() => { handleTeamAction(selectedTeam.id, 'accepted'); setSelectedTeam(prev => prev ? { ...prev, status: 'accepted' } : prev) }}
+          onDecline={() => { handleTeamAction(selectedTeam.id, 'declined'); setSelectedTeam(prev => prev ? { ...prev, status: 'declined' } : prev) }}
+          onDelete={() => { handleDeleteTeam(selectedTeam.id); setSelectedTeam(null) }}
+          onClose={() => setSelectedTeam(null)}
+        />
+      )}
+
       {/* Tab bar */}
       <div style={{ display: 'flex', gap: 3, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: 4, marginBottom: 20, overflowX: 'auto' }}>
         {TABS.map(t => (
@@ -594,56 +896,90 @@ export default function TournamentDetailPage() {
       {/* ── Info tab ── */}
       {tab === 'info' && (
         <div style={{ animation: 'td-in 0.25s ease both' }}>
-          <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
-            {tournament.description && (
-              <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 20 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>About</div>
-                <p style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.65, margin: 0 }}>{tournament.description}</p>
-              </div>
-            )}
-            {tournament.rules && (
-              <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 20 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Rules</div>
-                <p style={{ fontSize: 13.5, color: 'var(--text-primary)', lineHeight: 1.7, margin: 0, whiteSpace: 'pre-wrap' }}>{tournament.rules}</p>
-              </div>
-            )}
-            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 20 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>Details</div>
-              {[
-                { label: 'Format', value: tournament.format === 'single_elimination' ? 'Single Elimination (Knockout)' : 'Round Robin' },
-                { label: 'Max Teams', value: tournament.max_teams },
-                { label: 'Team Size', value: `${tournament.min_team_size}–${tournament.max_team_size} players` },
-                { label: 'Location', value: tournament.location ?? 'TBA' },
-                { label: 'Start Date', value: fmt(tournament.start_date) },
-                { label: 'Registration Closes', value: fmt(tournament.registration_deadline) },
-              ].map(row => (
-                <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 10 }}>
-                  <span style={{ color: 'var(--text-muted)' }}>{row.label}</span>
-                  <span style={{ color: 'var(--text-primary)', fontWeight: 600, textAlign: 'right', maxWidth: '60%' }}>{String(row.value)}</span>
-                </div>
-              ))}
+          {/* Admin edit button */}
+          {isAdmin && !editMode && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+              <button onClick={enterEditMode} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 9, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit', transition: 'all 0.15s' }}
+                onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.25)' }}
+                onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)' }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                Edit Details
+              </button>
             </div>
-            {((tournament.prizes && tournament.prizes.length > 0) || tournament.prize_description) && (
-              <div style={{ background: 'rgba(233,193,118,0.07)', border: '1px solid rgba(233,193,118,0.2)', borderRadius: 16, padding: 20 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#e9c176', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>🏆 Prizes</div>
-                {tournament.prizes && tournament.prizes.length > 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {tournament.prizes.map((prize, i) => (
-                      <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                        <span style={{ fontSize: 20, flexShrink: 0 }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '🏅'}</span>
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: '#e9c176', marginBottom: 2 }}>{prize.place}</div>
-                          <div style={{ fontSize: 14, color: 'var(--text-primary)' }}>{prize.description}</div>
-                        </div>
-                      </div>
-                    ))}
+          )}
+
+          {editMode ? (
+            /* ── Edit form ── */
+            <EditTournamentForm
+              editName={editName} setEditName={setEditName}
+              editSport={editSport} setEditSport={setEditSport}
+              editDesc={editDesc} setEditDesc={setEditDesc}
+              editRules={editRules} setEditRules={setEditRules}
+              editLocation={editLocation} setEditLocation={setEditLocation}
+              editStartDate={editStartDate} setEditStartDate={setEditStartDate}
+              editRegDeadline={editRegDeadline} setEditRegDeadline={setEditRegDeadline}
+              editMaxTeams={editMaxTeams} setEditMaxTeams={setEditMaxTeams}
+              editPrizes={editPrizes} setEditPrizes={setEditPrizes}
+              editCustomFields={editCustomFields} setEditCustomFields={setEditCustomFields}
+              editError={editError}
+              savingEdit={savingEdit}
+              onSave={handleSaveEdit}
+              onCancel={() => setEditMode(false)}
+            />
+          ) : (
+            /* ── View mode ── */
+            <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
+              {tournament.description && (
+                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 20 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>About</div>
+                  <p style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.65, margin: 0 }}>{tournament.description}</p>
+                </div>
+              )}
+              {tournament.rules && (
+                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 20 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Rules</div>
+                  <p style={{ fontSize: 13.5, color: 'var(--text-primary)', lineHeight: 1.7, margin: 0, whiteSpace: 'pre-wrap' }}>{tournament.rules}</p>
+                </div>
+              )}
+              <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 20 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>Details</div>
+                {[
+                  { label: 'Format', value: tournament.format === 'single_elimination' ? 'Single Elimination (Knockout)' : 'Round Robin' },
+                  { label: 'Max Teams', value: tournament.max_teams },
+                  { label: 'Team Size', value: `${tournament.min_team_size}–${tournament.max_team_size} players` },
+                  { label: 'Location', value: tournament.location ?? 'TBA' },
+                  { label: 'Start Date', value: fmt(tournament.start_date) },
+                  { label: 'Registration Closes', value: fmt(tournament.registration_deadline) },
+                ].map(row => (
+                  <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 10 }}>
+                    <span style={{ color: 'var(--text-muted)' }}>{row.label}</span>
+                    <span style={{ color: 'var(--text-primary)', fontWeight: 600, textAlign: 'right', maxWidth: '60%' }}>{String(row.value)}</span>
                   </div>
-                ) : (
-                  <p style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.65, margin: 0 }}>{tournament.prize_description}</p>
-                )}
+                ))}
               </div>
-            )}
-          </div>
+              {((tournament.prizes && tournament.prizes.length > 0) || tournament.prize_description) && (
+                <div style={{ background: 'rgba(233,193,118,0.07)', border: '1px solid rgba(233,193,118,0.2)', borderRadius: 16, padding: 20 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#e9c176', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>🏆 Prizes</div>
+                  {tournament.prizes && tournament.prizes.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {tournament.prizes.map((prize, i) => (
+                        <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                          <span style={{ fontSize: 20, flexShrink: 0 }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '🏅'}</span>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: '#e9c176', marginBottom: 2 }}>{prize.place}</div>
+                            <div style={{ fontSize: 14, color: 'var(--text-primary)' }}>{prize.description}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.65, margin: 0 }}>{tournament.prize_description}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -671,7 +1007,7 @@ export default function TournamentDetailPage() {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {(teamFilter === 'pending' ? pendingTeams : teamFilter === 'accepted' ? acceptedTeams : declinedTeams).map(team => (
-                  <TeamCard key={team.id} team={team} isAdmin={isAdmin} actionLoading={actionLoading} deleteLoading={deleteLoading} registrationFields={tournament.registration_fields ?? []} onAccept={() => handleTeamAction(team.id, 'accepted')} onDecline={() => handleTeamAction(team.id, 'declined')} onDelete={() => handleDeleteTeam(team.id)} />
+                  <TeamCard key={team.id} team={team} isAdmin={isAdmin} actionLoading={actionLoading} deleteLoading={deleteLoading} onAccept={() => handleTeamAction(team.id, 'accepted')} onDecline={() => handleTeamAction(team.id, 'declined')} onDelete={() => handleDeleteTeam(team.id)} onExpand={() => setSelectedTeam(team)} />
                 ))}
                 {(teamFilter === 'pending' ? pendingTeams : teamFilter === 'accepted' ? acceptedTeams : declinedTeams).length === 0 && (
                   <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)', fontSize: 14 }}>
@@ -702,94 +1038,250 @@ export default function TournamentDetailPage() {
                   No teams accepted yet.
                 </div>
               ) : acceptedTeams.map(team => (
-                <TeamCard key={team.id} team={team} isAdmin={false} actionLoading={null} deleteLoading={null} registrationFields={tournament.registration_fields ?? []} onAccept={() => {}} onDecline={() => {}} onDelete={() => {}} />
+                <TeamCard key={team.id} team={team} isAdmin={false} actionLoading={null} deleteLoading={null} onAccept={() => {}} onDecline={() => {}} onDelete={() => {}} onExpand={() => setSelectedTeam(team)} />
               ))}
             </div>
           )}
         </div>
       )}
 
-      {/* ── Bracket tab ── */}
+      {/* ── Scoreboard tab ── */}
       {tab === 'bracket' && (
         <div style={{ animation: 'td-in 0.25s ease both' }}>
           {matches.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-              <div style={{ fontSize: 40, marginBottom: 12 }}>🎯</div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>No bracket yet</div>
-              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: isAdmin ? 20 : 0 }}>
-                {isAdmin ? 'Accept teams and generate the bracket to get started.' : 'The bracket will appear here once the admin sets it up.'}
+            isAdmin ? (
+              /* ── Admin bracket setup ── */
+              <div style={{ maxWidth: 560, animation: 'td-in 0.25s ease both' }}>
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 4 }}>Build Your Bracket</div>
+                  <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                    Add all participating teams, then generate the bracket to create matchups automatically.
+                  </div>
+                </div>
+
+                {/* Team list */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+                  {acceptedTeams.length === 0 && (
+                    <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-muted)', fontSize: 13, background: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: 12 }}>
+                      No teams yet — add your first team below
+                    </div>
+                  )}
+                  {acceptedTeams.map((team, i) => (
+                    <div key={team.id} style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 12, padding: '10px 14px' }}>
+                      {/* Seed number */}
+                      <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'rgba(138,21,56,0.2)', border: '1px solid rgba(138,21,56,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 800, color: 'var(--accent)', flexShrink: 0 }}>
+                        {i + 1}
+                      </div>
+                      {/* Logo */}
+                      <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: 'rgba(255,255,255,0.5)', overflow: 'hidden', flexShrink: 0 }}>
+                        {team.logo_url
+                          ? <img src={team.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          : team.team_name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
+                        }
+                      </div>
+                      {/* Name */}
+                      <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{team.team_name}</span>
+                      {/* Remove */}
+                      <button onClick={() => handleRemoveDirectTeam(team.id)} title="Remove team" style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.18)', borderRadius: 7, color: '#f87171', cursor: 'pointer', flexShrink: 0, transition: 'all 0.15s' }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.18)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.4)' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.18)' }}
+                      >
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Add team input */}
+                <div style={{ display: 'flex', gap: 8, marginBottom: directTeamError ? 8 : 20 }}>
+                  <input
+                    value={directTeamName}
+                    onChange={e => { setDirectTeamName(e.target.value); setDirectTeamError('') }}
+                    onKeyDown={e => e.key === 'Enter' && handleAddTeamDirectly()}
+                    placeholder="Team name (press Enter to add)"
+                    style={{ flex: 1, padding: '10px 14px', background: 'rgba(255,255,255,0.06)', border: `1px solid ${directTeamError ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.12)'}`, borderRadius: 10, color: 'var(--text-primary)', fontSize: 14, outline: 'none', fontFamily: 'inherit' }}
+                  />
+                  <button onClick={handleAddTeamDirectly} disabled={addingDirectTeam || !directTeamName.trim()} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px', background: !directTeamName.trim() ? 'rgba(255,255,255,0.04)' : 'var(--accent)', border: 'none', borderRadius: 10, color: '#fff', cursor: !directTeamName.trim() ? 'default' : 'pointer', fontWeight: 700, fontSize: 13, fontFamily: 'inherit', flexShrink: 0, opacity: !directTeamName.trim() ? 0.4 : 1, transition: 'all 0.15s' }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    {addingDirectTeam ? 'Adding…' : 'Add'}
+                  </button>
+                </div>
+                {directTeamError && <div style={{ fontSize: 12.5, color: '#f87171', marginBottom: 16 }}>{directTeamError}</div>}
+
+                {/* Teams from registration (if any pending) */}
+                {teams.filter(t => t.status === 'pending').length > 0 && (
+                  <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 16, padding: '10px 14px', background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 10 }}>
+                    <span style={{ color: '#f59e0b', fontWeight: 600 }}>{teams.filter(t => t.status === 'pending').length} pending registration{teams.filter(t => t.status === 'pending').length !== 1 ? 's' : ''}</span>
+                    {' '}— accept them in the Teams tab to include them in the bracket.
+                  </div>
+                )}
+
+                {/* Divider */}
+                <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', marginBottom: 16 }} />
+
+                {/* Generate button */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+                  <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                    {acceptedTeams.length < 2
+                      ? 'Add at least 2 teams to generate the bracket'
+                      : <span><span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{acceptedTeams.length} teams</span> ready · {Math.pow(2, Math.ceil(Math.log2(acceptedTeams.length)))} slot bracket</span>
+                    }
+                  </div>
+                  <button onClick={generateBracket} disabled={generatingBracket || acceptedTeams.length < 2} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 22px', background: acceptedTeams.length < 2 ? 'rgba(255,255,255,0.04)' : 'var(--accent)', border: 'none', borderRadius: 12, color: '#fff', cursor: acceptedTeams.length < 2 ? 'default' : 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit', opacity: acceptedTeams.length < 2 ? 0.4 : 1, boxShadow: acceptedTeams.length >= 2 && !generatingBracket ? '0 4px 18px rgba(138,21,56,0.4)' : 'none', transition: 'all 0.15s' }}>
+                    {generatingBracket
+                      ? <><div style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />Generating…</>
+                      : <>Generate Bracket <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg></>
+                    }
+                  </button>
+                </div>
               </div>
-              {isAdmin && acceptedTeams.length >= 2 && (
-                <button onClick={generateBracket} disabled={generatingBracket} style={{
-                  padding: '11px 24px', background: generatingBracket ? 'rgba(138,21,56,0.4)' : 'var(--accent)',
-                  border: 'none', borderRadius: 12, color: '#fff', cursor: generatingBracket ? 'default' : 'pointer',
-                  fontWeight: 700, fontSize: 14, fontFamily: 'inherit',
-                }}>
-                  {generatingBracket ? 'Generating…' : 'Generate Bracket'}
-                </button>
-              )}
-            </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+                <div style={{ fontSize: 40, marginBottom: 12 }}>🎯</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>Bracket not set up yet</div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>The bracket will appear here once the admin sets it up.</div>
+              </div>
+            )
           ) : (
             <>
+              {/* Admin toolbar */}
+              {isAdmin && (
+                <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {/* Inline add team */}
+                  <div style={{ display: 'flex', gap: 6, flex: 1, minWidth: 240 }}>
+                    <input
+                      value={directTeamName}
+                      onChange={e => { setDirectTeamName(e.target.value); setDirectTeamError('') }}
+                      onKeyDown={e => e.key === 'Enter' && handleAddTeamDirectly()}
+                      placeholder="Add a team to bracket…"
+                      style={{ flex: 1, padding: '8px 12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 9, color: 'var(--text-primary)', fontSize: 13, outline: 'none', fontFamily: 'inherit' }}
+                    />
+                    <button onClick={handleAddTeamDirectly} disabled={addingDirectTeam || !directTeamName.trim()} style={{ padding: '8px 14px', background: directTeamName.trim() ? 'var(--accent)' : 'rgba(255,255,255,0.04)', border: 'none', borderRadius: 9, color: '#fff', cursor: directTeamName.trim() ? 'pointer' : 'default', fontSize: 12, fontWeight: 700, fontFamily: 'inherit', opacity: directTeamName.trim() ? 1 : 0.4, transition: 'all 0.15s' }}>
+                      {addingDirectTeam ? '…' : '+ Add'}
+                    </button>
+                  </div>
+                  <button onClick={generateBracket} disabled={generatingBracket} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 9, color: 'var(--text-muted)', cursor: generatingBracket ? 'default' : 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'inherit', transition: 'all 0.15s', flexShrink: 0 }}
+                    onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)' }}
+                    onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)' }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.36"/></svg>
+                    {generatingBracket ? 'Generating…' : 'Re-generate'}
+                  </button>
+                </div>
+              )}
+
+              {/* ── LIVE NOW hero section ── */}
+              {matches.filter(m => m.status === 'live').length > 0 && (
+                <div style={{ marginBottom: 32 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                    <div style={{ width: 9, height: 9, borderRadius: '50%', background: '#f97316', animation: 'live-pulse 1.4s ease-in-out infinite', boxShadow: '0 0 10px rgba(249,115,22,0.6)' }} />
+                    <span style={{ fontSize: 14, fontWeight: 900, color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.12em' }}>Live Now</span>
+                    <div style={{ flex: 1, height: 1, background: 'linear-gradient(to right, rgba(249,115,22,0.3), transparent)' }} />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
+                    {matches.filter(m => m.status === 'live').map(match => (
+                      <LiveMatchHero
+                        key={match.id}
+                        match={match}
+                        teamMap={teamMap}
+                        isAdmin={isAdmin}
+                        isEditing={editMatch === match.id}
+                        editScore1={editScore1}
+                        editScore2={editScore2}
+                        savingMatch={savingMatch}
+                        onEdit={() => { setEditMatch(match.id); setEditScore1(String(match.score1)); setEditScore2(String(match.score2)) }}
+                        onCancelEdit={() => setEditMatch(null)}
+                        onSave={(wid) => handleSaveScore(match.id, wid)}
+                        onScore1Change={setEditScore1}
+                        onScore2Change={setEditScore2}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Round Robin Standings */}
               {tournament.format === 'round_robin' && (
                 <RoundRobinStandings teams={acceptedTeams} matches={matches} />
               )}
 
-              {/* Match list */}
+              {/* Bracket or match list */}
               {tournament.format === 'single_elimination' ? (
-                <div style={{ overflowX: 'auto', paddingBottom: 12 }}>
-                  <div style={{ display: 'flex', gap: 16, minWidth: rounds.length * 220 }}>
-                    {rounds.map(round => (
-                      <div key={round} style={{ flex: 1, minWidth: 200 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12, textAlign: 'center' }}>
-                          {rounds.length === round ? 'Final' : round === rounds.length - 1 ? 'Semis' : `Round ${round}`}
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Bracket</span>
+                    <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
+                  </div>
+                  <div style={{ overflowX: 'auto', paddingBottom: 12 }}>
+                    <div style={{ display: 'flex', gap: 12, minWidth: Math.max(rounds.length * 240, 400) }}>
+                      {rounds.map(round => (
+                        <div key={round} style={{ flex: 1, minWidth: 220 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12, textAlign: 'center', color: round === Math.max(...rounds) ? '#e9c176' : 'var(--text-muted)' }}>
+                            {round === Math.max(...rounds) ? '🏆 Final' : round === Math.max(...rounds) - 1 && rounds.length > 2 ? 'Semi-finals' : `Round ${round}`}
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {matches.filter(m => m.round === round).map(match => (
+                              <MatchCard
+                                key={match.id}
+                                match={match}
+                                teamMap={teamMap}
+                                isAdmin={isAdmin}
+                                isEditing={editMatch === match.id}
+                                editScore1={editScore1}
+                                editScore2={editScore2}
+                                savingMatch={savingMatch}
+                                onEdit={() => { setEditMatch(match.id); setEditScore1(String(match.score1)); setEditScore2(String(match.score2)) }}
+                                onCancelEdit={() => setEditMatch(null)}
+                                onSave={(wid) => handleSaveScore(match.id, wid)}
+                                onSetLive={() => handleSetMatchLive(match.id)}
+                                onScore1Change={setEditScore1}
+                                onScore2Change={setEditScore2}
+                                onAssignTeam1={isAdmin ? () => setAssigningSlot({ matchId: match.id, slot: 'team1_id' }) : undefined}
+                                onAssignTeam2={isAdmin ? () => setAssigningSlot({ matchId: match.id, slot: 'team2_id' }) : undefined}
+                                onClearTeam1={isAdmin ? () => clearMatchSlot(match.id, 'team1_id') : undefined}
+                                onClearTeam2={isAdmin ? () => clearMatchSlot(match.id, 'team2_id') : undefined}
+                              />
+                            ))}
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                          {matches.filter(m => m.round === round).map(match => (
-                            <MatchCard
-                              key={match.id}
-                              match={match}
-                              teamMap={teamMap}
-                              isAdmin={isAdmin}
-                              isEditing={editMatch === match.id}
-                              editScore1={editScore1}
-                              editScore2={editScore2}
-                              savingMatch={savingMatch}
-                              onEdit={() => { setEditMatch(match.id); setEditScore1(String(match.score1)); setEditScore2(String(match.score2)) }}
-                              onCancelEdit={() => setEditMatch(null)}
-                              onSave={(winnerId) => handleSaveScore(match.id, winnerId)}
-                              onSetLive={() => handleSetMatchLive(match.id)}
-                              onScore1Change={setEditScore1}
-                              onScore2Change={setEditScore2}
-                            />
-                          ))}
-                        </div>
-                      </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>All Matches</span>
+                    <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {[...matches].sort((a, b) => {
+                      const order = { live: 0, scheduled: 1, completed: 2 }
+                      return (order[a.status] ?? 1) - (order[b.status] ?? 1)
+                    }).map(match => (
+                      <MatchCard
+                        key={match.id}
+                        match={match}
+                        teamMap={teamMap}
+                        isAdmin={isAdmin}
+                        isEditing={editMatch === match.id}
+                        editScore1={editScore1}
+                        editScore2={editScore2}
+                        savingMatch={savingMatch}
+                        onEdit={() => { setEditMatch(match.id); setEditScore1(String(match.score1)); setEditScore2(String(match.score2)) }}
+                        onCancelEdit={() => setEditMatch(null)}
+                        onSave={(wid) => handleSaveScore(match.id, wid)}
+                        onSetLive={() => handleSetMatchLive(match.id)}
+                        onScore1Change={setEditScore1}
+                        onScore2Change={setEditScore2}
+                        onAssignTeam1={isAdmin ? () => setAssigningSlot({ matchId: match.id, slot: 'team1_id' }) : undefined}
+                        onAssignTeam2={isAdmin ? () => setAssigningSlot({ matchId: match.id, slot: 'team2_id' }) : undefined}
+                        onClearTeam1={isAdmin ? () => clearMatchSlot(match.id, 'team1_id') : undefined}
+                        onClearTeam2={isAdmin ? () => clearMatchSlot(match.id, 'team2_id') : undefined}
+                      />
                     ))}
                   </div>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {matches.map(match => (
-                    <MatchCard
-                      key={match.id}
-                      match={match}
-                      teamMap={teamMap}
-                      isAdmin={isAdmin}
-                      isEditing={editMatch === match.id}
-                      editScore1={editScore1}
-                      editScore2={editScore2}
-                      savingMatch={savingMatch}
-                      onEdit={() => { setEditMatch(match.id); setEditScore1(String(match.score1)); setEditScore2(String(match.score2)) }}
-                      onCancelEdit={() => setEditMatch(null)}
-                      onSave={(winnerId) => handleSaveScore(match.id, winnerId)}
-                      onSetLive={() => handleSetMatchLive(match.id)}
-                      onScore1Change={setEditScore1}
-                      onScore2Change={setEditScore2}
-                    />
-                  ))}
-                </div>
+                </>
               )}
             </>
           )}
@@ -800,76 +1292,194 @@ export default function TournamentDetailPage() {
       {tab === 'register' && user && (
         <div style={{ animation: 'td-in 0.25s ease both' }}>
           {myRegistration ? (
-            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: 24 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>Your Registration</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-                <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(138,21,56,0.15)', border: '1px solid rgba(138,21,56,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 800, color: 'var(--accent)', overflow: 'hidden' }}>
-                  {myRegistration.logo_url
-                    ? <img src={myRegistration.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    : myRegistration.team_name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
-                  }
-                </div>
-                <div>
-                  <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--text-primary)' }}>{myRegistration.team_name}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    {(myRegistration.players?.length ?? myRegistration.player_names.length) > 0
-                      ? `${myRegistration.players?.length ?? myRegistration.player_names.length} players listed`
-                      : 'No players listed'}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Team info card */}
+              <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: 20 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>Your Registration</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+                  <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(138,21,56,0.15)', border: '1px solid rgba(138,21,56,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 800, color: 'var(--accent)', overflow: 'hidden' }}>
+                    {myRegistration.logo_url
+                      ? <img src={myRegistration.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : myRegistration.team_name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
+                    }
                   </div>
-                </div>
-                <div style={{ marginLeft: 'auto' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--text-primary)' }}>{myRegistration.team_name}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>You are Team Captain</div>
+                  </div>
                   {(() => {
                     const s = myRegistration.status
                     const sc = s === 'accepted' ? { color: '#4ade80', bg: 'rgba(74,222,128,0.12)', label: 'Accepted' } :
                                s === 'declined' ? { color: '#ef4444', bg: 'rgba(239,68,68,0.12)', label: 'Declined' } :
                                { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', label: 'Pending Review' }
                     return (
-                      <div style={{ background: sc.bg, borderRadius: 999, padding: '5px 12px' }}>
+                      <div style={{ background: sc.bg, borderRadius: 999, padding: '5px 12px', flexShrink: 0 }}>
                         <span style={{ fontSize: 12, fontWeight: 700, color: sc.color }}>{sc.label}</span>
                       </div>
                     )
                   })()}
                 </div>
+                {(myRegistration.status === 'pending' || myRegistration.status === 'declined') && (
+                  <button onClick={handleWithdraw} disabled={actionLoading === 'withdraw'} style={{
+                    padding: '8px 16px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)',
+                    borderRadius: 9, color: '#f87171', cursor: 'pointer', fontWeight: 600, fontSize: 13, fontFamily: 'inherit',
+                    opacity: actionLoading === 'withdraw' ? 0.6 : 1,
+                  }}>
+                    {actionLoading === 'withdraw' ? 'Withdrawing…' : 'Withdraw Registration'}
+                  </button>
+                )}
               </div>
-              {(myRegistration.players?.length ?? myRegistration.player_names.length) > 0 && (
+
+              {/* Roster Management */}
+              <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: 20 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 14, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Manage Roster</div>
+
+                {/* Invite search */}
                 <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Players</div>
-                  {myRegistration.players && myRegistration.players.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {myRegistration.players.map((p, i) => (
-                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <div style={{ width: 22, height: 22, borderRadius: '50%', background: 'rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', flexShrink: 0 }}>{i + 1}</div>
-                          <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>{p.name}</span>
-                          {p.role && <span style={{ fontSize: 11.5, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', borderRadius: 6, padding: '2px 8px', border: '1px solid rgba(255,255,255,0.09)' }}>{p.role}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                      {myRegistration.player_names.map((p, i) => (
-                        <span key={i} style={{ fontSize: 12.5, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '4px 10px', color: 'var(--text-primary)' }}>{p}</span>
-                      ))}
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 7, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Invite Players</div>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      value={profileSearch}
+                      onChange={e => { setProfileSearch(e.target.value); searchProfiles(e.target.value) }}
+                      placeholder="Search ClubSynq users by name…"
+                      style={{ width: '100%', padding: '9px 12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 9, color: 'var(--text-primary)', fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                    />
+                    {searchingProfiles && (
+                      <div style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, border: '2px solid rgba(255,255,255,0.2)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                    )}
+                  </div>
+                  {profileResults.length > 0 && (
+                    <div style={{ marginTop: 6, background: 'rgba(14,8,11,0.98)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, overflow: 'hidden' }}>
+                      {profileResults.map(p => {
+                        const already = rosterMembers.some(m => m.user_id === p.id)
+                        const initials = (p.full_name ?? '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
+                        return (
+                          <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.05)', cursor: already ? 'default' : 'pointer', opacity: already ? 0.5 : 1 }}
+                            onMouseEnter={e => !already && (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
+                            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                          >
+                            <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(138,21,56,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'var(--accent)', overflow: 'hidden', flexShrink: 0 }}>
+                              {p.avatar_url ? <img src={p.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{p.full_name ?? 'Unknown'}</div>
+                              {p.school && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{p.school}</div>}
+                            </div>
+                            <button
+                              disabled={already || invitingUser === p.id}
+                              onClick={() => inviteUser(p.id)}
+                              style={{ padding: '5px 12px', background: already ? 'rgba(255,255,255,0.05)' : 'rgba(138,21,56,0.2)', border: `1px solid ${already ? 'rgba(255,255,255,0.1)' : 'rgba(138,21,56,0.4)'}`, borderRadius: 7, color: already ? 'var(--text-muted)' : 'var(--accent)', cursor: already ? 'default' : 'pointer', fontSize: 11, fontWeight: 700, fontFamily: 'inherit', flexShrink: 0 }}
+                            >
+                              {invitingUser === p.id ? '…' : already ? 'Invited' : 'Invite'}
+                            </button>
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                 </div>
-              )}
-              {(myRegistration.status === 'pending' || myRegistration.status === 'declined') && (
-                <button onClick={handleWithdraw} disabled={actionLoading === 'withdraw'} style={{
-                  padding: '9px 18px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
-                  borderRadius: 10, color: '#f87171', cursor: 'pointer', fontWeight: 600, fontSize: 13, fontFamily: 'inherit',
-                  opacity: actionLoading === 'withdraw' ? 0.6 : 1,
-                }}>
-                  {actionLoading === 'withdraw' ? 'Withdrawing…' : 'Withdraw Registration'}
-                </button>
-              )}
+
+                {/* Current roster */}
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Roster ({rosterMembers.filter(m => m.status === 'accepted').length} accepted · {rosterMembers.filter(m => m.status === 'pending').length} pending)
+                  </div>
+
+                  {/* Incoming join requests */}
+                  {rosterMembers.filter(m => m.invite_type === 'request' && m.status === 'pending').length > 0 && (
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: 10.5, fontWeight: 700, color: '#f59e0b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                        Join Requests ({rosterMembers.filter(m => m.invite_type === 'request' && m.status === 'pending').length})
+                      </div>
+                      {rosterMembers.filter(m => m.invite_type === 'request' && m.status === 'pending').map(m => {
+                        const initials = (m.profile?.full_name ?? '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
+                        return (
+                          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 10, marginBottom: 6 }}>
+                            <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#f59e0b', flexShrink: 0, overflow: 'hidden' }}>
+                              {m.profile?.avatar_url ? <img src={m.profile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{m.profile?.full_name ?? 'Unknown'}</div>
+                              {m.profile?.school && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{m.profile.school}</div>}
+                            </div>
+                            <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
+                              <button onClick={() => handleRosterAction(m.id, 'declined')} disabled={rosterActionLoading === m.id} style={{ padding: '5px 9px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 7, color: '#f87171', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit' }}>✕</button>
+                              <button onClick={() => handleRosterAction(m.id, 'accepted')} disabled={rosterActionLoading === m.id} style={{ padding: '5px 9px', background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 7, color: '#4ade80', cursor: 'pointer', fontSize: 11, fontWeight: 700, fontFamily: 'inherit' }}>Accept</button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {/* Sent invites + accepted players */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    {rosterMembers.filter(m => !(m.invite_type === 'request' && m.status === 'pending')).length === 0 && (
+                      <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--text-muted)', fontSize: 13 }}>
+                        No roster members yet — invite players above or share the tournament for free agents to request.
+                      </div>
+                    )}
+                    {rosterMembers.filter(m => !(m.invite_type === 'request' && m.status === 'pending')).map(m => {
+                      const initials = (m.profile?.full_name ?? '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
+                      const sc = m.status === 'accepted' ? { color: '#4ade80', bg: 'rgba(74,222,128,0.1)' } :
+                                 m.status === 'declined' ? { color: '#f87171', bg: 'rgba(239,68,68,0.1)' } :
+                                 { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' }
+                      return (
+                        <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 9 }}>
+                          <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', flexShrink: 0, overflow: 'hidden' }}>
+                            {m.profile?.avatar_url ? <img src={m.profile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
+                          </div>
+                          <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.profile?.full_name ?? 'Unknown'}</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: sc.color, background: sc.bg, borderRadius: 6, padding: '2px 7px', flexShrink: 0 }}>
+                            {m.status === 'accepted' ? 'Joined' : m.status === 'declined' ? 'Declined' : 'Pending'}
+                          </span>
+                          <button onClick={() => removeMember(m.id)} disabled={rosterActionLoading === m.id} title="Remove" style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.18)', borderRadius: 6, color: '#f87171', cursor: 'pointer', flexShrink: 0, opacity: rosterActionLoading === m.id ? 0.5 : 0.7, transition: 'opacity 0.12s' }}
+                            onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                            onMouseLeave={e => (e.currentTarget.style.opacity = '0.7')}
+                          >
+                            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
             </div>
           ) : !canRegister ? (
-            <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-              <div style={{ fontSize: 36, marginBottom: 12 }}>🔒</div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>Registration Closed</div>
-              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                {tournament.status === 'registration_open' ? 'You have already registered.' : 'Registration for this tournament is no longer open.'}
+            <div>
+              <div style={{ textAlign: 'center', padding: '40px 20px 24px' }}>
+                <div style={{ fontSize: 36, marginBottom: 12 }}>🔒</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>Registration Closed</div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                  {tournament.status === 'registration_open' ? 'You have already registered.' : 'Registration for this tournament is no longer open.'}
+                </div>
               </div>
+              {/* Free Agent: request to join an accepted team */}
+              {tournament.status === 'registration_open' && acceptedTeams.length > 0 && (
+                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 18 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Free Agent</div>
+                  <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 14 }}>
+                    Want to play but don't have a team? Request to join one of the registered teams below. The Team Captain will review your request.
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {acceptedTeams.map(team => (
+                      <div key={team.id} style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 10, padding: '10px 14px' }}>
+                        <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(138,21,56,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, overflow: 'hidden', flexShrink: 0 }}>
+                          {team.logo_url ? <img src={team.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : team.team_name[0]}
+                        </div>
+                        <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{team.team_name}</span>
+                        <button onClick={() => requestToJoin(team.id)} style={{ padding: '6px 13px', background: 'rgba(138,21,56,0.15)', border: '1px solid rgba(138,21,56,0.35)', borderRadius: 7, color: 'var(--accent)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit', transition: 'all 0.12s' }}
+                          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(138,21,56,0.28)')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'rgba(138,21,56,0.15)')}
+                        >
+                          Request to Join
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: 24, maxWidth: 520 }}>
@@ -1040,112 +1650,300 @@ export default function TournamentDetailPage() {
   )
 }
 
-// ─── Team Card ────────────────────────────────────────────────────────────────
-function TeamCard({ team, isAdmin, actionLoading, deleteLoading, registrationFields, onAccept, onDecline, onDelete }: {
+// ─── Compact Team Card (click to expand) ─────────────────────────────────────
+function TeamCard({ team, isAdmin, actionLoading, deleteLoading, onAccept, onDecline, onDelete, onExpand }: {
   team: Team
   isAdmin: boolean
   actionLoading: string | null
   deleteLoading: string | null
-  registrationFields?: Array<{ id: string; label: string; type: string }>
   onAccept: () => void
   onDecline: () => void
   onDelete: () => void
+  onExpand: () => void
 }) {
   const sc = team.status === 'accepted' ? { color: '#4ade80', bg: 'rgba(74,222,128,0.1)' } :
              team.status === 'declined' ? { color: '#ef4444', bg: 'rgba(239,68,68,0.1)' } :
              { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' }
   const initials = team.team_name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
-  const answers = team.registration_answers
-  const hasAnswers = answers && Object.keys(answers).length > 0 && (registrationFields?.length ?? 0) > 0
+  const playerCount = team.players?.length ?? team.player_names.length
 
   return (
-    <div className="td-team-card" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '14px 18px' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        {/* Team logo or initials */}
-        <div style={{ width: 42, height: 42, borderRadius: 11, background: sc.bg, border: `1px solid ${sc.color}33`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: sc.color, overflow: 'hidden', flexShrink: 0 }}>
-          {team.logo_url
-            ? <img src={team.logo_url} alt={team.team_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            : initials
-          }
+    <div
+      className="td-team-card"
+      onClick={onExpand}
+      style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '12px 16px', cursor: 'pointer' }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {/* Logo / initials */}
+        <div style={{ width: 40, height: 40, borderRadius: 10, background: sc.bg, border: `1px solid ${sc.color}33`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: sc.color, overflow: 'hidden', flexShrink: 0 }}>
+          {team.logo_url ? <img src={team.logo_url} alt={team.team_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
         </div>
+
+        {/* Name + captain */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{team.team_name}</span>
-            <span style={{ fontSize: 11, fontWeight: 700, color: sc.color, background: sc.bg, borderRadius: 999, padding: '2px 8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{team.team_name}</span>
+            <span style={{ fontSize: 10.5, fontWeight: 700, color: sc.color, background: sc.bg, borderRadius: 999, padding: '2px 7px' }}>
               {team.status.charAt(0).toUpperCase() + team.status.slice(1)}
             </span>
           </div>
-          {team.captain && (
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>
-              Captain: {team.captain.full_name ?? 'Unknown'}
-              {team.captain.school && <span style={{ opacity: 0.6 }}> · {team.captain.school}</span>}
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+            {team.captain?.full_name ?? 'Unknown captain'}
+            {playerCount > 0 && <span style={{ opacity: 0.6 }}> · {playerCount} player{playerCount !== 1 ? 's' : ''}</span>}
+          </div>
+        </div>
+
+        {/* Admin actions — stop propagation so clicks don't open modal */}
+        {isAdmin ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+            {team.status === 'pending' && (
+              <>
+                <button onClick={onDecline} disabled={actionLoading === team.id} style={{ padding: '6px 11px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 7, color: '#f87171', cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'inherit', opacity: actionLoading === team.id ? 0.6 : 1 }}>Decline</button>
+                <button onClick={onAccept} disabled={actionLoading === team.id} style={{ padding: '6px 11px', background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 7, color: '#4ade80', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit', opacity: actionLoading === team.id ? 0.6 : 1 }}>Accept</button>
+              </>
+            )}
+            <button onClick={onDelete} disabled={deleteLoading === team.id} title="Remove" style={{ width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 7, color: '#f87171', cursor: 'pointer', opacity: deleteLoading === team.id ? 0.5 : 0.75, transition: 'all 0.15s' }}
+              onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.45)' }}
+              onMouseLeave={e => { e.currentTarget.style.opacity = '0.75'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.2)' }}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+            </button>
+          </div>
+        ) : (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="2" style={{ flexShrink: 0 }}><polyline points="9 18 15 12 9 6"/></svg>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Team Detail Modal ────────────────────────────────────────────────────────
+function TeamDetailModal({ team, registrationFields, isAdmin, actionLoading, deleteLoading, onAccept, onDecline, onDelete, onClose }: {
+  team: Team
+  registrationFields: Array<{ id: string; label: string; type: string }>
+  isAdmin: boolean
+  actionLoading: string | null
+  deleteLoading: string | null
+  onAccept: () => void
+  onDecline: () => void
+  onDelete: () => void
+  onClose: () => void
+}) {
+  const sc = team.status === 'accepted' ? { color: '#4ade80', bg: 'rgba(74,222,128,0.12)', label: 'Accepted' } :
+             team.status === 'declined' ? { color: '#ef4444', bg: 'rgba(239,68,68,0.12)', label: 'Declined' } :
+             { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', label: 'Pending Review' }
+  const initials = team.team_name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
+  const answers = team.registration_answers
+  const registeredAt = new Date(team.created_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, zIndex: 9998, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ background: 'rgba(18,10,14,0.98)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, width: '100%', maxWidth: 480, maxHeight: '88vh', overflowY: 'auto', boxShadow: '0 32px 80px rgba(0,0,0,0.7)', animation: 'td-in 0.2s cubic-bezier(0.22,1,0.36,1) both' }}
+      >
+        {/* Header */}
+        <div style={{ padding: '20px 20px 0', display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+          <div style={{ width: 64, height: 64, borderRadius: 14, background: sc.bg, border: `1px solid ${sc.color}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 800, color: sc.color, overflow: 'hidden', flexShrink: 0 }}>
+            {team.logo_url ? <img src={team.logo_url} alt={team.team_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 20, fontWeight: 900, color: 'var(--text-primary)', lineHeight: 1.2, marginBottom: 6 }}>{team.team_name}</div>
+            <div style={{ display: 'inline-flex', alignItems: 'center', background: sc.bg, borderRadius: 999, padding: '4px 10px' }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: sc.color }}>{sc.label}</span>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+        <div style={{ padding: '16px 20px 20px' }}>
+          {/* Captain */}
+          <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '12px 14px', marginBottom: 14 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Captain</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{team.captain?.full_name ?? 'Unknown'}</div>
+            {team.captain?.school && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{team.captain.school}</div>}
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, opacity: 0.7 }}>Registered {registeredAt}</div>
+          </div>
+
+          {/* Players */}
+          {(team.players?.length ?? team.player_names.length) > 0 && (
+            <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '12px 14px', marginBottom: 14 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+                Players ({team.players?.length ?? team.player_names.length})
+              </div>
+              {team.players && team.players.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {team.players.map((p, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)', flexShrink: 0 }}>{i + 1}</div>
+                      <span style={{ fontSize: 13.5, color: 'var(--text-primary)', fontWeight: 500, flex: 1 }}>{p.name}</span>
+                      {p.role && <span style={{ fontSize: 11.5, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', borderRadius: 6, padding: '2px 9px', border: '1px solid rgba(255,255,255,0.09)' }}>{p.role}</span>}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {team.player_names.map((p, i) => (
+                    <span key={i} style={{ fontSize: 12.5, background: 'rgba(255,255,255,0.06)', borderRadius: 7, padding: '3px 10px', color: 'var(--text-primary)' }}>{p}</span>
+                  ))}
+                </div>
+              )}
             </div>
           )}
-          {team.players && team.players.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 6 }}>
-              {team.players.map((p, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, fontWeight: 700, color: 'var(--text-muted)', flexShrink: 0 }}>{i + 1}</div>
-                  <span style={{ fontSize: 12.5, color: 'var(--text-primary)', fontWeight: 500 }}>{p.name}</span>
-                  {p.role && <span style={{ fontSize: 11, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', borderRadius: 5, padding: '1px 7px', border: '1px solid rgba(255,255,255,0.08)' }}>{p.role}</span>}
-                </div>
-              ))}
-            </div>
-          ) : team.player_names.length > 0 ? (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
-              {team.player_names.map((p, i) => (
-                <span key={i} style={{ fontSize: 11.5, background: 'rgba(255,255,255,0.05)', borderRadius: 6, padding: '2px 7px', color: 'var(--text-muted)' }}>{p}</span>
-              ))}
-            </div>
-          ) : null}
+
           {/* Custom field answers */}
-          {hasAnswers && (
-            <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-              {(registrationFields ?? []).map(field => {
-                const val = answers?.[field.id]
-                if (!val) return null
-                return (
-                  <div key={field.id} style={{ display: 'flex', gap: 6, marginBottom: 4, fontSize: 12 }}>
-                    <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>{field.label}:</span>
-                    <span style={{ color: 'var(--text-primary)' }}>{val}</span>
-                  </div>
-                )
-              })}
+          {answers && registrationFields.length > 0 && Object.keys(answers).length > 0 && (
+            <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '12px 14px', marginBottom: 14 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Registration Answers</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {registrationFields.map(field => {
+                  const val = answers[field.id]
+                  if (!val) return null
+                  return (
+                    <div key={field.id}>
+                      <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 2 }}>{field.label}</div>
+                      <div style={{ fontSize: 13.5, color: 'var(--text-primary)' }}>{val}</div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Admin actions */}
+          {isAdmin && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {team.status === 'pending' && (
+                <>
+                  <button onClick={onDecline} disabled={actionLoading === team.id} style={{ flex: 1, padding: '10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10, color: '#f87171', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit', opacity: actionLoading === team.id ? 0.6 : 1 }}>Decline</button>
+                  <button onClick={onAccept} disabled={actionLoading === team.id} style={{ flex: 2, padding: '10px', background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.35)', borderRadius: 10, color: '#4ade80', cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: 'inherit', opacity: actionLoading === team.id ? 0.6 : 1 }}>Accept Team</button>
+                </>
+              )}
+              {team.status === 'declined' && (
+                <button onClick={onAccept} disabled={actionLoading === team.id} style={{ flex: 1, padding: '10px', background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.35)', borderRadius: 10, color: '#4ade80', cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: 'inherit' }}>Move to Accepted</button>
+              )}
+              <button onClick={onDelete} disabled={deleteLoading === team.id} style={{ padding: '10px 16px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, color: '#f87171', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6, opacity: deleteLoading === team.id ? 0.5 : 1 }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                {deleteLoading === team.id ? 'Removing…' : 'Remove'}
+              </button>
             </div>
           )}
         </div>
-        {isAdmin && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0, alignItems: 'flex-end' }}>
-            {team.status === 'pending' && (
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={onDecline} disabled={actionLoading === team.id} style={{
-                  padding: '7px 13px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)',
-                  borderRadius: 8, color: '#f87171', cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
-                  opacity: actionLoading === team.id ? 0.6 : 1, transition: 'all 0.15s',
-                }}>Decline</button>
-                <button onClick={onAccept} disabled={actionLoading === team.id} style={{
-                  padding: '7px 13px', background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.3)',
-                  borderRadius: 8, color: '#4ade80', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit',
-                  opacity: actionLoading === team.id ? 0.6 : 1, transition: 'all 0.15s',
-                }}>Accept</button>
-              </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Shared match admin controls ─────────────────────────────────────────────
+function MatchAdminControls({ match, t1, t2, isEditing, savingMatch, onEdit, onCancelEdit, onSave, onSetLive }: {
+  match: Match; t1: Team | null; t2: Team | null
+  isEditing: boolean; savingMatch: boolean
+  onEdit: () => void; onCancelEdit: () => void
+  onSave: (w: string | null) => void; onSetLive: () => void
+}) {
+  if (isEditing) return (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      <button onClick={() => onSave(null)} disabled={savingMatch} style={{ flex: 1, padding: '7px 10px', background: 'var(--accent)', border: 'none', borderRadius: 8, color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit', opacity: savingMatch ? 0.6 : 1 }}>
+        {savingMatch ? 'Saving…' : 'Save Score'}
+      </button>
+      {t1 && t2 && <>
+        <button onClick={() => onSave(match.team1_id)} disabled={savingMatch} style={{ padding: '7px 10px', background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.25)', borderRadius: 8, color: '#4ade80', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit' }}>
+          {t1.team_name.split(' ')[0]} wins
+        </button>
+        <button onClick={() => onSave(match.team2_id)} disabled={savingMatch} style={{ padding: '7px 10px', background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.25)', borderRadius: 8, color: '#4ade80', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit' }}>
+          {t2.team_name.split(' ')[0]} wins
+        </button>
+      </>}
+      <button onClick={onCancelEdit} style={{ padding: '7px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit' }}>Cancel</button>
+    </div>
+  )
+  return (
+    <div style={{ display: 'flex', gap: 6 }}>
+      {match.status === 'scheduled' && (
+        <button onClick={onSetLive} style={{ padding: '6px 12px', background: 'rgba(249,115,22,0.12)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: 8, color: '#f97316', cursor: 'pointer', fontSize: 11, fontWeight: 700, fontFamily: 'inherit' }}>
+          ● Set Live
+        </button>
+      )}
+      <button onClick={onEdit} style={{ padding: '6px 12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit' }}>
+        {match.status === 'completed' ? 'Edit' : 'Update Score'}
+      </button>
+    </div>
+  )
+}
+
+// ─── Team avatar helper ───────────────────────────────────────────────────────
+function TeamAvatar({ team, size = 32, color }: { team: Team | null; size?: number; color: string }) {
+  const initials = (team?.team_name ?? 'TBD').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
+  return (
+    <div style={{ width: size, height: size, borderRadius: size * 0.28, background: `${color}22`, border: `1px solid ${color}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: size * 0.35, fontWeight: 800, color, overflow: 'hidden', flexShrink: 0 }}>
+      {team?.logo_url ? <img src={team.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
+    </div>
+  )
+}
+
+// ─── Live Match Hero ──────────────────────────────────────────────────────────
+function LiveMatchHero({ match, teamMap, isAdmin, isEditing, editScore1, editScore2, savingMatch, onEdit, onCancelEdit, onSave, onScore1Change, onScore2Change }: {
+  match: Match; teamMap: Record<string, Team>
+  isAdmin: boolean; isEditing: boolean
+  editScore1: string; editScore2: string; savingMatch: boolean
+  onEdit: () => void; onCancelEdit: () => void
+  onSave: (w: string | null) => void
+  onScore1Change: (v: string) => void; onScore2Change: (v: string) => void
+}) {
+  const t1 = match.team1_id ? teamMap[match.team1_id] : null
+  const t2 = match.team2_id ? teamMap[match.team2_id] : null
+
+  return (
+    <div style={{ background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.35)', borderRadius: 18, overflow: 'hidden', animation: 'score-glow 2.5s ease-in-out infinite' }}>
+      {/* Header bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', background: 'rgba(249,115,22,0.1)', borderBottom: '1px solid rgba(249,115,22,0.2)' }}>
+        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#f97316', animation: 'live-pulse 1.4s ease-in-out infinite', boxShadow: '0 0 8px rgba(249,115,22,0.8)', flexShrink: 0 }} />
+        <span style={{ fontSize: 11, fontWeight: 900, color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.12em' }}>Live</span>
+        <span style={{ fontSize: 11, color: 'rgba(249,115,22,0.6)', marginLeft: 2 }}>Round {match.round} · Match {match.match_number}</span>
+      </div>
+
+      {/* Scoreboard */}
+      <div style={{ padding: '20px 16px 16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* Team 1 side */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+            <TeamAvatar team={t1} size={52} color="#f97316" />
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', textAlign: 'center', lineHeight: 1.3 }}>{t1?.team_name ?? 'TBD'}</span>
+            {isEditing ? (
+              <input type="number" min={0} value={editScore1} onChange={e => onScore1Change(e.target.value)}
+                style={{ width: 72, padding: '6px', background: 'rgba(255,255,255,0.1)', border: '2px solid rgba(249,115,22,0.5)', borderRadius: 10, color: '#fff', fontSize: 36, fontWeight: 900, textAlign: 'center', outline: 'none', fontFamily: 'inherit' }} />
+            ) : (
+              <span style={{ fontSize: 52, fontWeight: 900, color: '#fff', lineHeight: 1, textShadow: '0 0 24px rgba(249,115,22,0.3)' }}>{match.score1}</span>
             )}
-            <button
-              onClick={onDelete}
-              disabled={deleteLoading === team.id}
-              title="Delete registration"
-              style={{
-                display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px',
-                background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
-                borderRadius: 7, color: '#f87171', cursor: 'pointer', fontSize: 11.5, fontWeight: 600, fontFamily: 'inherit',
-                opacity: deleteLoading === team.id ? 0.5 : 0.8, transition: 'all 0.15s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.45)' }}
-              onMouseLeave={e => { e.currentTarget.style.opacity = '0.8'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.2)' }}
-            >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
-              {deleteLoading === team.id ? 'Removing…' : 'Remove'}
-            </button>
+          </div>
+
+          {/* VS */}
+          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontSize: 12, fontWeight: 800, color: 'rgba(249,115,22,0.5)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>vs</span>
+          </div>
+
+          {/* Team 2 side */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+            <TeamAvatar team={t2} size={52} color="#f97316" />
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', textAlign: 'center', lineHeight: 1.3 }}>{t2?.team_name ?? 'TBD'}</span>
+            {isEditing ? (
+              <input type="number" min={0} value={editScore2} onChange={e => onScore2Change(e.target.value)}
+                style={{ width: 72, padding: '6px', background: 'rgba(255,255,255,0.1)', border: '2px solid rgba(249,115,22,0.5)', borderRadius: 10, color: '#fff', fontSize: 36, fontWeight: 900, textAlign: 'center', outline: 'none', fontFamily: 'inherit' }} />
+            ) : (
+              <span style={{ fontSize: 52, fontWeight: 900, color: '#fff', lineHeight: 1, textShadow: '0 0 24px rgba(249,115,22,0.3)' }}>{match.score2}</span>
+            )}
+          </div>
+        </div>
+
+        {/* Admin controls */}
+        {isAdmin && (
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid rgba(249,115,22,0.15)' }}>
+            <MatchAdminControls match={match} t1={t1} t2={t2} isEditing={isEditing} savingMatch={savingMatch} onEdit={onEdit} onCancelEdit={onCancelEdit} onSave={onSave} onSetLive={() => {}} />
           </div>
         )}
       </div>
@@ -1153,123 +1951,128 @@ function TeamCard({ team, isAdmin, actionLoading, deleteLoading, registrationFie
   )
 }
 
-// ─── Match Card ───────────────────────────────────────────────────────────────
-function MatchCard({ match, teamMap, isAdmin, isEditing, editScore1, editScore2, savingMatch, onEdit, onCancelEdit, onSave, onSetLive, onScore1Change, onScore2Change }: {
-  match: Match
-  teamMap: Record<string, Team>
-  isAdmin: boolean
-  isEditing: boolean
-  editScore1: string
-  editScore2: string
-  savingMatch: boolean
-  onEdit: () => void
-  onCancelEdit: () => void
-  onSave: (winnerId: string | null) => void
-  onSetLive: () => void
-  onScore1Change: (v: string) => void
-  onScore2Change: (v: string) => void
+// ─── Match Card (bracket view) ────────────────────────────────────────────────
+function MatchCard({ match, teamMap, isAdmin, isEditing, editScore1, editScore2, savingMatch, onEdit, onCancelEdit, onSave, onSetLive, onScore1Change, onScore2Change, onAssignTeam1, onAssignTeam2, onClearTeam1, onClearTeam2 }: {
+  match: Match; teamMap: Record<string, Team>
+  isAdmin: boolean; isEditing: boolean
+  editScore1: string; editScore2: string; savingMatch: boolean
+  onEdit: () => void; onCancelEdit: () => void
+  onSave: (w: string | null) => void; onSetLive: () => void
+  onScore1Change: (v: string) => void; onScore2Change: (v: string) => void
+  onAssignTeam1?: () => void; onAssignTeam2?: () => void
+  onClearTeam1?: () => void; onClearTeam2?: () => void
 }) {
   const t1 = match.team1_id ? teamMap[match.team1_id] : null
   const t2 = match.team2_id ? teamMap[match.team2_id] : null
-  const isBye = !t1 || !t2
+  const isBye = !t1 && !t2
   const isLive = match.status === 'live'
   const isDone = match.status === 'completed'
+  const showScore = isLive || isDone
+  const canScore = !!(t1 && t2)
+
+  if (isBye && isAdmin) return (
+    <div style={{ background: 'rgba(255,255,255,0.02)', border: '2px dashed rgba(138,21,56,0.25)', borderRadius: 12, padding: '10px 14px' }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
+        R{match.round} · M{match.match_number} — Waiting for advancement
+      </div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button onClick={onAssignTeam1} style={{ flex: 1, padding: '7px', background: 'rgba(138,21,56,0.12)', border: '1px solid rgba(138,21,56,0.28)', borderRadius: 8, color: 'var(--accent)', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, fontFamily: 'inherit' }}>+ Top Slot</button>
+        <button onClick={onAssignTeam2} style={{ flex: 1, padding: '7px', background: 'rgba(138,21,56,0.12)', border: '1px solid rgba(138,21,56,0.28)', borderRadius: 8, color: 'var(--accent)', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, fontFamily: 'inherit' }}>+ Bottom Slot</button>
+      </div>
+    </div>
+  )
+
+  if (isBye) return (
+    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: '10px 14px', textAlign: 'center' }}>
+      <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)' }}>Awaiting advancement</span>
+    </div>
+  )
+
+  const t1Wins = match.winner_id === match.team1_id
+  const t2Wins = match.winner_id === match.team2_id
+
+  const teamRowStyle = (isWinner: boolean, _isLoser: boolean) => ({
+    display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+    background: isWinner ? 'rgba(74,222,128,0.06)' : 'transparent',
+    transition: 'background 0.2s',
+  })
+  const nameStyle = (isWinner: boolean, isLoser: boolean): React.CSSProperties => ({
+    flex: 1, fontSize: 13, fontWeight: isWinner ? 800 : 600,
+    color: isLoser ? 'rgba(255,255,255,0.3)' : isWinner ? '#fff' : 'var(--text-primary)',
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  })
+  const scoreStyle = (isWinner: boolean, isLoser: boolean): React.CSSProperties => ({
+    fontSize: 22, fontWeight: 900, minWidth: 28, textAlign: 'right',
+    color: isWinner ? '#4ade80' : isLoser ? 'rgba(255,255,255,0.2)' : isLive ? '#f97316' : 'rgba(255,255,255,0.5)',
+  })
 
   return (
-    <div className={`match-card${isLive ? ' live' : ''}`} style={{
-      background: 'rgba(255,255,255,0.03)',
-      border: `1px solid ${isLive ? 'rgba(249,115,22,0.35)' : 'rgba(255,255,255,0.08)'}`,
-      borderRadius: 14,
-      padding: '14px 16px',
-      position: 'relative',
-    }}>
-      {isLive && (
-        <div style={{ position: 'absolute', top: 10, right: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
-          <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#f97316', animation: 'live-pulse 1.5s ease-in-out infinite' }} />
-          <span style={{ fontSize: 10.5, fontWeight: 700, color: '#f97316' }}>LIVE</span>
-        </div>
-      )}
-      {isDone && match.winner_id && (
-        <div style={{ position: 'absolute', top: 10, right: 12, fontSize: 10.5, fontWeight: 700, color: '#4ade80' }}>FINAL</div>
-      )}
+    <div style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${isLive ? 'rgba(249,115,22,0.3)' : isDone ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.07)'}`, borderRadius: 14, overflow: 'hidden', boxShadow: isLive ? '0 0 20px rgba(249,115,22,0.1)' : 'none' }}>
+      {/* Status bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 14px', background: isLive ? 'rgba(249,115,22,0.08)' : isDone ? 'rgba(255,255,255,0.02)' : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+        {isLive && <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#f97316', animation: 'live-pulse 1.4s ease-in-out infinite', flexShrink: 0 }} />}
+        <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: isLive ? '#f97316' : isDone ? '#4ade80' : 'rgba(255,255,255,0.25)' }}>
+          {isLive ? 'Live' : isDone ? 'Final' : `R${match.round} · M${match.match_number}`}
+        </span>
+        {(isLive || isDone) && <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginLeft: 2 }}>R{match.round} · M{match.match_number}</span>}
+      </div>
 
-      {isBye ? (
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '8px 0' }}>TBD</div>
-      ) : (
-        <>
-          {/* Team 1 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 13.5, fontWeight: match.winner_id === match.team1_id ? 800 : 600, color: match.winner_id && match.winner_id !== match.team1_id ? 'var(--text-muted)' : 'var(--text-primary)' }}>
-                {t1?.team_name ?? 'TBD'}
-              </span>
-              {match.winner_id === match.team1_id && <span style={{ fontSize: 10, color: '#4ade80' }}>🏆</span>}
-            </div>
-            {isEditing ? (
-              <input type="number" min={0} value={editScore1} onChange={e => onScore1Change(e.target.value)} style={{ width: 52, padding: '5px 8px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, color: '#fff', fontSize: 15, fontWeight: 700, textAlign: 'center', outline: 'none', fontFamily: 'inherit' }} />
-            ) : (
-              <span style={{ fontSize: 20, fontWeight: 900, color: match.winner_id === match.team1_id ? '#4ade80' : match.winner_id ? '#6b7280' : 'var(--text-primary)', minWidth: 28, textAlign: 'center' }}>{match.score1}</span>
-            )}
-          </div>
-          {/* Divider */}
-          <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '0 0 10px' }} />
-          {/* Team 2 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 13.5, fontWeight: match.winner_id === match.team2_id ? 800 : 600, color: match.winner_id && match.winner_id !== match.team2_id ? 'var(--text-muted)' : 'var(--text-primary)' }}>
-                {t2?.team_name ?? 'TBD'}
-              </span>
-              {match.winner_id === match.team2_id && <span style={{ fontSize: 10, color: '#4ade80' }}>🏆</span>}
-            </div>
-            {isEditing ? (
-              <input type="number" min={0} value={editScore2} onChange={e => onScore2Change(e.target.value)} style={{ width: 52, padding: '5px 8px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, color: '#fff', fontSize: 15, fontWeight: 700, textAlign: 'center', outline: 'none', fontFamily: 'inherit' }} />
-            ) : (
-              <span style={{ fontSize: 20, fontWeight: 900, color: match.winner_id === match.team2_id ? '#4ade80' : match.winner_id ? '#6b7280' : 'var(--text-primary)', minWidth: 28, textAlign: 'center' }}>{match.score2}</span>
-            )}
-          </div>
+      {/* Team 1 */}
+      <div style={teamRowStyle(t1Wins, t2Wins && isDone)}>
+        <TeamAvatar team={t1} size={28} color={t1Wins ? '#4ade80' : isLive ? '#f97316' : 'rgba(255,255,255,0.4)'} />
+        {t1 ? (
+          <span style={nameStyle(t1Wins, t2Wins && isDone)}>{t1.team_name}</span>
+        ) : isAdmin ? (
+          <button onClick={onAssignTeam1} style={{ flex: 1, padding: '3px 8px', background: 'rgba(138,21,56,0.12)', border: '1px dashed rgba(138,21,56,0.35)', borderRadius: 6, color: 'var(--accent)', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, fontFamily: 'inherit', textAlign: 'left' }}>+ Assign</button>
+        ) : (
+          <span style={{ flex: 1, fontSize: 12, color: 'rgba(255,255,255,0.3)', fontStyle: 'italic' }}>Awaiting winner…</span>
+        )}
+        {t1Wins && <span style={{ fontSize: 12 }}>🏆</span>}
+        {t1 && isAdmin && !isDone && !isLive && (
+          <button onClick={onClearTeam1} title="Clear slot" style={{ width: 18, height: 18, background: 'none', border: 'none', color: 'rgba(255,255,255,0.2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        )}
+        {isEditing
+          ? <input type="number" min={0} value={editScore1} onChange={e => onScore1Change(e.target.value)} style={{ width: 46, padding: '4px 6px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 7, color: '#fff', fontSize: 16, fontWeight: 900, textAlign: 'center', outline: 'none', fontFamily: 'inherit' }} />
+          : <span style={scoreStyle(t1Wins, t2Wins && isDone)}>{showScore ? match.score1 : '–'}</span>
+        }
+      </div>
 
-          {/* Admin controls */}
-          {isAdmin && (
-            <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {isEditing ? (
-                <>
-                  <button onClick={() => onSave(null)} disabled={savingMatch} style={{ flex: 1, padding: '7px 10px', background: 'var(--accent)', border: 'none', borderRadius: 8, color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit', opacity: savingMatch ? 0.6 : 1 }}>
-                    {savingMatch ? 'Saving…' : 'Save'}
-                  </button>
-                  {t1 && t2 && (
-                    <>
-                      <button onClick={() => onSave(match.team1_id)} disabled={savingMatch} style={{ padding: '7px 10px', background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.25)', borderRadius: 8, color: '#4ade80', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit' }}>
-                        {t1.team_name.split(' ')[0]} wins
-                      </button>
-                      <button onClick={() => onSave(match.team2_id)} disabled={savingMatch} style={{ padding: '7px 10px', background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.25)', borderRadius: 8, color: '#4ade80', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit' }}>
-                        {t2.team_name.split(' ')[0]} wins
-                      </button>
-                    </>
-                  )}
-                  <button onClick={onCancelEdit} style={{ padding: '7px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit' }}>Cancel</button>
-                </>
-              ) : (
-                <>
-                  {match.status === 'scheduled' && (
-                    <button onClick={onSetLive} style={{ padding: '6px 12px', background: 'rgba(249,115,22,0.12)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: 8, color: '#f97316', cursor: 'pointer', fontSize: 11, fontWeight: 700, fontFamily: 'inherit' }}>
-                      Set Live
-                    </button>
-                  )}
-                  {match.status !== 'completed' && (
-                    <button onClick={onEdit} style={{ padding: '6px 12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit' }}>
-                      Update Score
-                    </button>
-                  )}
-                  {match.status === 'completed' && (
-                    <button onClick={onEdit} style={{ padding: '6px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit' }}>
-                      Edit
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
+      {/* Divider */}
+      <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', marginLeft: 52 }} />
+
+      {/* Team 2 */}
+      <div style={teamRowStyle(t2Wins, t1Wins && isDone)}>
+        <TeamAvatar team={t2} size={28} color={t2Wins ? '#4ade80' : isLive ? '#f97316' : 'rgba(255,255,255,0.4)'} />
+        {t2 ? (
+          <span style={nameStyle(t2Wins, t1Wins && isDone)}>{t2.team_name}</span>
+        ) : isAdmin ? (
+          <button onClick={onAssignTeam2} style={{ flex: 1, padding: '3px 8px', background: 'rgba(138,21,56,0.12)', border: '1px dashed rgba(138,21,56,0.35)', borderRadius: 6, color: 'var(--accent)', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, fontFamily: 'inherit', textAlign: 'left' }}>+ Assign</button>
+        ) : (
+          <span style={{ flex: 1, fontSize: 12, color: 'rgba(255,255,255,0.3)', fontStyle: 'italic' }}>Awaiting winner…</span>
+        )}
+        {t2Wins && <span style={{ fontSize: 12 }}>🏆</span>}
+        {t2 && isAdmin && !isDone && !isLive && (
+          <button onClick={onClearTeam2} title="Clear slot" style={{ width: 18, height: 18, background: 'none', border: 'none', color: 'rgba(255,255,255,0.2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        )}
+        {isEditing
+          ? <input type="number" min={0} value={editScore2} onChange={e => onScore2Change(e.target.value)} style={{ width: 46, padding: '4px 6px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 7, color: '#fff', fontSize: 16, fontWeight: 900, textAlign: 'center', outline: 'none', fontFamily: 'inherit' }} />
+          : <span style={scoreStyle(t2Wins, t1Wins && isDone)}>{showScore ? match.score2 : '–'}</span>
+        }
+      </div>
+
+      {/* Admin controls */}
+      {isAdmin && (
+        <div style={{ padding: '8px 14px', borderTop: '1px solid rgba(255,255,255,0.05)', background: 'rgba(0,0,0,0.12)' }}>
+          {canScore ? (
+            <MatchAdminControls match={match} t1={t1} t2={t2} isEditing={isEditing} savingMatch={savingMatch} onEdit={onEdit} onCancelEdit={onCancelEdit} onSave={onSave} onSetLive={onSetLive} />
+          ) : (
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', textAlign: 'center' }}>Assign both teams to enable scoring</div>
           )}
-        </>
+        </div>
       )}
     </div>
   )
@@ -1318,3 +2121,184 @@ function RoundRobinStandings({ teams, matches }: { teams: Team[]; matches: Match
     </div>
   )
 }
+
+// ─── Edit Tournament Form ─────────────────────────────────────────────────────
+type EditPrize = { _id: string; place: string; description: string }
+type EditField = { _id: string; id: string; label: string; type: string; options: string[] }
+
+function EditTournamentForm({
+  editName, setEditName, editSport, setEditSport,
+  editDesc, setEditDesc, editRules, setEditRules,
+  editLocation, setEditLocation, editStartDate, setEditStartDate,
+  editRegDeadline, setEditRegDeadline, editMaxTeams, setEditMaxTeams,
+  editPrizes, setEditPrizes, editCustomFields, setEditCustomFields,
+  editError, savingEdit, onSave, onCancel,
+}: {
+  editName: string; setEditName: (v: string) => void
+  editSport: string; setEditSport: (v: string) => void
+  editDesc: string; setEditDesc: (v: string) => void
+  editRules: string; setEditRules: (v: string) => void
+  editLocation: string; setEditLocation: (v: string) => void
+  editStartDate: string; setEditStartDate: (v: string) => void
+  editRegDeadline: string; setEditRegDeadline: (v: string) => void
+  editMaxTeams: string; setEditMaxTeams: (v: string) => void
+  editPrizes: EditPrize[]; setEditPrizes: React.Dispatch<React.SetStateAction<EditPrize[]>>
+  editCustomFields: EditField[]; setEditCustomFields: React.Dispatch<React.SetStateAction<EditField[]>>
+  editError: string; savingEdit: boolean
+  onSave: () => void; onCancel: () => void
+}) {
+  const SPORTS = ['Basketball','Football','Volleyball','Tennis','Badminton','Cricket','Swimming','Athletics','Chess','Gaming','Table Tennis','Rugby','Baseball','Hockey','Other']
+  const IS = { width: '100%', padding: '9px 12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 9, color: 'var(--text-primary)', fontSize: '13.5px', outline: 'none', boxSizing: 'border-box' as const, fontFamily: 'inherit' }
+  const LS = { display: 'block', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: '0.08em' }
+
+  const addPrize = () => setEditPrizes(prev => [...prev, { _id: `ep_${Date.now()}`, place: `${prev.length + 1}th Place`, description: '' }])
+  const removePrize = (_id: string) => setEditPrizes(prev => prev.filter(p => p._id !== _id))
+  const setPrizePlace = (_id: string, val: string) => setEditPrizes(prev => prev.map(p => p._id === _id ? { ...p, place: val } : p))
+  const setPrizeDesc = (_id: string, val: string) => setEditPrizes(prev => prev.map(p => p._id === _id ? { ...p, description: val } : p))
+
+  const addField = () => setEditCustomFields(prev => [...prev, { _id: `ef_${Date.now()}`, id: `f_${Date.now()}`, label: '', type: 'text', options: [] }])
+  const removeField = (_id: string) => setEditCustomFields(prev => prev.filter(f => f._id !== _id))
+  const setFieldLabel = (_id: string, val: string) => setEditCustomFields(prev => prev.map(f => f._id === _id ? { ...f, label: val } : f))
+  const setFieldType = (_id: string, val: string) => setEditCustomFields(prev => prev.map(f => f._id === _id ? { ...f, type: val, options: val === 'multiple_choice' ? (f.options.length ? f.options : ['', '']) : f.options } : f))
+  const addOption = (_id: string) => setEditCustomFields(prev => prev.map(f => f._id === _id ? { ...f, options: [...f.options, ''] } : f))
+  const removeOption = (_id: string, oi: number) => setEditCustomFields(prev => prev.map(f => f._id === _id ? { ...f, options: f.options.filter((_, j) => j !== oi) } : f))
+  const setOption = (_id: string, oi: number, val: string) => setEditCustomFields(prev => prev.map(f => f._id === _id ? { ...f, options: f.options.map((o, j) => j === oi ? val : o) } : f))
+
+  return (
+    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(138,21,56,0.25)', borderRadius: 18, padding: 24 }}>
+      <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 18 }}>Edit Tournament</div>
+
+      {/* Basic fields grid */}
+      <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', marginBottom: 14 }}>
+        <div>
+          <label style={LS}>Tournament Name *</label>
+          <input value={editName} onChange={e => setEditName(e.target.value)} style={IS} />
+        </div>
+        <div>
+          <label style={LS}>Sport</label>
+          <select value={SPORTS.includes(editSport) ? editSport : 'Other'} onChange={e => setEditSport(e.target.value)} style={IS}>
+            {SPORTS.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          {!SPORTS.includes(editSport) && (
+            <input value={editSport} onChange={e => setEditSport(e.target.value)} placeholder="Sport name" style={{ ...IS, marginTop: 8 }} />
+          )}
+        </div>
+        <div>
+          <label style={LS}>Location *</label>
+          <input value={editLocation} onChange={e => setEditLocation(e.target.value)} style={IS} />
+        </div>
+        <div>
+          <label style={LS}>Max Teams</label>
+          <input type="number" min={2} value={editMaxTeams} onChange={e => setEditMaxTeams(e.target.value)} style={IS} />
+        </div>
+        <div>
+          <label style={LS}>Start Date</label>
+          <input type="datetime-local" value={editStartDate} onChange={e => setEditStartDate(e.target.value)} style={{ ...IS, colorScheme: 'dark' }} />
+        </div>
+        <div>
+          <label style={LS}>Registration Deadline</label>
+          <input type="datetime-local" value={editRegDeadline} onChange={e => setEditRegDeadline(e.target.value)} style={{ ...IS, colorScheme: 'dark' }} />
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 14 }}>
+        <label style={LS}>About</label>
+        <textarea value={editDesc} onChange={e => setEditDesc(e.target.value)} rows={3} placeholder="What's this tournament about?" style={{ ...IS, resize: 'vertical' }} />
+      </div>
+      <div style={{ marginBottom: 18 }}>
+        <label style={LS}>Rules</label>
+        <textarea value={editRules} onChange={e => setEditRules(e.target.value)} rows={4} placeholder="Tournament rules..." style={{ ...IS, resize: 'vertical' }} />
+      </div>
+
+      {/* Prizes */}
+      <div style={{ marginBottom: 16, padding: 14, background: 'rgba(233,193,118,0.05)', border: '1px solid rgba(233,193,118,0.15)', borderRadius: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#e9c176' }}>🏆 Prizes</div>
+          <button type="button" onClick={addPrize} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', background: 'rgba(233,193,118,0.1)', border: '1px solid rgba(233,193,118,0.3)', borderRadius: 7, color: '#e9c176', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, fontFamily: 'inherit' }}>
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Tier
+          </button>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {editPrizes.map((prize, i) => (
+            <div key={prize._id} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span style={{ fontSize: 15, flexShrink: 0 }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '🏅'}</span>
+              <input value={prize.place} onChange={e => setPrizePlace(prize._id, e.target.value)} placeholder="Place" style={{ flex: 1, padding: '7px 10px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 7, color: 'var(--text-primary)', fontSize: '12.5px', outline: 'none', fontFamily: 'inherit', fontWeight: 600 }} />
+              <input value={prize.description} onChange={e => setPrizeDesc(prize._id, e.target.value)} placeholder="Prize description" style={{ flex: 3, padding: '7px 10px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 7, color: 'var(--text-primary)', fontSize: '12.5px', outline: 'none', fontFamily: 'inherit' }} />
+              <button type="button" onClick={() => removePrize(prize._id)} style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 7, color: '#f87171', cursor: 'pointer', flexShrink: 0 }}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+          ))}
+          {editPrizes.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '8px 0' }}>No prizes set</div>}
+        </div>
+      </div>
+
+      {/* Custom registration fields */}
+      <div style={{ marginBottom: 18, padding: 14, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>Registration Fields</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>Questions teams answer when registering</div>
+          </div>
+          <button type="button" onClick={addField} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px', background: 'rgba(138,21,56,0.15)', border: '1px solid rgba(138,21,56,0.3)', borderRadius: 8, color: 'var(--accent)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit' }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Field
+          </button>
+        </div>
+        {editCustomFields.length === 0 ? (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '8px 0' }}>No custom fields</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {editCustomFields.map(field => (
+              <div key={field._id} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: 10 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input value={field.label} onChange={e => setFieldLabel(field._id, e.target.value)} placeholder="Field label" style={{ flex: 3, padding: '7px 10px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 7, color: 'var(--text-primary)', fontSize: '13px', outline: 'none', fontFamily: 'inherit' }} />
+                  <select value={field.type} onChange={e => setFieldType(field._id, e.target.value)} style={{ flex: 2, padding: '7px 10px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 7, color: 'var(--text-primary)', fontSize: '12.5px', outline: 'none', fontFamily: 'inherit' }}>
+                    <option value="text">Short Text</option>
+                    <option value="number">Number</option>
+                    <option value="textarea">Long Text</option>
+                    <option value="multiple_choice">Multiple Choice</option>
+                  </select>
+                  <button type="button" onClick={() => removeField(field._id)} style={{ width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 7, color: '#f87171', cursor: 'pointer', flexShrink: 0 }}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                  </button>
+                </div>
+                {field.type === 'multiple_choice' && (
+                  <div style={{ marginTop: 10, paddingLeft: 10, borderLeft: '2px solid rgba(138,21,56,0.3)' }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 7, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Options</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {field.options.map((opt, oi) => (
+                        <div key={oi} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.2)', flexShrink: 0 }} />
+                          <input value={opt} onChange={e => setOption(field._id, oi, e.target.value)} placeholder={`Option ${oi + 1}`} style={{ flex: 1, padding: '6px 9px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 7, color: 'var(--text-primary)', fontSize: '12.5px', outline: 'none', fontFamily: 'inherit' }} />
+                          {field.options.length > 2 && (
+                            <button type="button" onClick={() => removeOption(field._id, oi)} style={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', flexShrink: 0 }}>
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <button type="button" onClick={() => addOption(field._id)} style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', background: 'none', border: '1px dashed rgba(255,255,255,0.15)', borderRadius: 7, color: 'var(--text-muted)', cursor: 'pointer', fontSize: '11.5px', fontFamily: 'inherit' }}>
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                      Add option
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {editError && <div style={{ fontSize: 13, color: '#f87171', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '10px 14px', marginBottom: 14 }}>{editError}</div>}
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button type="button" onClick={onSave} disabled={savingEdit} style={{ flex: 2, padding: '11px', background: savingEdit ? 'rgba(138,21,56,0.4)' : 'var(--accent)', border: 'none', borderRadius: 11, color: '#fff', fontSize: 14, fontWeight: 700, cursor: savingEdit ? 'default' : 'pointer', fontFamily: 'inherit', boxShadow: savingEdit ? 'none' : '0 4px 16px rgba(138,21,56,0.35)' }}>
+          {savingEdit ? 'Saving…' : 'Save Changes'}
+        </button>
+        <button type="button" onClick={onCancel} style={{ flex: 1, padding: '11px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 11, color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+      </div>
+    </div>
+  )
+}
+
