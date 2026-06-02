@@ -60,6 +60,19 @@ interface MembershipRow {
   profile: { full_name: string | null; school: string | null; email: string | null } | null
 }
 
+interface TournRow {
+  id: string
+  name: string
+  sport: string
+  status: string
+  format: string
+  start_date: string | null
+  registration_deadline: string | null
+  max_teams: number
+  _accepted: number
+  _pending: number
+}
+
 interface AppFormField { id: string; label: string; type: string }
 interface ApplicationRow {
   id: string
@@ -201,6 +214,34 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
   const [appActionLoading, setAppActionLoading] = useState<string | null>(null)
   const [expandedApp, setExpandedApp] = useState<string | null>(null)
 
+  // Tournaments state
+  const [tournaments, setTournaments] = useState<TournRow[]>([])
+  const [loadingTournaments, setLoadingTournaments] = useState(false)
+  const [showTournamentForm, setShowTournamentForm] = useState(false)
+  const [deleteTournamentConfirmId, setDeleteTournamentConfirmId] = useState<string | null>(null)
+  const [deletingTournamentId, setDeletingTournamentId] = useState<string | null>(null)
+  const [tourName, setTourName] = useState('')
+  const [tourSport, setTourSport] = useState('Basketball')
+  const [tourDesc, setTourDesc] = useState('')
+  const [tourRules, setTourRules] = useState('')
+  const [tourLocation, setTourLocation] = useState('')
+  const [tourRegDeadline, setTourRegDeadline] = useState('')
+  const [tourStartDate, setTourStartDate] = useState('')
+  const [tourMaxTeams, setTourMaxTeams] = useState('16')
+  const [tourPrizes, setTourPrizes] = useState<Array<{ place: string; description: string }>>([
+    { place: '1st Place', description: '' },
+    { place: '2nd Place', description: '' },
+    { place: '3rd Place', description: '' },
+  ])
+  const [creatingTournament, setCreatingTournament] = useState(false)
+  const [tournamentError, setTournamentError] = useState('')
+  const [tourCustomSport, setTourCustomSport] = useState('')
+  const [tourCustomFields, setTourCustomFields] = useState<Array<{ id: string; label: string; type: string; options: string[] }>>([])
+  const [tourLogoFile, setTourLogoFile] = useState<File | null>(null)
+  const [tourLogoPreview, setTourLogoPreview] = useState<string | null>(null)
+  const tourLogoRef = useRef<HTMLInputElement>(null)
+
+
   useEffect(() => { fetchAll() }, [club.id])
 
   // Live attendee count — increments the matching event when anyone checks in via QR
@@ -272,6 +313,82 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
     setLoadingStats(false)
     // Also keep app badge count fresh
     fetchApplications()
+  }
+
+  async function fetchTournaments() {
+    setLoadingTournaments(true)
+    const { data } = await supabase
+      .from('tournaments')
+      .select('id, name, sport, status, format, start_date, registration_deadline, max_teams')
+      .eq('club_id', club.id)
+      .order('created_at', { ascending: false })
+    if (data) {
+      const ids = data.map((t: { id: string }) => t.id)
+      const { data: teamData } = await supabase
+        .from('tournament_teams')
+        .select('tournament_id, status')
+        .in('tournament_id', ids)
+      const acceptedMap: Record<string, number> = {}
+      const pendingMap: Record<string, number> = {}
+      for (const t of teamData ?? []) {
+        if (t.status === 'accepted') acceptedMap[t.tournament_id] = (acceptedMap[t.tournament_id] ?? 0) + 1
+        if (t.status === 'pending') pendingMap[t.tournament_id] = (pendingMap[t.tournament_id] ?? 0) + 1
+      }
+      setTournaments((data as any[]).map(t => ({ ...t, _accepted: acceptedMap[t.id] ?? 0, _pending: pendingMap[t.id] ?? 0 })))
+    }
+    setLoadingTournaments(false)
+  }
+
+  async function deleteTournament(id: string) {
+    setDeletingTournamentId(id)
+    await supabase.from('tournaments').delete().eq('id', id)
+    setTournaments(prev => prev.filter(t => t.id !== id))
+    setDeleteTournamentConfirmId(null)
+    setDeletingTournamentId(null)
+  }
+
+  async function createTournament() {
+    const sportName = tourSport === 'Other' ? tourCustomSport.trim() : tourSport
+    if (!tourName.trim() || !sportName) { setTournamentError('Name and sport are required'); return }
+    if (!tourLocation.trim()) { setTournamentError('Location is required'); return }
+    setCreatingTournament(true)
+    setTournamentError('')
+    let tournamentLogoUrl: string | null = null
+    if (tourLogoFile) {
+      const ext = tourLogoFile.name.split('.').pop() ?? 'jpg'
+      const path = `tournaments/${club.id}/${Date.now()}.${ext}`
+      const { error: uploadErr } = await supabase.storage.from('tournament-logos').upload(path, tourLogoFile)
+      if (!uploadErr) {
+        const { data: urlData } = supabase.storage.from('tournament-logos').getPublicUrl(path)
+        tournamentLogoUrl = urlData.publicUrl
+      }
+    }
+    const filledPrizes = tourPrizes.filter(p => p.description.trim())
+    const { error } = await supabase.from('tournaments').insert({
+      club_id: club.id,
+      created_by: user!.id,
+      name: tourName.trim(),
+      sport: sportName,
+      description: tourDesc.trim() || null,
+      rules: tourRules.trim() || null,
+      location: tourLocation.trim(),
+      registration_deadline: tourRegDeadline || null,
+      start_date: tourStartDate || null,
+      max_teams: parseInt(tourMaxTeams) || 16,
+      format: 'single_elimination',
+      logo_url: tournamentLogoUrl,
+      prizes: filledPrizes.length > 0 ? filledPrizes : null,
+      registration_fields: tourCustomFields.filter(f => f.label.trim()).map(f => ({ id: f.id, label: f.label.trim(), type: f.type, options: f.options })),
+    })
+    setCreatingTournament(false)
+    if (error) { setTournamentError(error.message); return }
+    setTourName(''); setTourSport('Basketball'); setTourDesc(''); setTourRules('')
+    setTourLocation(''); setTourRegDeadline(''); setTourStartDate(''); setTourMaxTeams('16')
+    setTourPrizes([{ place: '1st Place', description: '' }, { place: '2nd Place', description: '' }, { place: '3rd Place', description: '' }])
+    setTourCustomSport(''); setTourCustomFields([])
+    setTourLogoFile(null); setTourLogoPreview(null)
+    setShowTournamentForm(false)
+    fetchTournaments()
   }
 
   async function fetchApplications() {
@@ -684,6 +801,7 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
     if (activeTab === 'budget') fetchBudget()
     if (activeTab === 'analytics') fetchAnalytics()
     if (activeTab === 'applications') fetchApplications()
+    if (activeTab === 'tournaments') fetchTournaments()
   }, [activeTab, club.id])
 
   const avgAttendees = stats.eventCount > 0 ? (stats.totalAttendees / stats.eventCount).toFixed(1) : '—'
@@ -713,6 +831,7 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
 
   const TABS = [
     { key: 'events',        label: 'Events',        badge: events.length,        visible: isPresident || canDo('manage_events') },
+    { key: 'tournaments',   label: 'Tournaments',   badge: tournaments.reduce((s, t) => s + t._pending, 0) || null, badgeColor: tournaments.some(t => t._pending > 0) ? '#f87171' : undefined, visible: isPresident || canDo('manage_events') },
     { key: 'team',          label: 'Team',           badge: teamMembers.length,   visible: isPresident || canDo('remove_members') || canDo('accept_members') },
     { key: 'applications',  label: 'Applications',   badge: applications.length,  visible: isPresident || canDo('accept_members'), badgeColor: applications.length > 0 ? '#f87171' : undefined },
     { key: 'announcements', label: 'Announcements',  badge: announcements.length, visible: isPresident || canDo('post_announcements') },
@@ -2040,6 +2159,335 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
                   })}
                 </div>
               </>
+            )}
+          </div>
+        )
+      })()}
+
+      {/* ── Tournaments tab ── */}
+      {activeTab === 'tournaments' && (() => {
+        const SPORTS = ['Basketball', 'Football', 'Volleyball', 'Tennis', 'Badminton', 'Cricket', 'Swimming', 'Athletics', 'Chess', 'Gaming', 'Table Tennis', 'Rugby', 'Baseball', 'Hockey', 'Other']
+        const STATUS_COLORS: Record<string, { color: string; bg: string; label: string }> = {
+          registration_open: { color: '#4ade80', bg: 'rgba(74,222,128,0.12)', label: 'Open' },
+          registration_closed: { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', label: 'Reg. Closed' },
+          ongoing: { color: '#f97316', bg: 'rgba(249,115,22,0.14)', label: 'Live' },
+          completed: { color: '#6b7280', bg: 'rgba(107,114,128,0.12)', label: 'Done' },
+          cancelled: { color: '#ef4444', bg: 'rgba(239,68,68,0.12)', label: 'Cancelled' },
+        }
+        return (
+          <div key="tournaments" className="cc-panel">
+            {/* Header row */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <div>
+                <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>Tournaments</h2>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Create and manage tournaments hosted by your club</p>
+              </div>
+              <button onClick={() => setShowTournamentForm(v => !v)} style={{
+                display: 'flex', alignItems: 'center', gap: 7,
+                padding: '9px 16px', background: showTournamentForm ? 'rgba(255,255,255,0.08)' : 'var(--accent)',
+                border: 'none', borderRadius: 10, color: '#fff', cursor: 'pointer',
+                fontWeight: 700, fontSize: 13, fontFamily: 'inherit',
+                boxShadow: showTournamentForm ? 'none' : '0 4px 16px rgba(138,21,56,0.35)',
+                transition: 'all 0.15s',
+              }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                {showTournamentForm ? 'Cancel' : 'New Tournament'}
+              </button>
+            </div>
+
+            {/* Create form */}
+            {showTournamentForm && (
+              <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(138,21,56,0.2)', borderRadius: 16, padding: 20, marginBottom: 20 }}>
+                <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 16 }}>New Tournament</h3>
+
+                {/* Tournament logo picker */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18, paddingBottom: 16, borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+                  <div
+                    onClick={() => tourLogoRef.current?.click()}
+                    style={{ width: 60, height: 60, borderRadius: 14, background: tourLogoPreview ? 'transparent' : 'rgba(255,255,255,0.05)', border: tourLogoPreview ? '2px solid rgba(138,21,56,0.3)' : '2px dashed rgba(255,255,255,0.15)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0, transition: 'border-color 0.15s' }}
+                    onMouseEnter={e => !tourLogoPreview && (e.currentTarget.style.borderColor = 'rgba(138,21,56,0.5)')}
+                    onMouseLeave={e => !tourLogoPreview && (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)')}
+                  >
+                    {tourLogoPreview
+                      ? <img src={tourLogoPreview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                    }
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>Tournament Logo</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Optional · Click to upload · PNG or JPG</div>
+                    {tourLogoPreview && (
+                      <button onClick={() => { setTourLogoFile(null); setTourLogoPreview(null) }} style={{ marginTop: 4, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11.5, padding: 0, fontFamily: 'inherit', textDecoration: 'underline' }}>Remove</button>
+                    )}
+                  </div>
+                  <input ref={tourLogoRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    setTourLogoFile(file)
+                    setTourLogoPreview(URL.createObjectURL(file))
+                  }} />
+                </div>
+
+                <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Tournament Name *</label>
+                    <input value={tourName} onChange={e => setTourName(e.target.value)} placeholder="e.g. Spring Basketball Cup" style={{ width: '100%', padding: '9px 12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 9, color: 'var(--text-primary)', fontSize: 13.5, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Sport *</label>
+                    <select value={tourSport} onChange={e => setTourSport(e.target.value)} style={{ width: '100%', padding: '9px 12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 9, color: 'var(--text-primary)', fontSize: 13.5, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}>
+                      {SPORTS.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    {tourSport === 'Other' && (
+                      <input value={tourCustomSport} onChange={e => setTourCustomSport(e.target.value)} placeholder="Enter sport name…" style={{ width: '100%', marginTop: 8, padding: '9px 12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 9, color: 'var(--text-primary)', fontSize: 13.5, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                    )}
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Max Teams</label>
+                    <input type="number" min={2} max={128} value={tourMaxTeams} onChange={e => setTourMaxTeams(e.target.value)} style={{ width: '100%', padding: '9px 12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 9, color: 'var(--text-primary)', fontSize: 13.5, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Location *</label>
+                    <input value={tourLocation} onChange={e => setTourLocation(e.target.value)} placeholder="e.g. Main Sports Hall" style={{ width: '100%', padding: '9px 12px', background: 'rgba(255,255,255,0.06)', border: `1px solid ${!tourLocation.trim() && tournamentError.includes('Location') ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.1)'}`, borderRadius: 9, color: 'var(--text-primary)', fontSize: 13.5, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Registration Deadline</label>
+                    <input type="datetime-local" value={tourRegDeadline} onChange={e => setTourRegDeadline(e.target.value)} style={{ width: '100%', padding: '9px 12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 9, color: 'var(--text-primary)', fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', colorScheme: 'dark' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Start Date</label>
+                    <input type="datetime-local" value={tourStartDate} onChange={e => setTourStartDate(e.target.value)} style={{ width: '100%', padding: '9px 12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 9, color: 'var(--text-primary)', fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', colorScheme: 'dark' }} />
+                  </div>
+                </div>
+                <div style={{ marginTop: 14 }}>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Description</label>
+                  <textarea value={tourDesc} onChange={e => setTourDesc(e.target.value)} placeholder="What's this tournament about?" rows={2} style={{ width: '100%', padding: '9px 12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 9, color: 'var(--text-primary)', fontSize: 13.5, outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                </div>
+                <div style={{ marginTop: 10 }}>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Rules</label>
+                  <textarea value={tourRules} onChange={e => setTourRules(e.target.value)} placeholder="Tournament rules and regulations..." rows={3} style={{ width: '100%', padding: '9px 12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 9, color: 'var(--text-primary)', fontSize: 13.5, outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                </div>
+
+                {/* Prizes */}
+                <div style={{ marginTop: 18, padding: 16, background: 'rgba(233,193,118,0.05)', border: '1px solid rgba(233,193,118,0.15)', borderRadius: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#e9c176' }}>🏆 Prizes</div>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>Set prize tiers — leave blank to skip any tier</div>
+                    </div>
+                    <button onClick={() => setTourPrizes(prev => [...prev, { place: `${prev.length + 1}th Place`, description: '' }])} style={{
+                      display: 'flex', alignItems: 'center', gap: 5, padding: '6px 11px',
+                      background: 'rgba(233,193,118,0.1)', border: '1px solid rgba(233,193,118,0.3)',
+                      borderRadius: 8, color: '#e9c176', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit',
+                    }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                      Add Tier
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {tourPrizes.map((prize, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <span style={{ fontSize: 16, flexShrink: 0 }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '🏅'}</span>
+                        <input
+                          value={prize.place}
+                          onChange={e => setTourPrizes(prev => prev.map((p, j) => j === i ? { ...p, place: e.target.value } : p))}
+                          placeholder="e.g. 1st Place"
+                          style={{ flex: 1, padding: '8px 10px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12.5, outline: 'none', fontFamily: 'inherit', fontWeight: 600 }}
+                        />
+                        <input
+                          value={prize.description}
+                          onChange={e => setTourPrizes(prev => prev.map((p, j) => j === i ? { ...p, description: e.target.value } : p))}
+                          placeholder="e.g. Gold medal + AED 500"
+                          style={{ flex: 3, padding: '8px 10px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none', fontFamily: 'inherit' }}
+                        />
+                        <button
+                          onClick={() => setTourPrizes(prev => prev.filter((_, j) => j !== i))}
+                          title="Remove tier"
+                          style={{ width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 7, color: '#f87171', cursor: 'pointer', flexShrink: 0 }}
+                        >
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Custom registration fields builder */}
+                <div style={{ marginTop: 14, padding: 16, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>Registration Fields</div>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>Ask teams extra questions when they register</div>
+                    </div>
+                    <button onClick={() => setTourCustomFields(prev => [...prev, { id: `f_${Date.now()}`, label: '', type: 'text', options: [] }])} style={{
+                      display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px',
+                      background: 'rgba(138,21,56,0.15)', border: '1px solid rgba(138,21,56,0.3)',
+                      borderRadius: 8, color: 'var(--accent)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit',
+                    }}>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                      Add Field
+                    </button>
+                  </div>
+                  {tourCustomFields.length === 0 ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '10px 0' }}>
+                      No custom fields — teams only fill in team name &amp; players by default
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {tourCustomFields.map(field => (
+                        <div key={field.id} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: 10 }}>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <input
+                              value={field.label}
+                              onChange={e => setTourCustomFields(prev => prev.map(f => f.id === field.id ? { ...f, label: e.target.value } : f))}
+                              placeholder="Field label (e.g. Student ID)"
+                              style={{ flex: 3, padding: '7px 10px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 7, color: 'var(--text-primary)', fontSize: 13, outline: 'none', fontFamily: 'inherit' }}
+                            />
+                            <select
+                              value={field.type}
+                              onChange={e => setTourCustomFields(prev => prev.map(f => f.id === field.id ? { ...f, type: e.target.value, options: e.target.value === 'multiple_choice' ? (f.options.length ? f.options : ['', '']) : f.options } : f))}
+                              style={{ flex: 2, padding: '7px 10px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 7, color: 'var(--text-primary)', fontSize: 12.5, outline: 'none', fontFamily: 'inherit' }}
+                            >
+                              <option value="text">Short Text</option>
+                              <option value="number">Number</option>
+                              <option value="textarea">Long Text</option>
+                              <option value="multiple_choice">Multiple Choice</option>
+                            </select>
+                            <button
+                              onClick={() => setTourCustomFields(prev => prev.filter(f => f.id !== field.id))}
+                              title="Remove field"
+                              style={{ width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 7, color: '#f87171', cursor: 'pointer', flexShrink: 0 }}
+                            >
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                            </button>
+                          </div>
+                          {field.type === 'multiple_choice' && (
+                            <div style={{ marginTop: 10, paddingLeft: 10, borderLeft: '2px solid rgba(138,21,56,0.3)' }}>
+                              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 7, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Options</div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                {field.options.map((opt, oi) => (
+                                  <div key={oi} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                    <div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.2)', flexShrink: 0 }} />
+                                    <input
+                                      value={opt}
+                                      onChange={e => setTourCustomFields(prev => prev.map(f => f.id === field.id ? { ...f, options: f.options.map((o, j) => j === oi ? e.target.value : o) } : f))}
+                                      placeholder={`Option ${oi + 1}`}
+                                      style={{ flex: 1, padding: '6px 9px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 7, color: 'var(--text-primary)', fontSize: 12.5, outline: 'none', fontFamily: 'inherit' }}
+                                    />
+                                    {field.options.length > 2 && (
+                                      <button
+                                        onClick={() => setTourCustomFields(prev => prev.map(f => f.id === field.id ? { ...f, options: f.options.filter((_, j) => j !== oi) } : f))}
+                                        style={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', borderRadius: 4, flexShrink: 0 }}
+                                      >
+                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                              <button
+                                onClick={() => setTourCustomFields(prev => prev.map(f => f.id === field.id ? { ...f, options: [...f.options, ''] } : f))}
+                                style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', background: 'none', border: '1px dashed rgba(255,255,255,0.15)', borderRadius: 7, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11.5, fontFamily: 'inherit' }}
+                              >
+                                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                Add option
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {tournamentError && (
+                  <div style={{ marginTop: 12, fontSize: 13, color: '#f87171', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '10px 14px' }}>
+                    {tournamentError}
+                  </div>
+                )}
+                <div style={{ marginTop: 16, display: 'flex', gap: 10 }}>
+                  <button onClick={createTournament} disabled={creatingTournament || !tourName.trim()} style={{
+                    flex: 2, padding: '11px', background: creatingTournament ? 'rgba(138,21,56,0.4)' : 'var(--accent)',
+                    border: 'none', borderRadius: 11, color: '#fff', fontSize: 14, fontWeight: 700,
+                    cursor: creatingTournament ? 'default' : 'pointer',
+                    boxShadow: creatingTournament ? 'none' : '0 4px 16px rgba(138,21,56,0.35)',
+                    opacity: !tourName.trim() ? 0.5 : 1, fontFamily: 'inherit',
+                  }}>
+                    {creatingTournament ? 'Creating…' : 'Create Tournament'}
+                  </button>
+                  <button onClick={() => setShowTournamentForm(false)} style={{ flex: 1, padding: '11px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 11, color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Tournament list */}
+            {loadingTournaments ? (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
+                <div style={{ width: 22, height: 22, border: '3px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+              </div>
+            ) : tournaments.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)', fontSize: 14 }}>
+                <div style={{ fontSize: 32, marginBottom: 10 }}>🏆</div>
+                No tournaments yet. Create one to get started!
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {tournaments.map(t => {
+                  const sc = STATUS_COLORS[t.status] ?? STATUS_COLORS.registration_open
+                  return (
+                    <div key={t.id} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{t.name}</span>
+                          <span style={{ fontSize: 10.5, fontWeight: 700, color: sc.color, background: sc.bg, borderRadius: 999, padding: '2px 8px' }}>{sc.label}</span>
+                          {t._pending > 0 && <span style={{ fontSize: 10.5, fontWeight: 700, color: '#f87171', background: 'rgba(239,68,68,0.12)', borderRadius: 999, padding: '2px 8px' }}>{t._pending} pending</span>}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                          {t.sport} · {t.format === 'single_elimination' ? 'Knockout' : 'Round Robin'} · {t._accepted}/{t.max_teams} teams
+                          {t.start_date && <> · {new Date(t.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</>}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                        <button onClick={() => navigate(`/tournaments/${t.id}`)} style={{
+                          padding: '8px 14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: 9, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+                          whiteSpace: 'nowrap', transition: 'all 0.15s',
+                        }}
+                          onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)' }}
+                          onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)' }}
+                        >
+                          Manage →
+                        </button>
+                        {deleteTournamentConfirmId === t.id ? (
+                          <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+                            <span style={{ fontSize: 11.5, color: '#f87171', whiteSpace: 'nowrap' }}>Delete?</span>
+                            <button
+                              onClick={() => deleteTournament(t.id)}
+                              disabled={deletingTournamentId === t.id}
+                              style={{ padding: '6px 10px', background: 'rgba(239,68,68,0.8)', border: 'none', borderRadius: 7, color: '#fff', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, fontFamily: 'inherit' }}
+                            >
+                              {deletingTournamentId === t.id ? '…' : 'Yes'}
+                            </button>
+                            <button onClick={() => setDeleteTournamentConfirmId(null)} style={{ padding: '6px 10px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 7, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11.5, fontFamily: 'inherit' }}>No</button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setDeleteTournamentConfirmId(t.id)}
+                            title="Delete tournament"
+                            style={{ width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.18)', borderRadius: 9, color: '#f87171', cursor: 'pointer', transition: 'all 0.15s' }}
+                            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.15)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.4)' }}
+                            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.07)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.18)' }}
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             )}
           </div>
         )
