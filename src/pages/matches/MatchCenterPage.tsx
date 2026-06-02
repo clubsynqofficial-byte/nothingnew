@@ -72,7 +72,7 @@ export default function MatchCenterPage() {
 
   // Admin commentary
   const [commentary, setCommentary] = useState('')
-  const [commentaryTeam, setCommentaryTeam] = useState('')
+  const [commentaryTeam] = useState('')
   const [commentaryPlayer, setCommentaryPlayer] = useState('')
   const [addingEvent, setAddingEvent] = useState(false)
 
