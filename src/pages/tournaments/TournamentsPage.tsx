@@ -217,7 +217,7 @@ export default function TournamentsPage() {
                 )}
 
                 {/* Stats row */}
-                <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
+                <div style={{ display: 'flex', gap: 20, marginBottom: 12 }}>
                   <div style={{ textAlign: 'center' }}>
                     <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>{t._accepted}</div>
                     <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Teams</div>
@@ -225,12 +225,6 @@ export default function TournamentsPage() {
                   <div style={{ textAlign: 'center' }}>
                     <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>{t.max_teams}</div>
                     <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Max</div>
-                  </div>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
-                      {t.format === 'single_elimination' ? 'Knockout' : 'Round Robin'}
-                    </div>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Format</div>
                   </div>
                 </div>
 

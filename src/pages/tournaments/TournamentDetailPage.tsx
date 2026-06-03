@@ -860,7 +860,6 @@ export default function TournamentDetailPage() {
       {selectedTeam && (
         <TeamDetailModal
           team={selectedTeam}
-          registrationFields={tournament.registration_fields ?? []}
           isAdmin={isAdmin}
           actionLoading={actionLoading}
           deleteLoading={deleteLoading}
@@ -929,46 +928,62 @@ export default function TournamentDetailPage() {
             />
           ) : (
             /* ── View mode ── */
-            <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
-              {tournament.description && (
-                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 20 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>About</div>
-                  <p style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.65, margin: 0 }}>{tournament.description}</p>
-                </div>
-              )}
-              {tournament.rules && (
-                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 20 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Rules</div>
-                  <p style={{ fontSize: 13.5, color: 'var(--text-primary)', lineHeight: 1.7, margin: 0, whiteSpace: 'pre-wrap' }}>{tournament.rules}</p>
-                </div>
-              )}
-              <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 20 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>Details</div>
-                {[
-                  { label: 'Format', value: tournament.format === 'single_elimination' ? 'Single Elimination (Knockout)' : 'Round Robin' },
-                  { label: 'Max Teams', value: tournament.max_teams },
-                  { label: 'Team Size', value: `${tournament.min_team_size}–${tournament.max_team_size} players` },
-                  { label: 'Location', value: tournament.location ?? 'TBA' },
-                  { label: 'Start Date', value: fmt(tournament.start_date) },
-                  { label: 'Registration Closes', value: fmt(tournament.registration_deadline) },
-                ].map(row => (
-                  <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 10 }}>
-                    <span style={{ color: 'var(--text-muted)' }}>{row.label}</span>
-                    <span style={{ color: 'var(--text-primary)', fontWeight: 600, textAlign: 'right', maxWidth: '60%' }}>{String(row.value)}</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+              {/* Quick-info pill row */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {tournament.location && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 8, padding: '6px 12px' }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                    <span style={{ fontSize: 12.5, color: 'var(--text-primary)', fontWeight: 500 }}>{tournament.location}</span>
                   </div>
-                ))}
+                )}
+                {tournament.start_date && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 8, padding: '6px 12px' }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    <span style={{ fontSize: 12.5, color: 'var(--text-primary)', fontWeight: 500 }}>{fmt(tournament.start_date)}</span>
+                  </div>
+                )}
+                {tournament.registration_deadline && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 8, padding: '6px 12px' }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <span style={{ fontSize: 12.5, color: '#f59e0b', fontWeight: 600 }}>Reg. closes {fmt(tournament.registration_deadline)}</span>
+                  </div>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 8, padding: '6px 12px' }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                  <span style={{ fontSize: 12.5, color: 'var(--text-primary)', fontWeight: 500 }}>{tournament.min_team_size}–{tournament.max_team_size} players · max {tournament.max_teams} teams</span>
+                </div>
               </div>
+
+              {/* About */}
+              {tournament.description && (
+                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: '18px 20px' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>About</div>
+                  <p style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.7, margin: 0 }}>{tournament.description}</p>
+                </div>
+              )}
+
+              {/* Rules */}
+              {tournament.rules && (
+                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: '18px 20px' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Rules</div>
+                  <p style={{ fontSize: 13.5, color: 'var(--text-primary)', lineHeight: 1.75, margin: 0, whiteSpace: 'pre-wrap' }}>{tournament.rules}</p>
+                </div>
+              )}
+
+              {/* Prizes */}
               {((tournament.prizes && tournament.prizes.length > 0) || tournament.prize_description) && (
-                <div style={{ background: 'rgba(233,193,118,0.07)', border: '1px solid rgba(233,193,118,0.2)', borderRadius: 16, padding: 20 }}>
+                <div style={{ background: 'rgba(233,193,118,0.06)', border: '1px solid rgba(233,193,118,0.18)', borderRadius: 14, padding: '18px 20px' }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: '#e9c176', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>🏆 Prizes</div>
                   {tournament.prizes && tournament.prizes.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                       {tournament.prizes.map((prize, i) => (
-                        <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                          <span style={{ fontSize: 20, flexShrink: 0 }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '🏅'}</span>
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 700, color: '#e9c176', marginBottom: 2 }}>{prize.place}</div>
-                            <div style={{ fontSize: 14, color: 'var(--text-primary)' }}>{prize.description}</div>
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                          <span style={{ fontSize: 22, flexShrink: 0 }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '🏅'}</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 11.5, fontWeight: 700, color: '#e9c176', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{prize.place}</div>
+                            <div style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.4 }}>{prize.description}</div>
                           </div>
                         </div>
                       ))}
@@ -976,6 +991,13 @@ export default function TournamentDetailPage() {
                   ) : (
                     <p style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.65, margin: 0 }}>{tournament.prize_description}</p>
                   )}
+                </div>
+              )}
+
+              {/* Empty state */}
+              {!tournament.description && !tournament.rules && !((tournament.prizes && tournament.prizes.length > 0) || tournament.prize_description) && (
+                <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)', fontSize: 13 }}>
+                  No additional details yet.{isAdmin && ' Use Edit Details to add a description and rules.'}
                 </div>
               )}
             </div>
@@ -1718,9 +1740,8 @@ function TeamCard({ team, isAdmin, actionLoading, deleteLoading, onAccept, onDec
 }
 
 // ─── Team Detail Modal ────────────────────────────────────────────────────────
-function TeamDetailModal({ team, registrationFields, isAdmin, actionLoading, deleteLoading, onAccept, onDecline, onDelete, onClose }: {
+function TeamDetailModal({ team, isAdmin, actionLoading, deleteLoading, onAccept, onDecline, onDelete, onClose }: {
   team: Team
-  registrationFields: Array<{ id: string; label: string; type: string }>
   isAdmin: boolean
   actionLoading: string | null
   deleteLoading: string | null
@@ -1733,7 +1754,6 @@ function TeamDetailModal({ team, registrationFields, isAdmin, actionLoading, del
              team.status === 'declined' ? { color: '#ef4444', bg: 'rgba(239,68,68,0.12)', label: 'Declined' } :
              { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', label: 'Pending Review' }
   const initials = team.team_name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
-  const answers = team.registration_answers
   const registeredAt = new Date(team.created_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
 
   return (
@@ -1793,25 +1813,6 @@ function TeamDetailModal({ team, registrationFields, isAdmin, actionLoading, del
                   ))}
                 </div>
               )}
-            </div>
-          )}
-
-          {/* Custom field answers */}
-          {answers && registrationFields.length > 0 && Object.keys(answers).length > 0 && (
-            <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '12px 14px', marginBottom: 14 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Registration Answers</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {registrationFields.map(field => {
-                  const val = answers[field.id]
-                  if (!val) return null
-                  return (
-                    <div key={field.id}>
-                      <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 2 }}>{field.label}</div>
-                      <div style={{ fontSize: 13.5, color: 'var(--text-primary)' }}>{val}</div>
-                    </div>
-                  )
-                })}
-              </div>
             </div>
           )}
 
