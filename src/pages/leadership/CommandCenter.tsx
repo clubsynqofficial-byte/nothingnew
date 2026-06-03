@@ -220,7 +220,7 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
   const [showTournamentForm, setShowTournamentForm] = useState(false)
   const [deleteTournamentConfirmId, setDeleteTournamentConfirmId] = useState<string | null>(null)
   const [deletingTournamentId, setDeletingTournamentId] = useState<string | null>(null)
-  const [tourType, setTourType] = useState<'bracket' | 'head_to_head' | 'scoresheet' | 'scoreboard'>('bracket')
+  const tourType = 'bracket' as const
   const [tourName, setTourName] = useState('')
   const [tourSport, setTourSport] = useState('Basketball')
   const [tourDesc, setTourDesc] = useState('')
@@ -389,7 +389,6 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
     setTourPrizes([{ place: '1st Place', description: '' }, { place: '2nd Place', description: '' }, { place: '3rd Place', description: '' }])
     setTourCustomSport(''); setTourCustomFields([])
     setTourLogoFile(null); setTourLogoPreview(null)
-    setTourType('bracket')
     setShowTournamentForm(false)
     fetchTournaments()
   }
@@ -2201,130 +2200,8 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
             {/* Create form */}
             {showTournamentForm && (
               <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(138,21,56,0.2)', borderRadius: 16, padding: 20, marginBottom: 20 }}>
-                <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>New Tournament</h3>
-                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 18 }}>Pick a format first — this shapes how scores and results are shown to everyone.</p>
+                <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 18 }}>New Tournament</h3>
 
-                {/* ── Type picker ── */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10, marginBottom: 22 }}>
-                  {([
-                    {
-                      key: 'bracket' as const,
-                      title: 'Tournament Bracket',
-                      desc: 'Knockout rounds — teams advance until one wins',
-                      preview: (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '8px 10px', width: '100%', justifyContent: 'center' }}>
-                          {/* Round 1 */}
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                            {['A','B','C','D'].map(t => <div key={t} style={{ fontSize: 8, fontWeight: 700, background: 'rgba(255,255,255,0.1)', borderRadius: 3, padding: '2px 6px', color: 'rgba(255,255,255,0.7)' }}>{t}</div>)}
-                          </div>
-                          {/* Connectors */}
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                            <div style={{ width: 8, height: 11, borderTop: '1.5px solid rgba(255,255,255,0.2)', borderRight: '1.5px solid rgba(255,255,255,0.2)', borderRadius: '0 3px 0 0' }} />
-                            <div style={{ width: 8, height: 11, borderBottom: '1.5px solid rgba(255,255,255,0.2)', borderRight: '1.5px solid rgba(255,255,255,0.2)', borderRadius: '0 0 3px 0' }} />
-                            <div style={{ width: 8, height: 11, borderTop: '1.5px solid rgba(255,255,255,0.2)', borderRight: '1.5px solid rgba(255,255,255,0.2)', borderRadius: '0 3px 0 0' }} />
-                            <div style={{ width: 8, height: 11, borderBottom: '1.5px solid rgba(255,255,255,0.2)', borderRight: '1.5px solid rgba(255,255,255,0.2)', borderRadius: '0 0 3px 0' }} />
-                          </div>
-                          {/* Round 2 */}
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                            {['W1','W2'].map(t => <div key={t} style={{ fontSize: 8, fontWeight: 700, background: 'rgba(138,21,56,0.4)', borderRadius: 3, padding: '2px 6px', color: 'rgba(255,255,255,0.8)' }}>{t}</div>)}
-                          </div>
-                          {/* Connectors */}
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                            <div style={{ width: 8, height: 22, borderTop: '1.5px solid rgba(255,255,255,0.2)', borderRight: '1.5px solid rgba(255,255,255,0.2)', borderRadius: '0 3px 0 0' }} />
-                            <div style={{ width: 8, height: 22, borderBottom: '1.5px solid rgba(255,255,255,0.2)', borderRight: '1.5px solid rgba(255,255,255,0.2)', borderRadius: '0 0 3px 0' }} />
-                          </div>
-                          {/* Final */}
-                          <div style={{ fontSize: 9, fontWeight: 800, background: 'rgba(233,193,118,0.3)', borderRadius: 4, padding: '3px 7px', color: '#e9c176' }}>🏆</div>
-                        </div>
-                      ),
-                    },
-                    {
-                      key: 'head_to_head' as const,
-                      title: 'Sports Scoreboard',
-                      desc: 'One team or player vs another with live score tracking',
-                      preview: (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 12px', width: '100%' }}>
-                          <div style={{ flex: 1, textAlign: 'center' }}>
-                            <div style={{ width: 22, height: 22, borderRadius: 6, background: 'rgba(74,222,128,0.2)', border: '1px solid rgba(74,222,128,0.3)', margin: '0 auto 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: '#4ade80' }}>A</div>
-                            <div style={{ fontSize: 26, fontWeight: 900, color: '#fff', lineHeight: 1 }}>3</div>
-                          </div>
-                          <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>VS</div>
-                          <div style={{ flex: 1, textAlign: 'center' }}>
-                            <div style={{ width: 22, height: 22, borderRadius: 6, background: 'rgba(249,115,22,0.2)', border: '1px solid rgba(249,115,22,0.3)', margin: '0 auto 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: '#f97316' }}>B</div>
-                            <div style={{ fontSize: 26, fontWeight: 900, color: '#fff', lineHeight: 1 }}>1</div>
-                          </div>
-                        </div>
-                      ),
-                    },
-                    {
-                      key: 'scoresheet' as const,
-                      title: 'Scoresheet',
-                      desc: 'Multi-column table for events with multiple rounds or categories',
-                      preview: (
-                        <div style={{ padding: '8px 10px', width: '100%', fontSize: 7.5 }}>
-                          <div style={{ display: 'grid', gridTemplateColumns: '40px 18px 18px 18px 22px', gap: 2, marginBottom: 4, color: 'rgba(255,255,255,0.35)', fontWeight: 700, textTransform: 'uppercase' }}>
-                            <span>Name</span><span style={{ textAlign: 'center' }}>R1</span><span style={{ textAlign: 'center' }}>R2</span><span style={{ textAlign: 'center' }}>R3</span><span style={{ textAlign: 'center', color: '#e9c176' }}>Tot</span>
-                          </div>
-                          <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', marginBottom: 4 }} />
-                          {[['Alice','8','9','7','24'],['Bob','7','8','9','24'],['Carol','9','6','8','23']].map(([n,...scores]) => (
-                            <div key={n} style={{ display: 'grid', gridTemplateColumns: '40px 18px 18px 18px 22px', gap: 2, marginBottom: 3 }}>
-                              <span style={{ color: 'rgba(255,255,255,0.7)', fontWeight: 600 }}>{n}</span>
-                              {scores.slice(0,3).map((s,i) => <span key={i} style={{ textAlign: 'center', color: 'rgba(255,255,255,0.5)' }}>{s}</span>)}
-                              <span style={{ textAlign: 'center', color: '#e9c176', fontWeight: 700 }}>{scores[3]}</span>
-                            </div>
-                          ))}
-                        </div>
-                      ),
-                    },
-                    {
-                      key: 'scoreboard' as const,
-                      title: 'Live Scoreboard',
-                      desc: 'Participants shown as ranked blocks, updated in real time',
-                      preview: (
-                        <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 4, width: '100%' }}>
-                          {[['🥇','Player A','95'],['🥈','Player B','88'],['🥉','Player C','82']].map(([medal, name, pts]) => (
-                            <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(255,255,255,0.07)', borderRadius: 5, padding: '3px 7px' }}>
-                              <span style={{ fontSize: 10 }}>{medal}</span>
-                              <span style={{ fontSize: 8, fontWeight: 600, color: 'rgba(255,255,255,0.7)', flex: 1 }}>{name}</span>
-                              <span style={{ fontSize: 9, fontWeight: 800, color: '#4ade80' }}>{pts}</span>
-                            </div>
-                          ))}
-                        </div>
-                      ),
-                    },
-                  ] as const).map(t => (
-                    <button
-                      key={t.key}
-                      type="button"
-                      onClick={() => setTourType(t.key)}
-                      style={{
-                        display: 'flex', flexDirection: 'column', textAlign: 'left',
-                        background: tourType === t.key ? 'rgba(138,21,56,0.12)' : 'rgba(255,255,255,0.02)',
-                        border: `2px solid ${tourType === t.key ? 'var(--accent)' : 'rgba(255,255,255,0.08)'}`,
-                        borderRadius: 14, padding: 0, cursor: 'pointer', fontFamily: 'inherit',
-                        transition: 'all 0.15s', overflow: 'hidden',
-                      }}
-                      onMouseEnter={e => { if (tourType !== t.key) e.currentTarget.style.borderColor = 'rgba(255,255,255,0.18)' }}
-                      onMouseLeave={e => { if (tourType !== t.key) e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)' }}
-                    >
-                      {/* Preview area */}
-                      <div style={{ height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', background: tourType === t.key ? 'rgba(138,21,56,0.1)' : 'rgba(0,0,0,0.25)', width: '100%', borderBottom: `1px solid ${tourType === t.key ? 'rgba(138,21,56,0.2)' : 'rgba(255,255,255,0.05)'}` }}>
-                        {t.preview}
-                      </div>
-                      {/* Label */}
-                      <div style={{ padding: '10px 12px 12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                          <span style={{ fontSize: 12.5, fontWeight: 800, color: tourType === t.key ? 'var(--text-primary)' : 'rgba(255,255,255,0.7)' }}>{t.title}</span>
-                          {tourType === t.key && (
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                          )}
-                        </div>
-                        <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: 0, lineHeight: 1.5 }}>{t.desc}</p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-                <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', marginBottom: 18 }} />
 
                 {/* Tournament logo picker */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18, paddingBottom: 16, borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
