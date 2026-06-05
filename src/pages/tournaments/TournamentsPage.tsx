@@ -46,7 +46,7 @@ function formatDate(iso: string | null) {
 
 type Filter = 'all' | 'open' | 'ongoing' | 'completed'
 
-const MAINTENANCE_MODE = true
+const MAINTENANCE_MODE = false
 
 export default function TournamentsPage() {
   const navigate = useNavigate()
