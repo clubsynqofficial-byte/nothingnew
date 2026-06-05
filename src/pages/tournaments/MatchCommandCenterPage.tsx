@@ -145,8 +145,8 @@ export function MatchPublicView({ match, teams, cfg }: { match: Match | null; te
             <div style={{ fontSize: fs(28), fontWeight: 900, color: cfg.homeTextColor, textTransform: 'uppercase', lineHeight: 1, letterSpacing: '-0.02em' }}>{home?.team_name ?? 'HOME'}</div>
             <div style={{ display: 'flex', gap: fs(12), marginTop: fs(5), flexWrap: 'wrap' }}>
               {cfg.showFouls && <span style={{ fontSize: fs(12), color: `${cfg.homeTextColor}cc` }}>Fouls: {match.fouls1}</span>}
-              {cfg.showCards && (stats.yellows1 ?? 0) > 0 && <span style={{ fontSize: fs(12) }}>🟨 ×{stats.yellows1}</span>}
-              {cfg.showCards && (stats.reds1 ?? 0) > 0 && <span style={{ fontSize: fs(12) }}>🟥 ×{stats.reds1}</span>}
+              {cfg.showCards && (stats.yellows1 ?? 0) > 0 && <span style={{ fontSize: fs(12), display: 'inline-flex', alignItems: 'center', gap: 3 }}><span style={{ display: 'inline-block', width: fs(10), height: fs(13), background: '#eab308', borderRadius: 2 }} />×{stats.yellows1}</span>}
+              {cfg.showCards && (stats.reds1 ?? 0) > 0 && <span style={{ fontSize: fs(12), display: 'inline-flex', alignItems: 'center', gap: 3 }}><span style={{ display: 'inline-block', width: fs(10), height: fs(13), background: '#ef4444', borderRadius: 2 }} />×{stats.reds1}</span>}
             </div>
           </div>
           <div style={{ fontSize: fs(80), fontWeight: 900, color: cfg.homeTextColor, lineHeight: 1, fontVariantNumeric: 'tabular-nums', textShadow: `0 0 60px rgba(255,255,255,0.2)`, position: 'relative', zIndex: 1 }}>{match.score1}</div>
@@ -181,8 +181,8 @@ export function MatchPublicView({ match, teams, cfg }: { match: Match | null; te
             <div style={{ fontSize: fs(28), fontWeight: 900, color: cfg.awayTextColor, textTransform: 'uppercase', lineHeight: 1, letterSpacing: '-0.02em' }}>{away?.team_name ?? 'AWAY'}</div>
             <div style={{ display: 'flex', gap: fs(12), marginTop: fs(5), flexWrap: 'wrap' }}>
               {cfg.showFouls && <span style={{ fontSize: fs(12), color: `${cfg.awayTextColor}cc` }}>Fouls: {match.fouls2}</span>}
-              {cfg.showCards && (stats.yellows2 ?? 0) > 0 && <span style={{ fontSize: fs(12) }}>🟨 ×{stats.yellows2}</span>}
-              {cfg.showCards && (stats.reds2 ?? 0) > 0 && <span style={{ fontSize: fs(12) }}>🟥 ×{stats.reds2}</span>}
+              {cfg.showCards && (stats.yellows2 ?? 0) > 0 && <span style={{ fontSize: fs(12), display: 'inline-flex', alignItems: 'center', gap: 3 }}><span style={{ display: 'inline-block', width: fs(10), height: fs(13), background: '#eab308', borderRadius: 2 }} />×{stats.yellows2}</span>}
+              {cfg.showCards && (stats.reds2 ?? 0) > 0 && <span style={{ fontSize: fs(12), display: 'inline-flex', alignItems: 'center', gap: 3 }}><span style={{ display: 'inline-block', width: fs(10), height: fs(13), background: '#ef4444', borderRadius: 2 }} />×{stats.reds2}</span>}
             </div>
           </div>
           <div style={{ fontSize: fs(80), fontWeight: 900, color: cfg.awayTextColor, lineHeight: 1, fontVariantNumeric: 'tabular-nums', textShadow: `0 0 60px rgba(255,255,255,0.2)`, position: 'relative', zIndex: 1 }}>{match.score2}</div>
@@ -501,7 +501,7 @@ export default function MatchCommandCenterPage() {
               {/* Yellow */}
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
-                  <span style={{ fontSize: 14 }}>🟨</span>
+                  <span style={{ display: 'inline-block', width: 11, height: 15, background: '#eab308', borderRadius: 2, flexShrink: 0 }} />
                   <span style={{ fontSize: 18, fontWeight: 900, color: '#f59e0b', fontVariantNumeric: 'tabular-nums' }}>{yellows}</span>
                 </div>
                 <div style={{ display: 'flex', gap: 4 }}>
@@ -513,7 +513,7 @@ export default function MatchCommandCenterPage() {
               {/* Red */}
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
-                  <span style={{ fontSize: 14 }}>🟥</span>
+                  <span style={{ display: 'inline-block', width: 11, height: 15, background: '#ef4444', borderRadius: 2, flexShrink: 0 }} />
                   <span style={{ fontSize: 18, fontWeight: 900, color: '#f87171', fontVariantNumeric: 'tabular-nums' }}>{reds}</span>
                 </div>
                 <div style={{ display: 'flex', gap: 4 }}>
@@ -561,7 +561,9 @@ export default function MatchCommandCenterPage() {
         </button>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg, #8b2252, #c0395a)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, boxShadow: '0 2px 12px rgba(138,21,56,0.5)' }}>🎮</div>
+          <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg, #8b2252, #c0395a)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 12px rgba(138,21,56,0.5)' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M12 12h.01M8 12h.01M16 12h.01M12 8v.01M12 16v.01"/><path d="M6 10h2m-1-1v2"/></svg>
+          </div>
           <span style={{ fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: '-0.01em' }}>Command Center</span>
         </div>
 
@@ -619,7 +621,17 @@ export default function MatchCommandCenterPage() {
           {(['controls', 'setup'] as const).map(s => (
             <button key={s} className="cc-btn" onClick={() => setActiveSection(s)}
               style={{ padding: '9px 22px', borderRadius: 10, fontSize: 13, fontWeight: activeSection === s ? 700 : 500, color: activeSection === s ? '#fff' : 'rgba(255,255,255,0.4)', background: activeSection === s ? 'rgba(255,255,255,0.1)' : 'transparent', border: activeSection === s ? '1px solid rgba(255,255,255,0.14)' : '1px solid transparent', boxShadow: activeSection === s ? 'inset 0 1px 0 rgba(255,255,255,0.1)' : 'none' }}>
-              {s === 'controls' ? '🎮 Controls' : '🎨 Customize'}
+              {s === 'controls' ? (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h2m-1-1v2M15 12h2"/></svg>
+                  Controls
+                </span>
+              ) : (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 0 0 4.93 19.07M4.93 4.93a10 10 0 0 0 14.14 14.14"/><path d="M12 2v2m0 18v2M2 12h2m18 0h2"/></svg>
+                  Customize
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -654,11 +666,20 @@ export default function MatchCommandCenterPage() {
                   </div>
                   <button className="cc-btn" onClick={() => { if (!isAdmin) return; clockRunning ? pauseClock() : startClock() }}
                     style={{ width: '100%', padding: '13px', background: clockRunning ? 'rgba(239,68,68,0.15)' : 'rgba(74,222,128,0.15)', border: `1.5px solid ${clockRunning ? 'rgba(239,68,68,0.4)' : 'rgba(74,222,128,0.4)'}`, borderRadius: 12, color: clockRunning ? '#f87171' : '#4ade80', fontWeight: 800, fontSize: 14.5, opacity: isAdmin ? 1 : 0.35, boxShadow: clockRunning ? '0 0 20px rgba(239,68,68,0.15)' : '0 0 20px rgba(74,222,128,0.15)' }}>
-                    {clockRunning ? '⏸ Pause' : '▶ Start'}
+                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+                      {clockRunning
+                        ? <><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>Pause</>
+                        : <><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>Start</>
+                      }
+                    </span>
                   </button>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <button className="cc-btn" onClick={() => isAdmin && resetClock()} style={{ flex: 1, padding: '9px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, color: 'rgba(255,255,255,0.45)', fontWeight: 600, fontSize: 12, opacity: isAdmin ? 1 : 0.35 }}>↺ Reset</button>
-                    <button className="cc-btn" onClick={() => buzz()} style={{ flex: 1, padding: '9px', background: 'rgba(138,21,56,0.18)', border: '1px solid rgba(138,21,56,0.35)', borderRadius: 10, color: 'var(--accent)', fontWeight: 700, fontSize: 13, boxShadow: '0 0 16px rgba(138,21,56,0.2)' }}>🔔</button>
+                    <button className="cc-btn" onClick={() => isAdmin && resetClock()} style={{ flex: 1, padding: '9px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, color: 'rgba(255,255,255,0.45)', fontWeight: 600, fontSize: 12, opacity: isAdmin ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.36"/></svg>Reset
+                    </button>
+                    <button className="cc-btn" onClick={() => buzz()} style={{ flex: 1, padding: '9px', background: 'rgba(138,21,56,0.18)', border: '1px solid rgba(138,21,56,0.35)', borderRadius: 10, color: 'var(--accent)', fontWeight: 700, fontSize: 12, boxShadow: '0 0 16px rgba(138,21,56,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>Buzzer
+                    </button>
                   </div>
                 </div>
               </div>
@@ -687,26 +708,40 @@ export default function MatchCommandCenterPage() {
                     <button className="cc-btn" onClick={() => isAdmin && setPeriod(1)} style={{ padding: '9px 0', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 9, color: '#fff', fontWeight: 700, fontSize: 12.5, opacity: isAdmin ? 1 : 0.35 }}>+1</button>
                     <button className="cc-btn" onClick={() => isAdmin && setPeriod(-1)} style={{ padding: '9px 0', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 9, color: 'rgba(255,255,255,0.45)', fontWeight: 700, fontSize: 12.5, opacity: isAdmin ? 1 : 0.35 }}>−1</button>
                   </div>
-                  <button className="cc-btn" onClick={() => isAdmin && setGameStatus('halftime')} style={{ width: '100%', padding: '9px', background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.25)', borderRadius: 10, color: '#60a5fa', fontWeight: 700, fontSize: 12.5, opacity: isAdmin ? 1 : 0.35 }}>⏸ Halftime</button>
-                  <button className="cc-btn" onClick={() => isAdmin && setGameStatus('extra_time')} style={{ width: '100%', padding: '9px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 10, color: '#f59e0b', fontWeight: 700, fontSize: 12.5, opacity: isAdmin ? 1 : 0.35 }}>⚡ Extra Time</button>
-                  <button className="cc-btn" onClick={() => isAdmin && setGameStatus('in_progress')} style={{ width: '100%', padding: '9px', background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.25)', borderRadius: 10, color: '#4ade80', fontWeight: 700, fontSize: 12.5, opacity: isAdmin ? 1 : 0.35 }}>▶ Resume</button>
+                  <button className="cc-btn" onClick={() => isAdmin && setGameStatus('halftime')} style={{ width: '100%', padding: '9px', background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.25)', borderRadius: 10, color: '#60a5fa', fontWeight: 700, fontSize: 12.5, opacity: isAdmin ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>Halftime
+                  </button>
+                  <button className="cc-btn" onClick={() => isAdmin && setGameStatus('extra_time')} style={{ width: '100%', padding: '9px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 10, color: '#f59e0b', fontWeight: 700, fontSize: 12.5, opacity: isAdmin ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Extra Time
+                  </button>
+                  <button className="cc-btn" onClick={() => isAdmin && setGameStatus('in_progress')} style={{ width: '100%', padding: '9px', background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.25)', borderRadius: 10, color: '#4ade80', fontWeight: 700, fontSize: 12.5, opacity: isAdmin ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>Resume
+                  </button>
 
                   {home && away && isAdmin && (
                     <>
                       <div style={{ height: 1, background: 'linear-gradient(to right, transparent, rgba(255,255,255,0.08), transparent)', margin: '2px 0' }} />
                       <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase', letterSpacing: '0.14em', textAlign: 'center' }}>Declare Winner</div>
-                      <button className="cc-btn" onClick={() => declareWinner(match?.team1_id ?? null)} style={{ width: '100%', padding: '8px 10px', background: `${cfg.homeColor}20`, border: `1px solid ${cfg.homeColor}50`, borderRadius: 9, color: '#fff', fontWeight: 700, fontSize: 11.5, textAlign: 'left' }}>
-                        🏆 {home.team_name}
+                      <button className="cc-btn" onClick={() => declareWinner(match?.team1_id ?? null)} style={{ width: '100%', padding: '8px 10px', background: `${cfg.homeColor}20`, border: `1px solid ${cfg.homeColor}50`, borderRadius: 9, color: '#fff', fontWeight: 700, fontSize: 11.5, display: 'flex', alignItems: 'center', gap: 7 }}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 9H4.5a2.5 2.5 0 0 0 0 5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 1 0 5H18"/><path d="M4 22h16M8 22V11.3"/><path d="M16 22V11.3"/><rect x="6" y="2" width="12" height="9" rx="1"/></svg>
+                      {home.team_name}
                       </button>
-                      <button className="cc-btn" onClick={() => declareWinner(match?.team2_id ?? null)} style={{ width: '100%', padding: '8px 10px', background: `${cfg.awayColor}20`, border: `1px solid ${cfg.awayColor}50`, borderRadius: 9, color: '#fff', fontWeight: 700, fontSize: 11.5, textAlign: 'left' }}>
-                        🏆 {away.team_name}
+                      <button className="cc-btn" onClick={() => declareWinner(match?.team2_id ?? null)} style={{ width: '100%', padding: '8px 10px', background: `${cfg.awayColor}20`, border: `1px solid ${cfg.awayColor}50`, borderRadius: 9, color: '#fff', fontWeight: 700, fontSize: 11.5, textAlign: 'left', display: 'flex', alignItems: 'center', gap: 7 }}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 9H4.5a2.5 2.5 0 0 0 0 5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 1 0 5H18"/><path d="M4 22h16M8 22V11.3"/><path d="M16 22V11.3"/><rect x="6" y="2" width="12" height="9" rx="1"/></svg>
+                        {away.team_name}
                       </button>
                     </>
                   )}
 
                   <div style={{ height: 1, background: 'linear-gradient(to right, transparent, rgba(255,255,255,0.08), transparent)', margin: '2px 0' }} />
-                  <button className="cc-btn" onClick={() => isAdmin && setGameStatus('final')} style={{ width: '100%', padding: '9px', background: 'rgba(233,193,118,0.1)', border: '1px solid rgba(233,193,118,0.28)', borderRadius: 10, color: '#e9c176', fontWeight: 800, fontSize: 13, opacity: isAdmin ? 1 : 0.35 }}>🏁 Full Time</button>
-                  <button className="cc-btn" onClick={() => isAdmin && fullReset()} style={{ width: '100%', padding: '8px', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 10, color: '#f87171', fontWeight: 600, fontSize: 12, opacity: isAdmin ? 1 : 0.35 }}>↺ Reset All</button>
+                  <button className="cc-btn" onClick={() => isAdmin && setGameStatus('final')} style={{ width: '100%', padding: '9px', background: 'rgba(233,193,118,0.1)', border: '1px solid rgba(233,193,118,0.28)', borderRadius: 10, color: '#e9c176', fontWeight: 800, fontSize: 13, opacity: isAdmin ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+                    Full Time
+                  </button>
+                  <button className="cc-btn" onClick={() => isAdmin && fullReset()} style={{ width: '100%', padding: '8px', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 10, color: '#f87171', fontWeight: 600, fontSize: 12, opacity: isAdmin ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.36"/></svg>
+                    Reset All
+                  </button>
                 </div>
               </div>
 
