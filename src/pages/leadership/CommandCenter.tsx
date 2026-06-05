@@ -381,6 +381,7 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
       logo_url: tournamentLogoUrl,
       prizes: filledPrizes.length > 0 ? filledPrizes : null,
       registration_fields: tourCustomFields.filter(f => f.label.trim()).map(f => ({ id: f.id, label: f.label.trim(), type: f.type, options: f.options })),
+      is_test: window.location.hostname === 'localhost',
     })
     setCreatingTournament(false)
     if (error) { setTournamentError(error.message); return }

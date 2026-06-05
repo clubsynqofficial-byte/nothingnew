@@ -25,6 +25,7 @@ interface Tournament {
   registration_fields: Array<{ id: string; label: string; type: string; options?: string[] }> | null
   logo_url: string | null
   type: 'bracket' | 'head_to_head' | 'scoresheet' | 'scoreboard' | null
+  maintenance_mode: boolean | null
   created_at: string
   club: { id: string; name: string; logo_url: string | null } | null
 }
@@ -169,6 +170,8 @@ export default function TournamentDetailPage() {
   const [savingMatch, setSavingMatch] = useState(false)
   const [generatingBracket, setGeneratingBracket] = useState(false)
   const [assigningSlot, setAssigningSlot] = useState<{ matchId: string; slot: 'team1_id' | 'team2_id' } | null>(null)
+  const [scoreboardFlow, setScoreboardFlow] = useState<null | 'sport' | 'template'>(null)
+  const [scoreboardTemplate, setScoreboardTemplate] = useState<string | null>(null)
   const [assignLoading, setAssignLoading] = useState(false)
 
   // Roster management
@@ -341,6 +344,13 @@ export default function TournamentDetailPage() {
     await supabase.from('tournaments').update({ status: newStatus }).eq('id', tournament.id)
     setTournament(prev => prev ? { ...prev, status: newStatus } : prev)
     setUpdatingStatus(false)
+  }
+
+  async function toggleMaintenance() {
+    if (!tournament) return
+    const next = !tournament.maintenance_mode
+    await supabase.from('tournaments').update({ maintenance_mode: next }).eq('id', tournament.id)
+    setTournament(prev => prev ? { ...prev, maintenance_mode: next } : prev)
   }
 
   async function handleDeleteTournament() {
@@ -628,6 +638,22 @@ export default function TournamentDetailPage() {
     </div>
   )
 
+  // Non-admins see maintenance page when enabled
+  if (tournament.maintenance_mode && !isAdmin) return (
+    <div className="page-content" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', textAlign: 'center', padding: '60px 20px' }}>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes wrench{0%,100%{transform:rotate(-15deg)}50%{transform:rotate(15deg)}}`}</style>
+      <div style={{ fontSize: 56, marginBottom: 20, animation: 'wrench 1.6s ease-in-out infinite' }}>🔧</div>
+      <h2 style={{ fontSize: 24, fontWeight: 900, color: 'var(--text-primary)', marginBottom: 10, letterSpacing: '-0.02em' }}>Under Maintenance</h2>
+      <p style={{ fontSize: 15, color: 'var(--text-muted)', maxWidth: 380, lineHeight: 1.65, marginBottom: 28 }}>
+        <strong style={{ color: 'var(--text-primary)' }}>{tournament.name}</strong> is currently being updated. Check back soon — we'll be up shortly!
+      </p>
+      <button onClick={() => navigate('/tournaments')} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 20px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 11, color: 'var(--text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+        Back to Tournaments
+      </button>
+    </div>
+  )
+
   const st = STATUS_STYLES[tournament.status] ?? STATUS_STYLES.registration_open
   const acceptedTeams = teams.filter(t => t.status === 'accepted')
   const pendingTeams = teams.filter(t => t.status === 'pending')
@@ -640,7 +666,7 @@ export default function TournamentDetailPage() {
   const TABS: { key: Tab; label: string; badge?: number }[] = [
     { key: 'info', label: 'Info' },
     { key: 'teams', label: 'Teams', badge: isAdmin ? pendingTeams.length : acceptedTeams.length },
-    { key: 'bracket', label: matches.length > 0 ? 'Scoreboard' : 'Bracket', badge: matches.filter(m => m.status === 'live').length || undefined },
+    { key: 'bracket', label: 'Scoreboard', badge: matches.filter(m => m.status === 'live').length || undefined },
     ...(user ? [{ key: 'register' as Tab, label: myRegistration ? 'My Registration' : 'Register' }] : []),
   ]
 
@@ -704,7 +730,14 @@ export default function TournamentDetailPage() {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
           Tournaments
         </button>
-        <button onClick={() => window.open(`/tournaments/${tournament.id}/scoreboard`, '_blank')} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: matches.filter(m => m.status === 'live').length > 0 ? 'rgba(249,115,22,0.12)' : 'rgba(255,255,255,0.05)', border: `1px solid ${matches.filter(m => m.status === 'live').length > 0 ? 'rgba(249,115,22,0.35)' : 'rgba(255,255,255,0.12)'}`, borderRadius: 9, color: matches.filter(m => m.status === 'live').length > 0 ? '#f97316' : 'var(--text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit', transition: 'all 0.15s' }}>
+        <button
+          onClick={() => {
+            const url = tournament.sport === 'Basketball'
+              ? `/tournaments/${tournament.id}/scoreboard/basketball?view=public`
+              : `/tournaments/${tournament.id}/scoreboard`
+            window.open(url, '_blank')
+          }}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: matches.filter(m => m.status === 'live').length > 0 ? 'rgba(249,115,22,0.12)' : 'rgba(255,255,255,0.05)', border: `1px solid ${matches.filter(m => m.status === 'live').length > 0 ? 'rgba(249,115,22,0.35)' : 'rgba(255,255,255,0.12)'}`, borderRadius: 9, color: matches.filter(m => m.status === 'live').length > 0 ? '#f97316' : 'var(--text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit', transition: 'all 0.15s' }}>
           {matches.filter(m => m.status === 'live').length > 0 && <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#f97316', animation: 'live-pulse 1.4s ease-in-out infinite' }} />}
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9l6 6"/><path d="M15 9H9v6"/></svg>
           View Scoreboard
@@ -799,7 +832,7 @@ export default function TournamentDetailPage() {
                 Delete Tournament
               </button>
             </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
               {(['registration_open', 'registration_closed', 'ongoing', 'completed', 'cancelled'] as Tournament['status'][]).map(s => (
                 <button key={s} disabled={tournament.status === s || updatingStatus} onClick={() => handleStatusUpdate(s)} style={{
                   padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
@@ -814,6 +847,20 @@ export default function TournamentDetailPage() {
                 </button>
               ))}
             </div>
+            {/* Maintenance mode toggle */}
+            <button
+              onClick={toggleMaintenance}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '7px 14px',
+                background: tournament.maintenance_mode ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.05)',
+                border: `1px solid ${tournament.maintenance_mode ? 'rgba(245,158,11,0.4)' : 'rgba(255,255,255,0.12)'}`,
+                borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
+                color: tournament.maintenance_mode ? '#f59e0b' : 'var(--text-muted)', transition: 'all 0.15s',
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+              {tournament.maintenance_mode ? 'Maintenance ON — click to go live' : 'Put under maintenance'}
+            </button>
           </div>
         )}
       </div>
@@ -1072,96 +1119,101 @@ export default function TournamentDetailPage() {
         <div style={{ animation: 'td-in 0.25s ease both' }}>
           {matches.length === 0 ? (
             isAdmin ? (
-              /* ── Admin bracket setup ── */
-              <div style={{ maxWidth: 560, animation: 'td-in 0.25s ease both' }}>
-                <div style={{ marginBottom: 20 }}>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 4 }}>Build Your Bracket</div>
-                  <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                    Add all participating teams, then generate the bracket to create matchups automatically.
+              scoreboardFlow === 'sport' ? (
+                <ScoreboardSportPicker
+                  onBack={() => setScoreboardFlow(null)}
+                  onSelect={() => setScoreboardFlow('template')}
+                />
+              ) : scoreboardFlow === 'template' ? (
+                <ScoreboardTemplatePicker
+                  onBack={() => setScoreboardFlow('sport')}
+                  onSelect={t => {
+                    setScoreboardTemplate(t)
+                    setScoreboardFlow(null)
+                    if (t === 'Basketball Scoreboard Template') {
+                      navigate(`/tournaments/${tournament.id}/scoreboard/basketball`)
+                    }
+                  }}
+                />
+              ) : scoreboardTemplate ? (
+                /* ── Bracket builder (template chosen) ── */
+                <div style={{ maxWidth: 560, animation: 'td-in 0.25s ease both' }}>
+                  {/* Selected template badge */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(138,21,56,0.18)', border: '1px solid rgba(138,21,56,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>🏀</div>
+                      <div>
+                        <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)' }}>{scoreboardTemplate}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Basketball · Selected template</div>
+                      </div>
+                    </div>
+                    <button onClick={() => setScoreboardTemplate(null)} style={{ padding: '5px 11px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 7, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11.5, fontFamily: 'inherit' }}>Change</button>
                   </div>
-                </div>
 
-                {/* Team list */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
-                  {acceptedTeams.length === 0 && (
-                    <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-muted)', fontSize: 13, background: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: 12 }}>
-                      No teams yet — add your first team below
+                  <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
+                    Add all participating teams, then generate the scoreboard to create matchups.
+                  </div>
+
+                  {/* Team list */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+                    {acceptedTeams.length === 0 && (
+                      <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-muted)', fontSize: 13, background: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: 12 }}>
+                        No teams yet — add your first team below
+                      </div>
+                    )}
+                    {acceptedTeams.map((team, i) => (
+                      <div key={team.id} style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 12, padding: '10px 14px' }}>
+                        <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'rgba(138,21,56,0.2)', border: '1px solid rgba(138,21,56,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 800, color: 'var(--accent)', flexShrink: 0 }}>{i + 1}</div>
+                        <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: 'rgba(255,255,255,0.5)', overflow: 'hidden', flexShrink: 0 }}>
+                          {team.logo_url ? <img src={team.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : team.team_name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()}
+                        </div>
+                        <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{team.team_name}</span>
+                        <button onClick={() => handleRemoveDirectTeam(team.id)} style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.18)', borderRadius: 7, color: '#f87171', cursor: 'pointer', flexShrink: 0 }}>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 8, marginBottom: directTeamError ? 8 : 16 }}>
+                    <input value={directTeamName} onChange={e => { setDirectTeamName(e.target.value); setDirectTeamError('') }} onKeyDown={e => e.key === 'Enter' && handleAddTeamDirectly()} placeholder="Team name (press Enter to add)" style={{ flex: 1, padding: '10px 14px', background: 'rgba(255,255,255,0.06)', border: `1px solid ${directTeamError ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.12)'}`, borderRadius: 10, color: 'var(--text-primary)', fontSize: 14, outline: 'none', fontFamily: 'inherit' }} />
+                    <button onClick={handleAddTeamDirectly} disabled={addingDirectTeam || !directTeamName.trim()} style={{ padding: '10px 18px', background: directTeamName.trim() ? 'var(--accent)' : 'rgba(255,255,255,0.04)', border: 'none', borderRadius: 10, color: '#fff', cursor: directTeamName.trim() ? 'pointer' : 'default', fontWeight: 700, fontSize: 13, fontFamily: 'inherit', opacity: directTeamName.trim() ? 1 : 0.4 }}>
+                      {addingDirectTeam ? '…' : 'Add'}
+                    </button>
+                  </div>
+                  {directTeamError && <div style={{ fontSize: 12.5, color: '#f87171', marginBottom: 12 }}>{directTeamError}</div>}
+                  {teams.filter(t => t.status === 'pending').length > 0 && (
+                    <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 14, padding: '10px 14px', background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 10 }}>
+                      <span style={{ color: '#f59e0b', fontWeight: 600 }}>{teams.filter(t => t.status === 'pending').length} pending registration{teams.filter(t => t.status === 'pending').length !== 1 ? 's' : ''}</span>
+                      {' '}— accept them in the Teams tab to include.
                     </div>
                   )}
-                  {acceptedTeams.map((team, i) => (
-                    <div key={team.id} style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 12, padding: '10px 14px' }}>
-                      {/* Seed number */}
-                      <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'rgba(138,21,56,0.2)', border: '1px solid rgba(138,21,56,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 800, color: 'var(--accent)', flexShrink: 0 }}>
-                        {i + 1}
-                      </div>
-                      {/* Logo */}
-                      <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: 'rgba(255,255,255,0.5)', overflow: 'hidden', flexShrink: 0 }}>
-                        {team.logo_url
-                          ? <img src={team.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          : team.team_name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
-                        }
-                      </div>
-                      {/* Name */}
-                      <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{team.team_name}</span>
-                      {/* Remove */}
-                      <button onClick={() => handleRemoveDirectTeam(team.id)} title="Remove team" style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.18)', borderRadius: 7, color: '#f87171', cursor: 'pointer', flexShrink: 0, transition: 'all 0.15s' }}
-                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.18)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.4)' }}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.18)' }}
-                      >
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                      </button>
+                  <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', marginBottom: 14 }} />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+                    <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                      {acceptedTeams.length < 2 ? 'Add at least 2 teams to generate' : <span><span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{acceptedTeams.length} teams</span> ready</span>}
                     </div>
-                  ))}
-                </div>
-
-                {/* Add team input */}
-                <div style={{ display: 'flex', gap: 8, marginBottom: directTeamError ? 8 : 20 }}>
-                  <input
-                    value={directTeamName}
-                    onChange={e => { setDirectTeamName(e.target.value); setDirectTeamError('') }}
-                    onKeyDown={e => e.key === 'Enter' && handleAddTeamDirectly()}
-                    placeholder="Team name (press Enter to add)"
-                    style={{ flex: 1, padding: '10px 14px', background: 'rgba(255,255,255,0.06)', border: `1px solid ${directTeamError ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.12)'}`, borderRadius: 10, color: 'var(--text-primary)', fontSize: 14, outline: 'none', fontFamily: 'inherit' }}
-                  />
-                  <button onClick={handleAddTeamDirectly} disabled={addingDirectTeam || !directTeamName.trim()} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px', background: !directTeamName.trim() ? 'rgba(255,255,255,0.04)' : 'var(--accent)', border: 'none', borderRadius: 10, color: '#fff', cursor: !directTeamName.trim() ? 'default' : 'pointer', fontWeight: 700, fontSize: 13, fontFamily: 'inherit', flexShrink: 0, opacity: !directTeamName.trim() ? 0.4 : 1, transition: 'all 0.15s' }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                    {addingDirectTeam ? 'Adding…' : 'Add'}
-                  </button>
-                </div>
-                {directTeamError && <div style={{ fontSize: 12.5, color: '#f87171', marginBottom: 16 }}>{directTeamError}</div>}
-
-                {/* Teams from registration (if any pending) */}
-                {teams.filter(t => t.status === 'pending').length > 0 && (
-                  <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 16, padding: '10px 14px', background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)', borderRadius: 10 }}>
-                    <span style={{ color: '#f59e0b', fontWeight: 600 }}>{teams.filter(t => t.status === 'pending').length} pending registration{teams.filter(t => t.status === 'pending').length !== 1 ? 's' : ''}</span>
-                    {' '}— accept them in the Teams tab to include them in the bracket.
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <button onClick={generateBracket} disabled={generatingBracket || acceptedTeams.length < 2} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 22px', background: acceptedTeams.length < 2 ? 'rgba(255,255,255,0.04)' : 'var(--accent)', border: 'none', borderRadius: 12, color: '#fff', cursor: acceptedTeams.length < 2 ? 'default' : 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit', opacity: acceptedTeams.length < 2 ? 0.4 : 1, boxShadow: acceptedTeams.length >= 2 && !generatingBracket ? '0 4px 18px rgba(138,21,56,0.4)' : 'none' }}>
+                        {generatingBracket ? <><div style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />Generating…</> : 'Generate Scoreboard →'}
+                      </button>
+                      {matches.length > 0 && scoreboardTemplate === 'Basketball Scoreboard Template' && (
+                        <button onClick={() => navigate(`/tournaments/${tournament.id}/scoreboard/basketball`)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '11px 20px', background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 12, color: '#4ade80', cursor: 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit' }}>
+                          🏀 Launch Scoreboard
+                        </button>
+                      )}
+                    </div>
                   </div>
-                )}
-
-                {/* Divider */}
-                <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', marginBottom: 16 }} />
-
-                {/* Generate button */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-                  <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                    {acceptedTeams.length < 2
-                      ? 'Add at least 2 teams to generate the bracket'
-                      : <span><span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{acceptedTeams.length} teams</span> ready · {Math.pow(2, Math.ceil(Math.log2(acceptedTeams.length)))} slot bracket</span>
-                    }
-                  </div>
-                  <button onClick={generateBracket} disabled={generatingBracket || acceptedTeams.length < 2} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 22px', background: acceptedTeams.length < 2 ? 'rgba(255,255,255,0.04)' : 'var(--accent)', border: 'none', borderRadius: 12, color: '#fff', cursor: acceptedTeams.length < 2 ? 'default' : 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit', opacity: acceptedTeams.length < 2 ? 0.4 : 1, boxShadow: acceptedTeams.length >= 2 && !generatingBracket ? '0 4px 18px rgba(138,21,56,0.4)' : 'none', transition: 'all 0.15s' }}>
-                    {generatingBracket
-                      ? <><div style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />Generating…</>
-                      : <>Generate Bracket <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg></>
-                    }
-                  </button>
                 </div>
-              </div>
+              ) : (
+                /* ── Create Scoreboard CTA ── */
+                <ScoreboardCreateCTA onStart={() => setScoreboardFlow('sport')} />
+              )
             ) : (
               <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-                <div style={{ fontSize: 40, marginBottom: 12 }}>🎯</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>Bracket not set up yet</div>
-                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>The bracket will appear here once the admin sets it up.</div>
+                <div style={{ fontSize: 40, marginBottom: 12 }}>🏀</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>Scoreboard not set up yet</div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>The scoreboard will appear here once the admin sets it up.</div>
               </div>
             )
           ) : (
@@ -2119,6 +2171,289 @@ function RoundRobinStandings({ teams, matches }: { teams: Team[]; matches: Match
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+// ─── Scoreboard Create CTA ───────────────────────────────────────────────────
+function ScoreboardCreateCTA({ onStart }: { onStart: () => void }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '48px 20px 40px', animation: 'td-in 0.3s ease both' }}>
+      {/* Mini scoreboard preview */}
+      <div style={{ marginBottom: 28, background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 18, padding: '20px 28px', display: 'flex', alignItems: 'center', gap: 20, boxShadow: '0 8px 40px rgba(0,0,0,0.4)' }}>
+        {/* Team A */}
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ width: 36, height: 36, borderRadius: 9, background: 'rgba(74,222,128,0.15)', border: '1px solid rgba(74,222,128,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, margin: '0 auto 6px' }}>🏀</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.5)', marginBottom: 4 }}>TEAM A</div>
+          <div style={{ fontSize: 36, fontWeight: 900, color: '#4ade80', lineHeight: 1 }}>72</div>
+        </div>
+        {/* Centre */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(249,115,22,0.8)', textTransform: 'uppercase', letterSpacing: '0.1em', background: 'rgba(249,115,22,0.12)', borderRadius: 6, padding: '3px 8px' }}>Q4</div>
+          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', fontVariantNumeric: 'tabular-nums' }}>2:41</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.3)' }}>VS</div>
+        </div>
+        {/* Team B */}
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ width: 36, height: 36, borderRadius: 9, background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, margin: '0 auto 6px' }}>🏀</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.5)', marginBottom: 4 }}>TEAM B</div>
+          <div style={{ fontSize: 36, fontWeight: 900, color: '#f97316', lineHeight: 1 }}>68</div>
+        </div>
+      </div>
+
+      <h2 style={{ fontSize: 22, fontWeight: 900, color: 'var(--text-primary)', marginBottom: 8, letterSpacing: '-0.02em' }}>Set Up Your Scoreboard</h2>
+      <p style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 28, textAlign: 'center', maxWidth: 360, lineHeight: 1.6 }}>
+        Choose a sport and template to create a live, real-time scoreboard for your tournament.
+      </p>
+      <button
+        onClick={onStart}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '13px 28px', background: 'var(--accent)', border: 'none', borderRadius: 14, color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 20px rgba(138,21,56,0.45)', transition: 'all 0.15s' }}
+        onMouseEnter={e => (e.currentTarget.style.transform = 'translateY(-1px)', e.currentTarget.style.boxShadow = '0 8px 28px rgba(138,21,56,0.55)')}
+        onMouseLeave={e => (e.currentTarget.style.transform = 'translateY(0)', e.currentTarget.style.boxShadow = '0 4px 20px rgba(138,21,56,0.45)')}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Create Scoreboard
+      </button>
+    </div>
+  )
+}
+
+// ─── Scoreboard Sport Picker ──────────────────────────────────────────────────
+const SPORTS_LIST = [
+  { key: 'universal', label: 'Universal', emoji: '🏆', locked: true },
+  { key: 'football', label: 'Football', emoji: '⚽', locked: true },
+  { key: 'baseball', label: 'Baseball', emoji: '⚾', locked: true },
+  { key: 'basketball', label: 'Basketball', emoji: '🏀', locked: false },
+  { key: 'badminton', label: 'Badminton', emoji: '🏸', locked: true },
+  { key: 'tennis', label: 'Tennis', emoji: '🎾', locked: true },
+  { key: 'esports', label: 'Esports', emoji: '🎮', locked: true },
+  { key: 'timer', label: 'Timer', emoji: '⏱️', locked: true },
+] as const
+
+function ScoreboardSportPicker({ onBack, onSelect }: { onBack: () => void; onSelect: () => void }) {
+  return (
+    <div style={{ animation: 'td-in 0.25s ease both' }}>
+      <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0, fontSize: 13, fontFamily: 'inherit', marginBottom: 24 }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <div style={{ marginBottom: 24 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 900, color: 'var(--text-primary)', marginBottom: 4, letterSpacing: '-0.02em' }}>Choose Your Sport</h2>
+        <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>Select the sport to get the right scoring rules and layout</p>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12 }}>
+        {SPORTS_LIST.map(sport => (
+          <button
+            key={sport.key}
+            onClick={() => !sport.locked && onSelect()}
+            disabled={sport.locked}
+            style={{
+              position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              gap: 10, padding: '20px 12px',
+              background: sport.locked ? 'rgba(255,255,255,0.02)' : 'rgba(138,21,56,0.1)',
+              border: `1.5px solid ${sport.locked ? 'rgba(255,255,255,0.07)' : 'rgba(138,21,56,0.35)'}`,
+              borderRadius: 16, cursor: sport.locked ? 'not-allowed' : 'pointer',
+              fontFamily: 'inherit', transition: 'all 0.15s',
+              opacity: sport.locked ? 0.55 : 1,
+            }}
+            onMouseEnter={e => { if (!sport.locked) { e.currentTarget.style.background = 'rgba(138,21,56,0.18)'; e.currentTarget.style.transform = 'translateY(-2px)' } }}
+            onMouseLeave={e => { if (!sport.locked) { e.currentTarget.style.background = 'rgba(138,21,56,0.1)'; e.currentTarget.style.transform = 'translateY(0)' } }}
+          >
+            <span style={{ fontSize: 32 }}>{sport.emoji}</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: sport.locked ? 'rgba(255,255,255,0.45)' : 'var(--text-primary)' }}>{sport.label}</span>
+            {sport.locked ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 6, padding: '2px 8px' }}>
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontWeight: 600 }}>Coming Soon</span>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(138,21,56,0.2)', borderRadius: 6, padding: '2px 8px' }}>
+                <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#4ade80' }} />
+                <span style={{ fontSize: 10, color: '#4ade80', fontWeight: 700 }}>Available</span>
+              </div>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Scoreboard Template Picker ───────────────────────────────────────────────
+const BASKETBALL_TEMPLATES = [
+  {
+    key: 'Basketball Scoreboard Template',
+    preview: (
+      <div style={{ width: '100%', padding: '10px 12px', fontFamily: 'inherit' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(0,0,0,0.5)', borderRadius: 8, padding: '8px 12px' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 7, color: 'rgba(255,255,255,0.5)', marginBottom: 2 }}>HOME</div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: '#4ade80', lineHeight: 1 }}>54</div>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 7, color: '#f97316', fontWeight: 700 }}>Q3</div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', fontVariantNumeric: 'tabular-nums' }}>5:20</div>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 7, color: 'rgba(255,255,255,0.5)', marginBottom: 2 }}>AWAY</div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: '#f97316', lineHeight: 1 }}>48</div>
+          </div>
+        </div>
+      </div>
+    ),
+  },
+  {
+    key: 'Basketball Centered Scoreboard',
+    preview: (
+      <div style={{ width: '100%', padding: '10px 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+        <div style={{ fontSize: 7, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Q2 · 8:04</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ fontSize: 28, fontWeight: 900, color: '#fff' }}>31</div>
+          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', fontWeight: 600 }}>–</div>
+          <div style={{ fontSize: 28, fontWeight: 900, color: '#fff' }}>29</div>
+        </div>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <div style={{ fontSize: 7, color: 'rgba(255,255,255,0.4)' }}>BULLS</div>
+          <div style={{ fontSize: 7, color: 'rgba(255,255,255,0.4)' }}>HAWKS</div>
+        </div>
+      </div>
+    ),
+  },
+  {
+    key: 'Shot Clock Scoreboard',
+    preview: (
+      <div style={{ width: '100%', padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ flex: 1, textAlign: 'center' }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: '#fff' }}>67</div>
+          <div style={{ fontSize: 7, color: 'rgba(255,255,255,0.4)' }}>HOME</div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+          <div style={{ width: 32, height: 32, borderRadius: '50%', border: '2.5px solid #f97316', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontSize: 11, fontWeight: 900, color: '#f97316' }}>14</span>
+          </div>
+          <div style={{ fontSize: 7, color: 'rgba(255,255,255,0.3)' }}>SHOT</div>
+        </div>
+        <div style={{ flex: 1, textAlign: 'center' }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: '#fff' }}>61</div>
+          <div style={{ fontSize: 7, color: 'rgba(255,255,255,0.4)' }}>AWAY</div>
+        </div>
+      </div>
+    ),
+  },
+  {
+    key: 'FIBA International Scoreboard',
+    preview: (
+      <div style={{ width: '100%', padding: '6px 10px', fontFamily: 'inherit' }}>
+        <div style={{ background: '#002147', borderRadius: 6, padding: '8px 10px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <span style={{ fontSize: 7, color: '#c0a060', fontWeight: 800, letterSpacing: '0.1em' }}>FIBA</span>
+            <span style={{ fontSize: 7, color: 'rgba(255,255,255,0.5)' }}>P2 · 12:00</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <div style={{ width: 14, height: 10, background: 'rgba(255,255,255,0.15)', borderRadius: 2 }} />
+              <span style={{ fontSize: 8, color: '#fff', fontWeight: 700 }}>USA</span>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span style={{ fontSize: 20, fontWeight: 900, color: '#fff' }}>82</span>
+              <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.3)' }}>-</span>
+              <span style={{ fontSize: 20, fontWeight: 900, color: '#fff' }}>77</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ fontSize: 8, color: '#fff', fontWeight: 700 }}>ESP</span>
+              <div style={{ width: 14, height: 10, background: 'rgba(255,255,255,0.15)', borderRadius: 2 }} />
+            </div>
+          </div>
+        </div>
+      </div>
+    ),
+  },
+  {
+    key: 'NBA Game Day Template',
+    preview: (
+      <div style={{ width: '100%', padding: '6px 10px', fontFamily: 'inherit' }}>
+        <div style={{ background: '#1a1a2e', borderRadius: 6, padding: '8px 10px', border: '1px solid rgba(255,255,255,0.08)' }}>
+          <div style={{ display: 'flex', gap: 4, marginBottom: 6, justifyContent: 'center' }}>
+            {['Q1','Q2','Q3','Q4'].map((q, i) => (
+              <div key={q} style={{ width: 18, height: 12, borderRadius: 3, background: i === 2 ? 'rgba(249,115,22,0.6)' : 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ fontSize: 6, color: i === 2 ? '#fff' : 'rgba(255,255,255,0.3)', fontWeight: 700 }}>{q}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 8, fontWeight: 800, color: '#fff' }}>LAL</span>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <span style={{ fontSize: 22, fontWeight: 900, color: '#f0c040' }}>88</span>
+              <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.2)' }}>·</span>
+              <span style={{ fontSize: 22, fontWeight: 900, color: '#4ade80' }}>85</span>
+            </div>
+            <span style={{ fontSize: 8, fontWeight: 800, color: '#fff' }}>BOS</span>
+          </div>
+        </div>
+      </div>
+    ),
+  },
+  {
+    key: '3x3 Basketball Scoreboard',
+    preview: (
+      <div style={{ width: '100%', padding: '8px 12px', fontFamily: 'inherit' }}>
+        <div style={{ background: 'rgba(0,0,0,0.4)', borderRadius: 6, padding: '8px 10px', border: '1px solid rgba(249,115,22,0.2)' }}>
+          <div style={{ textAlign: 'center', marginBottom: 4 }}>
+            <span style={{ fontSize: 7, color: '#f97316', fontWeight: 800, letterSpacing: '0.12em' }}>3×3</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 7, color: 'rgba(255,255,255,0.45)', marginBottom: 2 }}>RED</div>
+              <div style={{ fontSize: 26, fontWeight: 900, color: '#f87171', lineHeight: 1 }}>15</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 7, color: 'rgba(255,255,255,0.4)' }}>9:12</div>
+              <div style={{ fontSize: 7, color: '#f59e0b', fontWeight: 700, marginTop: 2 }}>LIVE</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 7, color: 'rgba(255,255,255,0.45)', marginBottom: 2 }}>BLU</div>
+              <div style={{ fontSize: 26, fontWeight: 900, color: '#60a5fa', lineHeight: 1 }}>12</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    ),
+  },
+]
+
+function ScoreboardTemplatePicker({ onBack, onSelect }: { onBack: () => void; onSelect: (t: string) => void }) {
+  return (
+    <div style={{ animation: 'td-in 0.25s ease both' }}>
+      <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0, fontSize: 13, fontFamily: 'inherit', marginBottom: 24 }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+        Back to Sports
+      </button>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <span style={{ fontSize: 18 }}>🏀</span>
+          <h2 style={{ fontSize: 20, fontWeight: 900, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>Choose a Template</h2>
+        </div>
+        <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>Pick the scoreboard layout that fits your game</p>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14 }}>
+        {BASKETBALL_TEMPLATES.map(t => (
+          <button
+            key={t.key}
+            onClick={() => onSelect(t.key)}
+            style={{ display: 'flex', flexDirection: 'column', textAlign: 'left', background: 'rgba(255,255,255,0.03)', border: '1.5px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: 0, cursor: 'pointer', fontFamily: 'inherit', overflow: 'hidden', transition: 'all 0.15s' }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(138,21,56,0.1)'; e.currentTarget.style.borderColor = 'rgba(138,21,56,0.4)'; e.currentTarget.style.transform = 'translateY(-3px)'; e.currentTarget.style.boxShadow = '0 8px 28px rgba(0,0,0,0.4)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none' }}
+          >
+            <div style={{ height: 90, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)', borderBottom: '1px solid rgba(255,255,255,0.06)', width: '100%', overflow: 'hidden' }}>
+              {t.preview}
+            </div>
+            <div style={{ padding: '12px 14px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>{t.key}</span>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

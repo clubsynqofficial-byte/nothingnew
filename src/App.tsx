@@ -25,6 +25,7 @@ import SettingsPage from './pages/settings/SettingsPage'
 import TournamentsPage from './pages/tournaments/TournamentsPage'
 import TournamentDetailPage from './pages/tournaments/TournamentDetailPage'
 import TournamentScoreboardPage from './pages/tournaments/TournamentScoreboardPage'
+import BasketballScoreboardPage from './pages/tournaments/BasketballScoreboardPage'
 import MyTeamsPage from './pages/teams/MyTeamsPage'
 import MatchCenterPage from './pages/matches/MatchCenterPage'
 
@@ -162,6 +163,7 @@ function AppRoutes() {
       <Route path="/tournaments" element={<ProtectedRoute><TournamentsPage /></ProtectedRoute>} />
       <Route path="/tournaments/:tournamentId" element={<ProtectedRoute><TournamentDetailPage /></ProtectedRoute>} />
       <Route path="/tournaments/:tournamentId/scoreboard" element={<TournamentScoreboardPage />} />
+      <Route path="/tournaments/:tournamentId/scoreboard/basketball" element={<ProtectedRoute><BasketballScoreboardPage /></ProtectedRoute>} />
       <Route path="/teams" element={<ProtectedRoute><MyTeamsPage /></ProtectedRoute>} />
       <Route path="/matches/:matchId" element={<ProtectedRoute><MatchCenterPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/home" replace />} />

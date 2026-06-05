@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
 
 interface TournamentRow {
   id: string
@@ -16,6 +17,8 @@ interface TournamentRow {
   format: 'single_elimination' | 'round_robin'
   prize_description: string | null
   created_at: string
+  created_by: string
+  is_test: boolean | null
   club: { id: string; name: string; logo_url: string | null } | null
   _accepted: number
   _pending: number
@@ -44,20 +47,51 @@ function formatDate(iso: string | null) {
 type Filter = 'all' | 'open' | 'ongoing' | 'completed'
 
 export default function TournamentsPage() {
+  return (
+    <div className="page-content" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '65vh', textAlign: 'center' }}>
+      <style>{`@keyframes wrench{0%,100%{transform:rotate(-15deg)}50%{transform:rotate(15deg)}}`}</style>
+      <div style={{ fontSize: 60, marginBottom: 20, display: 'inline-block', animation: 'wrench 1.6s ease-in-out infinite' }}>🔧</div>
+      <h1 style={{ fontSize: 26, fontWeight: 900, color: 'var(--text-primary)', marginBottom: 10, letterSpacing: '-0.02em' }}>Under Maintenance</h1>
+      <p style={{ fontSize: 14, color: 'var(--text-muted)', maxWidth: 360, lineHeight: 1.7 }}>
+        The Tournaments section is currently being updated.<br />Check back soon — we'll be up shortly!
+      </p>
+    </div>
+  )
+
+  // eslint-disable-next-line no-unreachable
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [tournaments, setTournaments] = useState<TournamentRow[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<Filter>('all')
   const [search, setSearch] = useState('')
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  function handleShare(e: React.MouseEvent, id: string) {
+    e.stopPropagation()
+    const url = `${window.location.origin}/tournaments/${id}`
+    if (navigator.share) {
+      navigator.share({ title: 'ClubSynq Tournament', url })
+    } else {
+      navigator.clipboard.writeText(url)
+      setCopiedId(id)
+      setTimeout(() => setCopiedId(null), 2000)
+    }
+  }
 
   useEffect(() => { fetchTournaments() }, [])
 
   async function fetchTournaments() {
     setLoading(true)
-    const { data } = await supabase
+    // On localhost show everything; on production hide test tournaments for everyone
+    let query = supabase
       .from('tournaments')
       .select('*, club:clubs(id, name, logo_url)')
       .order('created_at', { ascending: false })
+    if (window.location.hostname !== 'localhost') {
+      query = query.not('is_test', 'eq', true)
+    }
+    const { data } = await query
 
     if (data) {
       const ids = data.map(t => t.id)
@@ -200,7 +234,12 @@ export default function TournamentsPage() {
 
                 {/* Name + sport */}
                 <div style={{ marginBottom: 10 }}>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 2, lineHeight: 1.3 }}>{t.name}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 2 }}>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.3 }}>{t.name}</div>
+                    {t.is_test && t.created_by === user?.id && (
+                      <span style={{ fontSize: 9.5, fontWeight: 700, color: '#f59e0b', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 5, padding: '1px 6px', textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0 }}>Dev</span>
+                    )}
+                  </div>
                   <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{t.sport}</div>
                 </div>
 
@@ -229,7 +268,7 @@ export default function TournamentsPage() {
                 </div>
 
                 {/* Dates */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
                   {t.registration_deadline && t.status === 'registration_open' && (
                     <div style={{ fontSize: 11.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', borderRadius: 6, padding: '3px 8px', fontWeight: 600 }}>
                       Reg. closes {formatDate(t.registration_deadline)}
@@ -246,6 +285,34 @@ export default function TournamentsPage() {
                     </div>
                   )}
                 </div>
+
+                {/* Share button */}
+                <button
+                  onClick={e => handleShare(e, t.id)}
+                  style={{
+                    width: '100%', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                    background: copiedId === t.id ? 'rgba(74,222,128,0.1)' : 'rgba(255,255,255,0.04)',
+                    border: `1px solid ${copiedId === t.id ? 'rgba(74,222,128,0.3)' : 'rgba(255,255,255,0.09)'}`,
+                    borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit',
+                    fontSize: 12.5, fontWeight: 600,
+                    color: copiedId === t.id ? '#4ade80' : 'var(--text-muted)',
+                    transition: 'all 0.15s',
+                  }}
+                  onMouseEnter={e => { if (copiedId !== t.id) { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = 'var(--text-primary)' } }}
+                  onMouseLeave={e => { if (copiedId !== t.id) { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = 'var(--text-muted)' } }}
+                >
+                  {copiedId === t.id ? (
+                    <>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                      Link copied!
+                    </>
+                  ) : (
+                    <>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                      Share
+                    </>
+                  )}
+                </button>
               </div>
             )
           })}
