@@ -1284,6 +1284,12 @@ export default function TournamentDetailPage() {
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.36"/></svg>
                     {generatingBracket ? 'Generating…' : 'Re-generate'}
                   </button>
+                  <button onClick={() => navigate(`/tournaments/${tournament.id}/control`)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'rgba(138,21,56,0.15)', border: '1px solid rgba(138,21,56,0.4)', borderRadius: 9, color: 'var(--accent)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit', flexShrink: 0, transition: 'all 0.15s' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(138,21,56,0.25)' }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(138,21,56,0.15)' }}
+                  >
+                    🎮 Command Center
+                  </button>
                 </div>
               )}
 
