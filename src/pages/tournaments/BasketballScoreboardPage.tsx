@@ -196,9 +196,9 @@ export default function BasketballScoreboardPage() {
 
   // Bracket builder state (used when no matches exist yet)
   const [acceptedTeams, setAcceptedTeams] = useState<Array<{ id: string; team_name: string; logo_url: string | null }>>([])
-  const [directTeamName, setDirectTeamName] = useState('')
-  const [addingTeam, setAddingTeam] = useState(false)
-  const [teamError, setTeamError] = useState('')
+  const [_directTeamName, _setDirectTeamName] = useState('')
+  const [_addingTeam, _setAddingTeam] = useState(false)
+  const [_teamError, _setTeamError] = useState('')
   const [generatingBracket, setGeneratingBracket] = useState(false)
   const [tournamentData, setTournamentData] = useState<{ id: string; name: string; club_id: string; created_by: string; format: string } | null>(null)
 
@@ -386,13 +386,6 @@ export default function BasketballScoreboardPage() {
     if (cfg.show3Pt && pts === 3) { /* future animation */ }
   }
 
-  async function addFoul(team: 1 | 2) {
-    const m = matchRef.current; if (!m) return
-    const key = team === 1 ? 'fouls1' : 'fouls2'
-    const newVal = (team === 1 ? m.fouls1 : m.fouls2) + 1
-    setMatch(prev => prev ? { ...prev, [key]: newVal } : prev)
-    await supabase.from('tournament_matches').update({ [key]: newVal }).eq('id', m.id)
-  }
 
   async function addFoulDelta(team: 1 | 2, delta: number) {
     const m = matchRef.current; if (!m) return
