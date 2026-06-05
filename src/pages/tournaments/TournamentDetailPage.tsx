@@ -765,8 +765,8 @@ export default function TournamentDetailPage() {
           onClick={() => {
             const url = tournament.sport === 'Basketball'
               ? `/tournaments/${tournament.id}/scoreboard/basketball?view=public`
-              : `/tournaments/${tournament.id}/scoreboard`
-            window.open(url, '_blank')
+              : `/tournaments/${tournament.id}/control?view=public`
+            navigate(url)
           }}
           style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: matches.filter(m => m.status === 'live').length > 0 ? 'rgba(249,115,22,0.12)' : 'rgba(255,255,255,0.05)', border: `1px solid ${matches.filter(m => m.status === 'live').length > 0 ? 'rgba(249,115,22,0.35)' : 'rgba(255,255,255,0.12)'}`, borderRadius: 9, color: matches.filter(m => m.status === 'live').length > 0 ? '#f97316' : 'var(--text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit', transition: 'all 0.15s' }}>
           {matches.filter(m => m.status === 'live').length > 0 && <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#f97316', animation: 'live-pulse 1.4s ease-in-out infinite' }} />}
