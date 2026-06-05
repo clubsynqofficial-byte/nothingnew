@@ -47,18 +47,6 @@ function formatDate(iso: string | null) {
 type Filter = 'all' | 'open' | 'ongoing' | 'completed'
 
 export default function TournamentsPage() {
-  return (
-    <div className="page-content" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '65vh', textAlign: 'center' }}>
-      <style>{`@keyframes wrench{0%,100%{transform:rotate(-15deg)}50%{transform:rotate(15deg)}}`}</style>
-      <div style={{ fontSize: 60, marginBottom: 20, display: 'inline-block', animation: 'wrench 1.6s ease-in-out infinite' }}>🔧</div>
-      <h1 style={{ fontSize: 26, fontWeight: 900, color: 'var(--text-primary)', marginBottom: 10, letterSpacing: '-0.02em' }}>Under Maintenance</h1>
-      <p style={{ fontSize: 14, color: 'var(--text-muted)', maxWidth: 360, lineHeight: 1.7 }}>
-        The Tournaments section is currently being updated.<br />Check back soon — we'll be up shortly!
-      </p>
-    </div>
-  )
-
-  // eslint-disable-next-line no-unreachable
   const navigate = useNavigate()
   const { user } = useAuth()
   const [tournaments, setTournaments] = useState<TournamentRow[]>([])
