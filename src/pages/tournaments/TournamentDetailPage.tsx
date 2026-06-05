@@ -411,16 +411,16 @@ export default function TournamentDetailPage() {
     const s1 = parseInt(editScore1) || 0
     const s2 = parseInt(editScore2) || 0
     const m = matches.find(mx => mx.id === matchId)
-    const autoWinner = winnerId ?? (s1 > s2 ? m?.team1_id ?? null : s2 > s1 ? m?.team2_id ?? null : null)
-    const isCompleted = !!(winnerId || s1 !== s2)
+    // Only complete the match when winner is explicitly declared via a team button.
+    // Plain "Save" just updates scores without ending the match.
+    const isCompleted = !!winnerId
     await supabase.from('tournament_matches').update({
       score1: s1, score2: s2,
-      winner_id: autoWinner,
+      winner_id: winnerId ?? null,
       status: isCompleted ? 'completed' : 'live',
     }).eq('id', matchId)
-    // Auto-advance winner to next bracket slot (single elimination only)
-    if (autoWinner && isCompleted && m && tournament?.format === 'single_elimination') {
-      await advanceWinner({ ...m, winner_id: autoWinner, status: 'completed', score1: s1, score2: s2 }, matches)
+    if (winnerId && m && tournament?.format === 'single_elimination') {
+      await advanceWinner({ ...m, winner_id: winnerId, status: 'completed', score1: s1, score2: s2 }, matches)
     }
     await fetchAll()
     setSavingMatch(false)
@@ -429,6 +429,7 @@ export default function TournamentDetailPage() {
 
   async function handleSetMatchLive(matchId: string) {
     await supabase.from('tournament_matches').update({ status: 'live' }).eq('id', matchId)
+    setMatches(prev => prev.map(m => m.id === matchId ? { ...m, status: 'live' } : m))
   }
 
   // Advance a winner from a completed single-elimination match into the next round slot.
