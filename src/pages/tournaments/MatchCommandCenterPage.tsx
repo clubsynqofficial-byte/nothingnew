@@ -90,13 +90,14 @@ function Toggle({ on, onChange, accent = 'var(--accent)' }: { on: boolean; onCha
 // ─── Public View ─────────────────────────────────────────────────────────────
 export function MatchPublicView({ match, teams, cfg }: { match: Match | null; teams: Record<string, Team>; cfg: Cfg }) {
   const stats = (match?.live_stats ?? {}) as Record<string, number>
+
   if (!match) return (
-    <div style={{ minHeight: '100vh', background: cfg.boardBg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
+    <div style={{ minHeight: '100vh', background: cfg.boardBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <style>{CSS}</style>
-      <div style={{ width: 48, height: 48, borderRadius: '50%', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: 'rgba(255,255,255,0.5)', animation: 'spin 1.2s linear infinite' }} />
-      <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.08em' }}>Waiting for match…</div>
+      <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.2)', letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 600 }}>Waiting for match</div>
     </div>
   )
+
   const home = teams[match.team1_id ?? '']
   const away = teams[match.team2_id ?? '']
   const isFinal = match.game_status === 'final'
@@ -105,88 +106,149 @@ export function MatchPublicView({ match, teams, cfg }: { match: Match | null; te
   const isLive = match.game_status === 'in_progress'
   const clockStr = fmtClock(match.game_clock, cfg.timerCountsDown, cfg.timerLength)
   const p = match.current_period
-  const periodLabel = isFinal ? 'FULL TIME' : isHalf ? 'HALF TIME' : isET ? 'EXTRA TIME' : cfg.periods === 4 ? `Q${p}` : p === 1 ? '1ST HALF' : '2ND HALF'
+  const periodLabel = isFinal ? 'FULL TIME' : isHalf ? 'HALF TIME' : isET ? 'EXTRA TIME'
+    : cfg.periods === 4 ? `Q${p}` : p === 1 ? '1ST HALF' : '2ND HALF'
   const fs = (n: number) => Math.round(n * cfg.fontSize / 100)
 
+  const statusColor = isLive ? '#f97316' : isHalf ? '#60a5fa' : isET ? '#f59e0b' : isFinal ? '#e9c176' : 'rgba(255,255,255,0.35)'
+
+  const TeamRow = ({ team, score, fouls, yellows, reds, textColor, bgColor, side }: {
+    team: Team | undefined; score: number; fouls: number; yellows: number; reds: number
+    textColor: string; bgColor: string; side: 'home' | 'away'
+  }) => (
+    <div style={{ position: 'relative', overflow: 'hidden' }}>
+      {/* Team color fill */}
+      <div style={{ position: 'absolute', inset: 0, background: bgColor, opacity: 0.92 }} />
+      {/* Subtle noise/texture overlay */}
+      <div style={{ position: 'absolute', inset: 0, background: side === 'home' ? 'linear-gradient(110deg, rgba(255,255,255,0.06) 0%, transparent 60%)' : 'linear-gradient(250deg, rgba(255,255,255,0.06) 0%, transparent 60%)', pointerEvents: 'none' }} />
+      {/* Deep shadow on score side */}
+      <div style={{ position: 'absolute', top: 0, bottom: 0, [side === 'home' ? 'right' : 'left']: 0, width: '35%', background: 'rgba(0,0,0,0.18)', pointerEvents: 'none' }} />
+
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', padding: `${fs(22)}px ${fs(36)}px`, gap: fs(20) }}>
+        {/* Logo / initials */}
+        {team?.logo_url ? (
+          <div style={{ width: fs(64), height: fs(64), borderRadius: fs(14), overflow: 'hidden', flexShrink: 0, boxShadow: `0 6px 24px rgba(0,0,0,0.45), 0 0 0 2px rgba(255,255,255,0.18)` }}>
+            <img src={team.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          </div>
+        ) : (
+          <div style={{ width: fs(60), height: fs(60), borderRadius: fs(14), background: 'rgba(255,255,255,0.14)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: fs(22), fontWeight: 900, color: textColor, letterSpacing: '-0.02em', boxShadow: '0 4px 16px rgba(0,0,0,0.3)' }}>
+            {(team?.team_name ?? (side === 'home' ? 'H' : 'A')).slice(0, 2).toUpperCase()}
+          </div>
+        )}
+
+        {/* Name + stats */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: fs(30), fontWeight: 900, color: textColor, textTransform: 'uppercase', lineHeight: 1, letterSpacing: '-0.025em', marginBottom: fs(6) }}>
+            {team?.team_name ?? (side === 'home' ? 'HOME' : 'AWAY')}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: fs(14), flexWrap: 'wrap' }}>
+            {cfg.showFouls && (
+              <span style={{ fontSize: fs(12), color: `${textColor}99`, fontWeight: 600, letterSpacing: '0.02em' }}>
+                {fouls} foul{fouls !== 1 ? 's' : ''}
+              </span>
+            )}
+            {cfg.showCards && yellows > 0 && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: fs(4), fontSize: fs(12), color: `${textColor}99`, fontWeight: 600 }}>
+                <span style={{ display: 'inline-block', width: fs(9), height: fs(13), background: '#eab308', borderRadius: 2, flexShrink: 0 }} />{yellows}
+              </span>
+            )}
+            {cfg.showCards && reds > 0 && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: fs(4), fontSize: fs(12), color: `${textColor}99`, fontWeight: 600 }}>
+                <span style={{ display: 'inline-block', width: fs(9), height: fs(13), background: '#ef4444', borderRadius: 2, flexShrink: 0 }} />{reds}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Score */}
+        <div style={{ fontSize: fs(96), fontWeight: 900, color: textColor, lineHeight: 1, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.04em', flexShrink: 0 }}>
+          {score}
+        </div>
+      </div>
+    </div>
+  )
+
   return (
-    <div style={{ minHeight: '100vh', background: cfg.boardBg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'inherit', position: 'relative', overflow: 'hidden' }}>
+    <div style={{ minHeight: '100vh', background: cfg.boardBg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit', position: 'relative', overflow: 'hidden' }}>
       <style>{CSS}</style>
-      {/* Ambient glows */}
-      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', top: '20%', left: '5%', width: '55vw', height: '55vw', borderRadius: '50%', background: `radial-gradient(circle, ${cfg.homeColor}22 0%, transparent 70%)`, filter: 'blur(60px)', animation: 'orb1 22s ease-in-out infinite' }} />
-        <div style={{ position: 'absolute', top: '20%', right: '5%', width: '50vw', height: '50vw', borderRadius: '50%', background: `radial-gradient(circle, ${cfg.awayColor}1a 0%, transparent 70%)`, filter: 'blur(60px)', animation: 'orb2 28s ease-in-out infinite' }} />
+
+      {/* Background color wash */}
+      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+        <div style={{ position: 'absolute', top: 0, left: 0, right: '50%', bottom: 0, background: cfg.homeColor, opacity: 0.07 }} />
+        <div style={{ position: 'absolute', top: 0, left: '50%', right: 0, bottom: 0, background: cfg.awayColor, opacity: 0.07 }} />
+        <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(ellipse at center, transparent 30%, ${cfg.boardBg} 75%)` }} />
       </div>
 
-      {cfg.showTitle && (
-        <div style={{ fontSize: fs(12), fontWeight: 700, color: 'rgba(255,255,255,0.35)', marginBottom: fs(20), textTransform: 'uppercase', letterSpacing: '0.2em', position: 'relative', zIndex: 1 }}>{cfg.titleText}</div>
-      )}
+      <div style={{ position: 'relative', zIndex: 1, width: '100%', maxWidth: fs(760), padding: `0 ${fs(24)}px` }}>
 
-      {/* Live badge */}
-      {isLive && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: fs(16), position: 'relative', zIndex: 1 }}>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#f97316', animation: 'live-ring 1.5s ease-in-out infinite', boxShadow: '0 0 8px #f97316' }} />
-          <span style={{ fontSize: fs(11), fontWeight: 800, color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.16em' }}>Live</span>
-        </div>
-      )}
-
-      <div style={{ width: '100%', maxWidth: fs(700), borderRadius: fs(24), overflow: 'hidden', boxShadow: `0 40px 120px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.06)`, animation: 'cc-in .5s ease both', position: 'relative', zIndex: 1 }}>
-        {/* Home */}
-        <div style={{ display: 'flex', alignItems: 'center', background: cfg.homeColor, padding: `${fs(20)}px ${fs(32)}px`, position: 'relative', overflow: 'hidden' }}>
-          <div style={{ position: 'absolute', right: -20, top: -20, width: fs(160), height: fs(160), borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
-          <div style={{ position: 'absolute', right: fs(40), bottom: -fs(40), width: fs(100), height: fs(100), borderRadius: '50%', background: 'rgba(0,0,0,0.1)', pointerEvents: 'none' }} />
-          {home?.logo_url ? (
-            <div style={{ width: fs(58), height: fs(58), borderRadius: fs(13), overflow: 'hidden', marginRight: fs(18), flexShrink: 0, border: '2px solid rgba(255,255,255,0.3)', boxShadow: '0 4px 20px rgba(0,0,0,0.4)', position: 'relative', zIndex: 1 }}>
-              <img src={home.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            </div>
-          ) : (
-            <div style={{ width: fs(50), height: fs(50), borderRadius: fs(13), background: 'rgba(255,255,255,0.18)', marginRight: fs(16), flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: fs(18), fontWeight: 900, color: cfg.homeTextColor, position: 'relative', zIndex: 1 }}>{(home?.team_name ?? 'H').slice(0, 2).toUpperCase()}</div>
-          )}
-          <div style={{ flex: 1, minWidth: 0, position: 'relative', zIndex: 1 }}>
-            <div style={{ fontSize: fs(28), fontWeight: 900, color: cfg.homeTextColor, textTransform: 'uppercase', lineHeight: 1, letterSpacing: '-0.02em' }}>{home?.team_name ?? 'HOME'}</div>
-            <div style={{ display: 'flex', gap: fs(12), marginTop: fs(5), flexWrap: 'wrap' }}>
-              {cfg.showFouls && <span style={{ fontSize: fs(12), color: `${cfg.homeTextColor}cc` }}>Fouls: {match.fouls1}</span>}
-              {cfg.showCards && (stats.yellows1 ?? 0) > 0 && <span style={{ fontSize: fs(12), display: 'inline-flex', alignItems: 'center', gap: 3 }}><span style={{ display: 'inline-block', width: fs(10), height: fs(13), background: '#eab308', borderRadius: 2 }} />×{stats.yellows1}</span>}
-              {cfg.showCards && (stats.reds1 ?? 0) > 0 && <span style={{ fontSize: fs(12), display: 'inline-flex', alignItems: 'center', gap: 3 }}><span style={{ display: 'inline-block', width: fs(10), height: fs(13), background: '#ef4444', borderRadius: 2 }} />×{stats.reds1}</span>}
-            </div>
-          </div>
-          <div style={{ fontSize: fs(80), fontWeight: 900, color: cfg.homeTextColor, lineHeight: 1, fontVariantNumeric: 'tabular-nums', textShadow: `0 0 60px rgba(255,255,255,0.2)`, position: 'relative', zIndex: 1 }}>{match.score1}</div>
-        </div>
-
-        {/* Divider with VS */}
-        <div style={{ background: '#070b14', display: 'flex', alignItems: 'center', padding: `${fs(10)}px ${fs(32)}px`, gap: fs(16) }}>
-          {cfg.showTimer ? (
-            <div style={{ fontSize: fs(26), fontWeight: 900, color: (isFinal || isHalf) ? 'rgba(255,255,255,0.25)' : '#fff', fontVariantNumeric: 'tabular-nums', letterSpacing: '0.06em', flex: 1 }}>
-              {(isFinal || isHalf) ? '—' : clockStr}
-            </div>
-          ) : <div style={{ flex: 1 }} />}
+        {/* Top bar: title + status */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: fs(28), paddingBottom: fs(18), borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+          {cfg.showTitle
+            ? <div style={{ fontSize: fs(12), fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.2em' }}>{cfg.titleText}</div>
+            : <div />
+          }
           {cfg.showPeriod && (
-            <div style={{ fontSize: fs(14), fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', padding: `${fs(4)}px ${fs(12)}px`, borderRadius: fs(8), background: isLive ? 'rgba(249,115,22,0.15)' : isHalf ? 'rgba(96,165,250,0.15)' : isET ? 'rgba(245,158,11,0.15)' : isFinal ? 'rgba(233,193,118,0.15)' : 'rgba(255,255,255,0.07)', color: isLive ? '#f97316' : isHalf ? '#60a5fa' : isET ? '#f59e0b' : isFinal ? '#e9c176' : 'rgba(255,255,255,0.4)', border: `1px solid ${isLive ? 'rgba(249,115,22,0.3)' : isHalf ? 'rgba(96,165,250,0.3)' : 'rgba(255,255,255,0.1)'}` }}>
+            <div style={{ fontSize: fs(12), fontWeight: 700, color: statusColor, textTransform: 'uppercase', letterSpacing: '0.18em' }}>
+              {isLive && <span style={{ display: 'inline-block', width: fs(6), height: fs(6), borderRadius: '50%', background: '#f97316', marginRight: fs(7), verticalAlign: 'middle' }} />}
               {periodLabel}
             </div>
           )}
-          <div style={{ flex: 1, textAlign: 'right', fontSize: fs(11), color: 'rgba(255,255,255,0.2)', fontWeight: 700, letterSpacing: '0.1em' }}>VS</div>
         </div>
 
-        {/* Away */}
-        <div style={{ display: 'flex', alignItems: 'center', background: cfg.awayColor, padding: `${fs(20)}px ${fs(32)}px`, position: 'relative', overflow: 'hidden' }}>
-          <div style={{ position: 'absolute', left: -20, top: -20, width: fs(160), height: fs(160), borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
-          {away?.logo_url ? (
-            <div style={{ width: fs(58), height: fs(58), borderRadius: fs(13), overflow: 'hidden', marginRight: fs(18), flexShrink: 0, border: '2px solid rgba(255,255,255,0.3)', boxShadow: '0 4px 20px rgba(0,0,0,0.4)', position: 'relative', zIndex: 1 }}>
-              <img src={away.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        {/* Scoreboard card */}
+        <div style={{ borderRadius: fs(20), overflow: 'hidden', boxShadow: `0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05)` }}>
+          <TeamRow
+            team={home} score={match.score1} fouls={match.fouls1}
+            yellows={stats.yellows1 ?? 0} reds={stats.reds1 ?? 0}
+            textColor={cfg.homeTextColor} bgColor={cfg.homeColor} side="home"
+          />
+
+          {/* Centre strip */}
+          <div style={{ background: '#050810', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: `${fs(12)}px ${fs(36)}px` }}>
+            {cfg.showTimer ? (
+              <div style={{ fontSize: fs(28), fontWeight: 900, color: (isFinal || isHalf) ? 'rgba(255,255,255,0.2)' : '#fff', fontVariantNumeric: 'tabular-nums', letterSpacing: '0.04em', minWidth: fs(80) }}>
+                {(isFinal || isHalf) ? '—' : clockStr}
+              </div>
+            ) : <div />}
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: fs(12) }}>
+              {/* Score diff badge when final */}
+              {isFinal && match.score1 !== match.score2 && (
+                <div style={{ fontSize: fs(10), fontWeight: 700, color: 'rgba(233,193,118,0.6)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  {Math.abs(match.score1 - match.score2)} goal{Math.abs(match.score1 - match.score2) !== 1 ? 's' : ''}
+                </div>
+              )}
             </div>
-          ) : (
-            <div style={{ width: fs(50), height: fs(50), borderRadius: fs(13), background: 'rgba(255,255,255,0.18)', marginRight: fs(16), flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: fs(18), fontWeight: 900, color: cfg.awayTextColor, position: 'relative', zIndex: 1 }}>{(away?.team_name ?? 'A').slice(0, 2).toUpperCase()}</div>
-          )}
-          <div style={{ flex: 1, minWidth: 0, position: 'relative', zIndex: 1 }}>
-            <div style={{ fontSize: fs(28), fontWeight: 900, color: cfg.awayTextColor, textTransform: 'uppercase', lineHeight: 1, letterSpacing: '-0.02em' }}>{away?.team_name ?? 'AWAY'}</div>
-            <div style={{ display: 'flex', gap: fs(12), marginTop: fs(5), flexWrap: 'wrap' }}>
-              {cfg.showFouls && <span style={{ fontSize: fs(12), color: `${cfg.awayTextColor}cc` }}>Fouls: {match.fouls2}</span>}
-              {cfg.showCards && (stats.yellows2 ?? 0) > 0 && <span style={{ fontSize: fs(12), display: 'inline-flex', alignItems: 'center', gap: 3 }}><span style={{ display: 'inline-block', width: fs(10), height: fs(13), background: '#eab308', borderRadius: 2 }} />×{stats.yellows2}</span>}
-              {cfg.showCards && (stats.reds2 ?? 0) > 0 && <span style={{ fontSize: fs(12), display: 'inline-flex', alignItems: 'center', gap: 3 }}><span style={{ display: 'inline-block', width: fs(10), height: fs(13), background: '#ef4444', borderRadius: 2 }} />×{stats.reds2}</span>}
-            </div>
+
+            {cfg.showTimer ? (
+              <div style={{ fontSize: fs(28), fontWeight: 900, color: 'rgba(255,255,255,0.15)', fontVariantNumeric: 'tabular-nums', letterSpacing: '0.04em', minWidth: fs(80), textAlign: 'right' }}>
+                —
+              </div>
+            ) : <div />}
           </div>
-          <div style={{ fontSize: fs(80), fontWeight: 900, color: cfg.awayTextColor, lineHeight: 1, fontVariantNumeric: 'tabular-nums', textShadow: `0 0 60px rgba(255,255,255,0.2)`, position: 'relative', zIndex: 1 }}>{match.score2}</div>
+
+          <TeamRow
+            team={away} score={match.score2} fouls={match.fouls2}
+            yellows={stats.yellows2 ?? 0} reds={stats.reds2 ?? 0}
+            textColor={cfg.awayTextColor} bgColor={cfg.awayColor} side="away"
+          />
         </div>
+
+        {/* Bottom: match info */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: fs(22), paddingTop: fs(18), borderTop: '1px solid rgba(255,255,255,0.06)', gap: fs(20) }}>
+          <span style={{ fontSize: fs(11), color: 'rgba(255,255,255,0.2)', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Round {match.round}</span>
+          <span style={{ width: 3, height: 3, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', display: 'inline-block' }} />
+          <span style={{ fontSize: fs(11), color: 'rgba(255,255,255,0.2)', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Match {match.match_number}</span>
+          {isFinal && match.winner_id && (
+            <>
+              <span style={{ width: 3, height: 3, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', display: 'inline-block' }} />
+              <span style={{ fontSize: fs(11), color: '#e9c176', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                {teams[match.winner_id]?.team_name ?? 'Winner'} wins
+              </span>
+            </>
+          )}
+        </div>
+
       </div>
     </div>
   )
