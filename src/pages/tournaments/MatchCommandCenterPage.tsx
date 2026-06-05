@@ -336,6 +336,25 @@ export default function MatchCommandCenterPage() {
     return () => clearInterval(poll)
   }, [isPublicView, selectedMatchId])
 
+  // In public view, fetch the two team records by their IDs directly so team
+  // names always appear even when RLS blocks the tournament-level teams query.
+  useEffect(() => {
+    if (!match) return
+    const ids = [match.team1_id, match.team2_id].filter(Boolean) as string[]
+    if (ids.length === 0) return
+    const missing = ids.filter(id => !teams[id])
+    if (missing.length === 0) return
+    supabase.from('tournament_teams').select('id, team_name, logo_url').in('id', missing)
+      .then(({ data }) => {
+        if (!data) return
+        setTeams(prev => {
+          const next = { ...prev }
+          for (const t of data) next[t.id] = t
+          return next
+        })
+      })
+  }, [match?.team1_id, match?.team2_id])
+
   useEffect(() => () => { if (clockRef.current) clearInterval(clockRef.current) }, [])
 
   function selectMatch(id: string) {
