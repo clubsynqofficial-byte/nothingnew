@@ -771,7 +771,13 @@ export default function TournamentDetailPage() {
           style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: matches.filter(m => m.status === 'live').length > 0 ? 'rgba(249,115,22,0.12)' : 'rgba(255,255,255,0.05)', border: `1px solid ${matches.filter(m => m.status === 'live').length > 0 ? 'rgba(249,115,22,0.35)' : 'rgba(255,255,255,0.12)'}`, borderRadius: 9, color: matches.filter(m => m.status === 'live').length > 0 ? '#f97316' : 'var(--text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit', transition: 'all 0.15s' }}>
           {matches.filter(m => m.status === 'live').length > 0 && <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#f97316', animation: 'live-pulse 1.4s ease-in-out infinite' }} />}
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9l6 6"/><path d="M15 9H9v6"/></svg>
-          View Scoreboard
+          Live View
+        </button>
+        <button
+          onClick={() => window.open(`/tournaments/${tournament.id}/scoreboard`, '_blank')}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 9, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit', transition: 'all 0.15s' }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 9H4.5a2.5 2.5 0 0 0 0 5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 1 0 5H18"/><path d="M4 22h16"/><path d="M8 22V11.3"/><path d="M16 22V11.3"/><rect x="6" y="2" width="12" height="9" rx="1"/></svg>
+          Standings
         </button>
       </div>
 

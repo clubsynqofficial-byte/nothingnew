@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 
 interface Tournament {
@@ -9,32 +9,35 @@ interface Tournament {
   prizes: Array<{ place: string; description: string }> | null
   club: { name: string } | null
 }
-
-interface Team {
-  id: string; team_name: string; logo_url: string | null
-}
-
+interface Team { id: string; team_name: string; logo_url: string | null }
 interface Match {
   id: string; tournament_id: string
   team1_id: string | null; team2_id: string | null
   score1: number; score2: number
-  winner_id: string | null
-  round: number; match_number: number
+  winner_id: string | null; round: number; match_number: number
   status: 'scheduled' | 'live' | 'completed'
 }
 
-const SPORT_EMOJIS: Record<string, string> = {
-  Basketball: '🏀', Football: '⚽', Volleyball: '🏐', Tennis: '🎾',
-  Badminton: '🏸', Cricket: '🏏', Swimming: '🏊', Athletics: '🏃',
-  Chess: '♟️', Gaming: '🎮', 'Table Tennis': '🏓', Rugby: '🏉',
-  Baseball: '⚾', Hockey: '🏑',
+const CSS = `
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes sb-in{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes row-in{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
+`
+
+function Logo({ team, size }: { team: Team | null | undefined; size: number }) {
+  const init = (team?.team_name ?? '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
+  return (
+    <div style={{ width: size, height: size, borderRadius: Math.round(size * 0.24), background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: Math.round(size * 0.34), fontWeight: 800, color: 'rgba(255,255,255,0.5)', overflow: 'hidden', flexShrink: 0, letterSpacing: '-0.01em' }}>
+      {team?.logo_url ? <img src={team.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : init}
+    </div>
+  )
 }
 
-function TeamLogo({ team, size }: { team: Team | null | undefined; size: number }) {
-  const initials = (team?.team_name ?? '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ width: size, height: size, borderRadius: size * 0.22, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: size * 0.32, fontWeight: 900, color: 'rgba(255,255,255,0.6)', overflow: 'hidden', flexShrink: 0 }}>
-      {team?.logo_url ? <img src={team.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
+      <span style={{ fontSize: 11, fontWeight: 800, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.14em', whiteSpace: 'nowrap' }}>{children}</span>
+      <div style={{ flex: 1, height: 1, background: 'linear-gradient(to right, rgba(255,255,255,0.08), transparent)' }} />
     </div>
   )
 }
@@ -46,6 +49,7 @@ export default function TournamentScoreboardPage() {
   const [teams, setTeams] = useState<Team[]>([])
   const [matches, setMatches] = useState<Match[]>([])
   const [loading, setLoading] = useState(true)
+  const [copied, setCopied] = useState(false)
   const [lastUpdated, setLastUpdated] = useState(new Date())
 
   const fetchData = useCallback(async () => {
@@ -64,19 +68,24 @@ export default function TournamentScoreboardPage() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // Realtime score updates
   useEffect(() => {
     if (!tournamentId) return
-    const ch = supabase.channel(`scoreboard-${tournamentId}`)
+    const ch = supabase.channel(`sb-${tournamentId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_matches', filter: `tournament_id=eq.${tournamentId}` },
-        payload => {
-          if (payload.eventType === 'INSERT') setMatches(prev => [...prev, payload.new as Match].sort((a, b) => a.round - b.round || a.match_number - b.match_number))
-          if (payload.eventType === 'UPDATE') { setMatches(prev => prev.map(m => m.id === (payload.new as Match).id ? payload.new as Match : m)); setLastUpdated(new Date()) }
-          if (payload.eventType === 'DELETE') setMatches(prev => prev.filter(m => m.id !== (payload.old as Match).id))
+        p => {
+          if (p.eventType === 'INSERT') setMatches(prev => [...prev, p.new as Match].sort((a, b) => a.round - b.round || a.match_number - b.match_number))
+          if (p.eventType === 'UPDATE') { setMatches(prev => prev.map(m => m.id === (p.new as Match).id ? p.new as Match : m)); setLastUpdated(new Date()) }
+          if (p.eventType === 'DELETE') setMatches(prev => prev.filter(m => m.id !== (p.old as Match).id))
         })
       .subscribe()
     return () => { supabase.removeChannel(ch) }
   }, [tournamentId])
+
+  function share() {
+    const url = window.location.href
+    if (navigator.share) navigator.share({ title: tournament?.name ?? 'Tournament Standings', url })
+    else { navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2500) }
+  }
 
   const teamMap = Object.fromEntries(teams.map(t => [t.id, t]))
   const liveMatches = matches.filter(m => m.status === 'live')
@@ -84,125 +93,136 @@ export default function TournamentScoreboardPage() {
   const rounds = [...new Set(matches.map(m => m.round))].sort((a, b) => a - b)
   const maxRound = Math.max(...rounds, 0)
 
+  // Standings for round robin
+  const standings = teams.map(team => {
+    const played = matches.filter(m => (m.team1_id === team.id || m.team2_id === team.id) && m.status === 'completed')
+    const wins = played.filter(m => m.winner_id === team.id).length
+    const losses = played.filter(m => m.winner_id && m.winner_id !== team.id).length
+    const draws = played.length - wins - losses
+    const pf = played.reduce((s, m) => s + (m.team1_id === team.id ? m.score1 : m.score2), 0)
+    const pa = played.reduce((s, m) => s + (m.team1_id === team.id ? m.score2 : m.score1), 0)
+    const pts = wins * 3 + draws
+    return { team, played: played.length, wins, draws, losses, pf, pa, pts }
+  }).sort((a, b) => b.pts - a.pts || b.wins - a.wins || (b.pf - b.pa) - (a.pf - a.pa))
+
+  const maxPts = standings[0]?.pts || 1
+
   if (loading) return (
-    <div style={{ minHeight: '100vh', background: '#060304', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: 28, marginBottom: 12 }}>🏆</div>
-        <div style={{ width: 28, height: 28, border: '3px solid rgba(255,255,255,0.1)', borderTopColor: '#f97316', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto' }} />
-        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-      </div>
+    <div style={{ minHeight: '100vh', background: '#070b14', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <style>{CSS}</style>
+      <div style={{ width: 28, height: 28, border: '3px solid rgba(255,255,255,0.08)', borderTopColor: 'rgba(255,255,255,0.5)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
     </div>
   )
 
   if (!tournament) return (
-    <div style={{ minHeight: '100vh', background: '#060304', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
-      Tournament not found. <Link to="/tournaments" style={{ color: '#f97316', marginLeft: 8 }}>Go back</Link>
+    <div style={{ minHeight: '100vh', background: '#070b14', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.4)', fontFamily: 'inherit' }}>
+      Tournament not found.
     </div>
   )
 
-  const isLiveTournament = liveMatches.length > 0 || tournament.status === 'ongoing'
-
   return (
-    <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #0d0507 0%, #080305 100%)', color: '#fff', fontFamily: 'inherit' }}>
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes sb-pulse { 0%,100%{opacity:1;box-shadow:0 0 12px rgba(249,115,22,0.8)} 50%{opacity:.5;box-shadow:0 0 4px rgba(249,115,22,0.3)} }
-        @keyframes sb-glow { 0%,100%{box-shadow:0 0 40px rgba(249,115,22,0.12)} 50%{box-shadow:0 0 80px rgba(249,115,22,0.25)} }
-        @keyframes sb-in { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes score-tick { 0%{transform:scale(1.25);color:#fff} 100%{transform:scale(1)} }
-      `}</style>
+    <div style={{ minHeight: '100vh', background: '#070b14', color: '#fff', fontFamily: 'inherit', position: 'relative' }}>
+      <style>{CSS}</style>
 
-      {/* ── Top bar ── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(10px)', position: 'sticky', top: 0, zIndex: 10, background: 'rgba(6,3,4,0.9)' }}>
-        <button onClick={() => navigate(`/tournaments/${tournamentId}`)} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', color: 'rgba(255,255,255,0.45)', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', padding: 0 }}>
+      {/* Background */}
+      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0 }}>
+        <div style={{ position: 'absolute', top: '-5%', left: '20%', width: '60vw', height: '40vw', borderRadius: '50%', background: 'radial-gradient(circle, rgba(138,21,56,0.12) 0%, transparent 70%)', filter: 'blur(60px)' }} />
+      </div>
+
+      {/* Sticky header */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'rgba(7,11,20,0.88)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.07)', padding: '12px 24px', display: 'flex', alignItems: 'center', gap: 14 }}>
+        <button onClick={() => navigate(`/tournaments/${tournamentId}`)} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'rgba(255,255,255,0.38)', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', padding: 0, flexShrink: 0 }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-          Back to Tournament
+          Tournament
         </button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {isLiveTournament && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(249,115,22,0.12)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: 999, padding: '5px 12px' }}>
-              <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#f97316', animation: 'sb-pulse 1.4s ease-in-out infinite' }} />
-              <span style={{ fontSize: 11.5, fontWeight: 800, color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Live</span>
+
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: 'rgba(255,255,255,0.8)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tournament.name}</span>
+          {liveMatches.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 9px', background: 'rgba(249,115,22,0.12)', border: '1px solid rgba(249,115,22,0.25)', borderRadius: 20, flexShrink: 0 }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#f97316' }} />
+              <span style={{ fontSize: 10.5, fontWeight: 800, color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.12em' }}>Live</span>
             </div>
           )}
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>Updated {lastUpdated.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</span>
         </div>
+
+        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.18)', flexShrink: 0 }}>
+          {lastUpdated.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+        </span>
+        <button onClick={share} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: copied ? 'rgba(74,222,128,0.1)' : 'rgba(255,255,255,0.05)', border: `1px solid ${copied ? 'rgba(74,222,128,0.28)' : 'rgba(255,255,255,0.1)'}`, borderRadius: 9, color: copied ? '#4ade80' : 'rgba(255,255,255,0.55)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit', transition: 'all 0.2s', flexShrink: 0 }}>
+          {copied ? (
+            <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>Copied!</>
+          ) : (
+            <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>Share</>
+          )}
+        </button>
       </div>
 
-      {/* ── Tournament header ── */}
-      <div style={{ textAlign: 'center', padding: '40px 24px 32px', animation: 'sb-in 0.4s ease both' }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 80, height: 80, borderRadius: 20, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', fontSize: 40, marginBottom: 16, overflow: 'hidden' }}>
-          {tournament.logo_url
-            ? <img src={tournament.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            : (SPORT_EMOJIS[tournament.sport] ?? '🏆')}
-        </div>
-        <h1 style={{ fontSize: 32, fontWeight: 900, letterSpacing: '-0.02em', margin: '0 0 8px', background: 'linear-gradient(135deg,#fff 60%,rgba(255,255,255,0.5))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-          {tournament.name}
-        </h1>
-        <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)' }}>
-          {tournament.sport}
-          {tournament.club && <> · {tournament.club.name}</>}
-          {tournament.location && <> · {tournament.location}</>}
-        </div>
-      </div>
+      <div style={{ position: 'relative', zIndex: 1, maxWidth: 960, margin: '0 auto', padding: '40px 20px 80px' }}>
 
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 16px 60px' }}>
+        {/* Tournament hero */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 22, marginBottom: 48, animation: 'sb-in 0.4s ease both' }}>
+          <div style={{ width: 72, height: 72, borderRadius: 18, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+            {tournament.logo_url
+              ? <img src={tournament.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              : <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" strokeLinecap="round"><path d="M6 9H4.5a2.5 2.5 0 0 0 0 5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 1 0 5H18"/><path d="M4 22h16"/><path d="M8 22V11.3"/><path d="M16 22V11.3"/><rect x="6" y="2" width="12" height="9" rx="1"/></svg>
+            }
+          </div>
+          <div>
+            <h1 style={{ fontSize: 28, fontWeight: 900, margin: '0 0 6px', letterSpacing: '-0.025em', lineHeight: 1.1 }}>{tournament.name}</h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>{tournament.sport}</span>
+              {tournament.club && <>
+                <span style={{ width: 3, height: 3, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'inline-block' }} />
+                <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>{tournament.club.name}</span>
+              </>}
+              {tournament.location && <>
+                <span style={{ width: 3, height: 3, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'inline-block' }} />
+                <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>{tournament.location}</span>
+              </>}
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.1em', padding: '2px 8px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6 }}>
+                {tournament.format === 'round_robin' ? 'Round Robin' : 'Single Elimination'}
+              </span>
+            </div>
+          </div>
+        </div>
 
-        {/* ── No matches yet ── */}
         {matches.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '60px 20px', color: 'rgba(255,255,255,0.3)', fontSize: 15 }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>🎯</div>
-            The bracket hasn't been set up yet. Check back soon.
+          <div style={{ textAlign: 'center', padding: '80px 20px', color: 'rgba(255,255,255,0.2)', fontSize: 14, animation: 'sb-in 0.4s ease both' }}>
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5" style={{ display: 'block', margin: '0 auto 16px' }} strokeLinecap="round"><path d="M6 9H4.5a2.5 2.5 0 0 0 0 5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 1 0 5H18"/><path d="M4 22h16"/><path d="M8 22V11.3"/><path d="M16 22V11.3"/><rect x="6" y="2" width="12" height="9" rx="1"/></svg>
+            Bracket hasn't been set up yet. Check back soon.
           </div>
         )}
 
         {/* ── LIVE NOW ── */}
         {liveMatches.length > 0 && (
-          <div style={{ marginBottom: 48, animation: 'sb-in 0.5s ease both' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-              <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#f97316', animation: 'sb-pulse 1.3s ease-in-out infinite', flexShrink: 0 }} />
-              <span style={{ fontSize: 15, fontWeight: 900, color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Live Now</span>
-              <div style={{ flex: 1, height: 1, background: 'linear-gradient(to right, rgba(249,115,22,0.4), transparent)' }} />
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
+          <div style={{ marginBottom: 52, animation: 'sb-in 0.45s ease both' }}>
+            <SectionLabel>Live Now</SectionLabel>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px,1fr))', gap: 14 }}>
               {liveMatches.map(match => {
                 const t1 = match.team1_id ? teamMap[match.team1_id] : null
                 const t2 = match.team2_id ? teamMap[match.team2_id] : null
                 return (
-                  <div key={match.id} style={{ background: 'rgba(249,115,22,0.07)', border: '1px solid rgba(249,115,22,0.35)', borderRadius: 20, overflow: 'hidden', animation: 'sb-glow 2.5s ease-in-out infinite' }}>
-                    {/* Card header */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 18px', background: 'rgba(249,115,22,0.12)', borderBottom: '1px solid rgba(249,115,22,0.2)' }}>
-                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#f97316', animation: 'sb-pulse 1.3s ease-in-out infinite' }} />
-                      <span style={{ fontSize: 11, fontWeight: 900, color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Live</span>
-                      <span style={{ fontSize: 11, color: 'rgba(249,115,22,0.55)', marginLeft: 4 }}>
-                        {match.round === maxRound ? 'Final' : match.round === maxRound - 1 && rounds.length > 2 ? 'Semi-final' : `Round ${match.round}`} · Match {match.match_number}
+                  <div key={match.id} style={{ background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.28)', borderRadius: 18, overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 18px', borderBottom: '1px solid rgba(249,115,22,0.18)' }}>
+                      <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#f97316', flexShrink: 0 }} />
+                      <span style={{ fontSize: 11, fontWeight: 800, color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.12em' }}>Live</span>
+                      <span style={{ fontSize: 11, color: 'rgba(249,115,22,0.45)', marginLeft: 2 }}>
+                        {match.round === maxRound ? 'Final' : match.round === maxRound - 1 && rounds.length > 2 ? 'Semi-final' : `Round ${match.round}`}
                       </span>
                     </div>
-                    {/* Score */}
-                    <div style={{ padding: '24px 18px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                      {/* Team 1 */}
-                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-                        <TeamLogo team={t1} size={56} />
-                        <span style={{ fontSize: 14, fontWeight: 700, textAlign: 'center', lineHeight: 1.3 }}>{t1?.team_name ?? 'TBD'}</span>
-                        <span style={{ fontSize: 64, fontWeight: 900, lineHeight: 1, color: '#fff', textShadow: '0 0 30px rgba(249,115,22,0.5)' }}>{match.score1}</span>
+                    <div style={{ padding: '22px 20px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9 }}>
+                        <Logo team={t1} size={48} />
+                        <span style={{ fontSize: 13, fontWeight: 700, textAlign: 'center', lineHeight: 1.3, color: 'rgba(255,255,255,0.85)' }}>{t1?.team_name ?? 'TBD'}</span>
+                        <span style={{ fontSize: 56, fontWeight: 900, lineHeight: 1, color: '#fff' }}>{match.score1}</span>
                       </div>
-                      <div style={{ flexShrink: 0, fontSize: 18, fontWeight: 700, color: 'rgba(249,115,22,0.4)', letterSpacing: '0.05em' }}>vs</div>
-                      {/* Team 2 */}
-                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-                        <TeamLogo team={t2} size={56} />
-                        <span style={{ fontSize: 14, fontWeight: 700, textAlign: 'center', lineHeight: 1.3 }}>{t2?.team_name ?? 'TBD'}</span>
-                        <span style={{ fontSize: 64, fontWeight: 900, lineHeight: 1, color: '#fff', textShadow: '0 0 30px rgba(249,115,22,0.5)' }}>{match.score2}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.2)', letterSpacing: '0.06em' }}>vs</span>
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9 }}>
+                        <Logo team={t2} size={48} />
+                        <span style={{ fontSize: 13, fontWeight: 700, textAlign: 'center', lineHeight: 1.3, color: 'rgba(255,255,255,0.85)' }}>{t2?.team_name ?? 'TBD'}</span>
+                        <span style={{ fontSize: 56, fontWeight: 900, lineHeight: 1, color: '#fff' }}>{match.score2}</span>
                       </div>
-                    </div>
-                    {/* Watch Live button */}
-                    <div style={{ padding: '0 18px 18px' }}>
-                      <button onClick={() => navigate(`/matches/${match.id}`)} style={{ width: '100%', padding: '11px', background: 'rgba(249,115,22,0.18)', border: '1px solid rgba(249,115,22,0.45)', borderRadius: 12, color: '#f97316', cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, transition: 'all 0.15s' }}
-                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(249,115,22,0.28)' }}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(249,115,22,0.18)' }}
-                      >
-                        <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#f97316', animation: 'sb-pulse 1.3s ease-in-out infinite' }} />
-                        Watch Match Center
-                      </button>
                     </div>
                   </div>
                 )
@@ -211,46 +231,100 @@ export default function TournamentScoreboardPage() {
           </div>
         )}
 
+        {/* ── Standings (round robin) ── */}
+        {tournament.format === 'round_robin' && standings.length > 0 && (
+          <div style={{ marginBottom: 52, animation: 'sb-in 0.5s ease both' }}>
+            <SectionLabel>Standings</SectionLabel>
+            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 18, overflow: 'hidden' }}>
+              {/* Header */}
+              <div style={{ display: 'grid', gridTemplateColumns: '36px 1fr 44px 44px 44px 44px 44px 52px', gap: 4, padding: '10px 20px', borderBottom: '1px solid rgba(255,255,255,0.07)', fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
+                <span>#</span>
+                <span>Team</span>
+                <span style={{ textAlign: 'center' }}>P</span>
+                <span style={{ textAlign: 'center' }}>W</span>
+                <span style={{ textAlign: 'center' }}>D</span>
+                <span style={{ textAlign: 'center' }}>L</span>
+                <span style={{ textAlign: 'center' }}>+/−</span>
+                <span style={{ textAlign: 'center' }}>Pts</span>
+              </div>
+              {standings.map((row, i) => {
+                const pct = maxPts > 0 ? row.pts / maxPts : 0
+                const medal = i === 0 ? '#e9c176' : i === 1 ? '#94a3b8' : i === 2 ? '#b87333' : null
+                return (
+                  <div key={row.team.id} style={{ display: 'grid', gridTemplateColumns: '36px 1fr 44px 44px 44px 44px 44px 52px', gap: 4, padding: '13px 20px', borderBottom: i < standings.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none', alignItems: 'center', background: i === 0 ? 'rgba(233,193,118,0.04)' : 'transparent', animation: `row-in 0.3s ${i * 0.05}s ease both` }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: medal ?? 'rgba(255,255,255,0.2)' }}>{i + 1}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                      <Logo team={row.team} size={30} />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: i < 3 ? 700 : 500, color: i === 0 ? '#fff' : 'rgba(255,255,255,0.8)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.team.team_name}</div>
+                        {/* Win bar */}
+                        <div style={{ marginTop: 4, height: 2, width: 60, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${pct * 100}%`, background: medal ?? 'rgba(255,255,255,0.25)', borderRadius: 2, transition: 'width 0.6s ease' }} />
+                        </div>
+                      </div>
+                    </div>
+                    <span style={{ textAlign: 'center', fontSize: 14, color: 'rgba(255,255,255,0.35)' }}>{row.played}</span>
+                    <span style={{ textAlign: 'center', fontSize: 14, fontWeight: 700, color: row.wins > 0 ? '#4ade80' : 'rgba(255,255,255,0.2)' }}>{row.wins}</span>
+                    <span style={{ textAlign: 'center', fontSize: 14, color: row.draws > 0 ? '#f59e0b' : 'rgba(255,255,255,0.2)' }}>{row.draws}</span>
+                    <span style={{ textAlign: 'center', fontSize: 14, color: row.losses > 0 ? '#f87171' : 'rgba(255,255,255,0.2)' }}>{row.losses}</span>
+                    <span style={{ textAlign: 'center', fontSize: 13, color: (row.pf - row.pa) >= 0 ? 'rgba(255,255,255,0.45)' : '#f87171' }}>
+                      {row.pf - row.pa > 0 ? '+' : ''}{row.pf - row.pa}
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <span style={{ fontSize: 16, fontWeight: 900, color: medal ?? '#fff', background: medal ? `${medal}18` : 'rgba(255,255,255,0.06)', border: `1px solid ${medal ? `${medal}35` : 'rgba(255,255,255,0.1)'}`, borderRadius: 8, padding: '3px 10px', minWidth: 36, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{row.pts}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div style={{ marginTop: 10, display: 'flex', gap: 16, paddingLeft: 4 }}>
+              {[['#4ade80','W = win (3 pts)'], ['#f59e0b','D = draw (1 pt)'], ['#f87171','L = loss (0 pts)']].map(([c, l]) => (
+                <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: 2, background: c, flexShrink: 0 }} />
+                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>{l}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* ── Bracket (single elimination) ── */}
         {tournament.format === 'single_elimination' && matches.length > 0 && (
-          <div style={{ marginBottom: 40 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Bracket</span>
-              <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.07)' }} />
-            </div>
-            <div style={{ overflowX: 'auto', paddingBottom: 8 }}>
-              <div style={{ display: 'flex', gap: 12, minWidth: rounds.length * 220 }}>
+          <div style={{ marginBottom: 52, animation: 'sb-in 0.5s ease both' }}>
+            <SectionLabel>Bracket</SectionLabel>
+            <div style={{ overflowX: 'auto', paddingBottom: 12 }}>
+              <div style={{ display: 'flex', gap: 10, minWidth: rounds.length * 210 }}>
                 {rounds.map(round => (
-                  <div key={round} style={{ flex: 1, minWidth: 200 }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12, textAlign: 'center', color: round === maxRound ? '#e9c176' : 'rgba(255,255,255,0.3)' }}>
-                      {round === maxRound ? '🏆 Final' : round === maxRound - 1 && rounds.length > 2 ? 'Semis' : `Round ${round}`}
+                  <div key={round} style={{ flex: 1, minWidth: 195 }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 12, textAlign: 'center', color: round === maxRound ? '#e9c176' : 'rgba(255,255,255,0.25)' }}>
+                      {round === maxRound ? 'Final' : round === maxRound - 1 && rounds.length > 2 ? 'Semi-finals' : `Round ${round}`}
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {matches.filter(m => m.round === round).map(match => {
                         const t1 = match.team1_id ? teamMap[match.team1_id] : null
                         const t2 = match.team2_id ? teamMap[match.team2_id] : null
                         const isLive = match.status === 'live'
                         const isDone = match.status === 'completed'
-                        const t1Wins = match.winner_id === match.team1_id
-                        const t2Wins = match.winner_id === match.team2_id
+                        const t1w = match.winner_id === match.team1_id
+                        const t2w = match.winner_id === match.team2_id
                         return (
-                          <div key={match.id} style={{ background: isLive ? 'rgba(249,115,22,0.07)' : 'rgba(255,255,255,0.03)', border: `1px solid ${isLive ? 'rgba(249,115,22,0.35)' : 'rgba(255,255,255,0.09)'}`, borderRadius: 12, overflow: 'hidden' }}>
-                            {/* Status pill */}
-                            <div style={{ padding: '4px 12px', background: isLive ? 'rgba(249,115,22,0.1)' : isDone ? 'rgba(255,255,255,0.03)' : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                              {isLive && <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#f97316', animation: 'sb-pulse 1.4s ease-in-out infinite' }} />}
-                              <span style={{ fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: isLive ? '#f97316' : isDone ? 'rgba(74,222,128,0.6)' : 'rgba(255,255,255,0.2)' }}>
+                          <div key={match.id} style={{ background: isLive ? 'rgba(249,115,22,0.06)' : 'rgba(255,255,255,0.03)', border: `1px solid ${isLive ? 'rgba(249,115,22,0.3)' : 'rgba(255,255,255,0.08)'}`, borderRadius: 13, overflow: 'hidden' }}>
+                            <div style={{ padding: '4px 11px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                              {isLive && <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#f97316', flexShrink: 0 }} />}
+                              <span style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: isLive ? '#f97316' : isDone ? 'rgba(74,222,128,0.5)' : 'rgba(255,255,255,0.18)' }}>
                                 {isLive ? 'Live' : isDone ? 'Final' : 'Upcoming'}
                               </span>
                             </div>
-                            {/* Team rows */}
-                            {[{ team: t1, score: match.score1, wins: t1Wins, loses: t2Wins && isDone }, { team: t2, score: match.score2, wins: t2Wins, loses: t1Wins && isDone }].map((row, ri) => (
-                              <div key={ri} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', background: row.wins ? 'rgba(74,222,128,0.06)' : 'transparent', borderBottom: ri === 0 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
-                                <TeamLogo team={row.team} size={24} />
-                                <span style={{ flex: 1, fontSize: 12.5, fontWeight: row.wins ? 800 : 500, color: row.loses ? 'rgba(255,255,255,0.25)' : row.wins ? '#fff' : 'rgba(255,255,255,0.75)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {row.team?.team_name ?? (ri === 0 ? (!t2 ? 'Bye' : 'TBD') : (!t1 ? 'Bye' : 'TBD'))}
+                            {[{ team: t1, score: match.score1, wins: t1w, loses: t2w && isDone }, { team: t2, score: match.score2, wins: t2w, loses: t1w && isDone }].map((row, ri) => (
+                              <div key={ri} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 11px', background: row.wins ? 'rgba(74,222,128,0.05)' : 'transparent', borderBottom: ri === 0 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+                                <Logo team={row.team} size={22} />
+                                <span style={{ flex: 1, fontSize: 12.5, fontWeight: row.wins ? 700 : 400, color: row.loses ? 'rgba(255,255,255,0.22)' : row.wins ? '#fff' : 'rgba(255,255,255,0.7)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {row.team?.team_name ?? (!((ri === 0 ? t2 : t1)) ? 'Bye' : 'TBD')}
                                 </span>
-                                {row.wins && <span style={{ fontSize: 11 }}>🏆</span>}
-                                <span style={{ fontSize: 20, fontWeight: 900, minWidth: 26, textAlign: 'right', color: row.wins ? '#4ade80' : row.loses ? 'rgba(255,255,255,0.18)' : isLive ? '#f97316' : 'rgba(255,255,255,0.35)' }}>
+                                {row.wins && (
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                )}
+                                <span style={{ fontSize: 18, fontWeight: 900, minWidth: 24, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: row.wins ? '#4ade80' : row.loses ? 'rgba(255,255,255,0.15)' : isLive ? '#f97316' : 'rgba(255,255,255,0.3)' }}>
                                   {isDone || isLive ? (ri === 0 ? match.score1 : match.score2) : '—'}
                                 </span>
                               </div>
@@ -266,75 +340,39 @@ export default function TournamentScoreboardPage() {
           </div>
         )}
 
-        {/* ── Standings (round robin) ── */}
-        {tournament.format === 'round_robin' && matches.length > 0 && (() => {
-          const standings = teams.map(team => {
-            const played = matches.filter(m => (m.team1_id === team.id || m.team2_id === team.id) && m.status === 'completed')
-            const wins = played.filter(m => m.winner_id === team.id).length
-            const losses = played.length - wins
-            const gf = played.reduce((s, m) => s + (m.team1_id === team.id ? m.score1 : m.score2), 0)
-            const ga = played.reduce((s, m) => s + (m.team1_id === team.id ? m.score2 : m.score1), 0)
-            return { team, played: played.length, wins, losses, gf, ga }
-          }).sort((a, b) => b.wins - a.wins || (b.gf - b.ga) - (a.gf - a.ga))
-          return (
-            <div style={{ marginBottom: 40 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Standings</span>
-                <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.07)' }} />
-              </div>
-              <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 16, overflow: 'hidden' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '32px 1fr 48px 48px 48px 48px 48px', padding: '8px 16px', borderBottom: '1px solid rgba(255,255,255,0.07)', fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.08em', gap: 8, alignItems: 'center' }}>
-                  <span>#</span><span>Team</span><span style={{ textAlign: 'center' }}>P</span><span style={{ textAlign: 'center' }}>W</span><span style={{ textAlign: 'center' }}>L</span><span style={{ textAlign: 'center' }}>GF</span><span style={{ textAlign: 'center' }}>GA</span>
-                </div>
-                {standings.map((row, i) => (
-                  <div key={row.team.id} style={{ display: 'grid', gridTemplateColumns: '32px 1fr 48px 48px 48px 48px 48px', padding: '12px 16px', borderBottom: i < standings.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none', gap: 8, alignItems: 'center', background: i === 0 ? 'rgba(233,193,118,0.05)' : 'transparent' }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: i === 0 ? '#e9c176' : 'rgba(255,255,255,0.3)' }}>{i + 1}</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <TeamLogo team={row.team} size={28} />
-                      <span style={{ fontSize: 14, fontWeight: i === 0 ? 800 : 500 }}>{row.team.team_name}</span>
-                    </div>
-                    <span style={{ textAlign: 'center', fontSize: 14, color: 'rgba(255,255,255,0.4)' }}>{row.played}</span>
-                    <span style={{ textAlign: 'center', fontSize: 14, fontWeight: 700, color: '#4ade80' }}>{row.wins}</span>
-                    <span style={{ textAlign: 'center', fontSize: 14, color: '#f87171' }}>{row.losses}</span>
-                    <span style={{ textAlign: 'center', fontSize: 14, color: 'rgba(255,255,255,0.4)' }}>{row.gf}</span>
-                    <span style={{ textAlign: 'center', fontSize: 14, color: 'rgba(255,255,255,0.4)' }}>{row.ga}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )
-        })()}
-
-        {/* ── Recent Results ── */}
+        {/* ── Results ── */}
         {completedMatches.length > 0 && (
-          <div style={{ marginBottom: 40 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Results</span>
-              <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.07)' }} />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {[...completedMatches].reverse().slice(0, 10).map(match => {
+          <div style={{ marginBottom: 52, animation: 'sb-in 0.55s ease both' }}>
+            <SectionLabel>Results</SectionLabel>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {[...completedMatches].reverse().slice(0, 12).map((match, i) => {
                 const t1 = match.team1_id ? teamMap[match.team1_id] : null
                 const t2 = match.team2_id ? teamMap[match.team2_id] : null
-                const t1Wins = match.winner_id === match.team1_id
-                const t2Wins = match.winner_id === match.team2_id
+                const t1w = match.winner_id === match.team1_id
+                const t2w = match.winner_id === match.team2_id
                 return (
-                  <div key={match.id} style={{ display: 'flex', alignItems: 'center', gap: 14, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, padding: '10px 16px' }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(74,222,128,0.6)', textTransform: 'uppercase', letterSpacing: '0.08em', minWidth: 38 }}>Final</span>
-                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                      <TeamLogo team={t1} size={22} />
-                      <span style={{ fontSize: 13, fontWeight: t1Wins ? 800 : 400, color: t1Wins ? '#fff' : 'rgba(255,255,255,0.35)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t1?.team_name ?? 'TBD'}</span>
-                      {t1Wins && <span style={{ fontSize: 11, marginLeft: 2 }}>🏆</span>}
+                  <div key={match.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 12, background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, padding: '11px 18px', animation: `row-in 0.3s ${i * 0.03}s ease both` }}>
+                    {/* Team 1 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <Logo team={t1} size={26} />
+                      <span style={{ fontSize: 13.5, fontWeight: t1w ? 700 : 400, color: t1w ? '#fff' : 'rgba(255,255,255,0.32)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {t1?.team_name ?? 'TBD'}
+                      </span>
+                      {t1w && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12"/></svg>}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                      <span style={{ fontSize: 22, fontWeight: 900, color: t1Wins ? '#4ade80' : 'rgba(255,255,255,0.3)', minWidth: 24, textAlign: 'center' }}>{match.score1}</span>
-                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', fontWeight: 700 }}>—</span>
-                      <span style={{ fontSize: 22, fontWeight: 900, color: t2Wins ? '#4ade80' : 'rgba(255,255,255,0.3)', minWidth: 24, textAlign: 'center' }}>{match.score2}</span>
+                    {/* Score */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                      <span style={{ fontSize: 22, fontWeight: 900, minWidth: 28, textAlign: 'center', fontVariantNumeric: 'tabular-nums', color: t1w ? '#fff' : 'rgba(255,255,255,0.25)' }}>{match.score1}</span>
+                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.18)', fontWeight: 600 }}>—</span>
+                      <span style={{ fontSize: 22, fontWeight: 900, minWidth: 28, textAlign: 'center', fontVariantNumeric: 'tabular-nums', color: t2w ? '#fff' : 'rgba(255,255,255,0.25)' }}>{match.score2}</span>
                     </div>
-                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end', minWidth: 0 }}>
-                      {t2Wins && <span style={{ fontSize: 11 }}>🏆</span>}
-                      <span style={{ fontSize: 13, fontWeight: t2Wins ? 800 : 400, color: t2Wins ? '#fff' : 'rgba(255,255,255,0.35)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t2?.team_name ?? 'TBD'}</span>
-                      <TeamLogo team={t2} size={22} />
+                    {/* Team 2 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'flex-end' }}>
+                      {t2w && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12"/></svg>}
+                      <span style={{ fontSize: 13.5, fontWeight: t2w ? 700 : 400, color: t2w ? '#fff' : 'rgba(255,255,255,0.32)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {t2?.team_name ?? 'TBD'}
+                      </span>
+                      <Logo team={t2} size={26} />
                     </div>
                   </div>
                 )
@@ -345,30 +383,34 @@ export default function TournamentScoreboardPage() {
 
         {/* ── Prizes ── */}
         {tournament.prizes && tournament.prizes.length > 0 && (
-          <div style={{ marginBottom: 40 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Prizes</span>
-              <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.07)' }} />
-            </div>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              {tournament.prizes.map((prize, i) => (
-                <div key={i} style={{ background: 'rgba(233,193,118,0.07)', border: '1px solid rgba(233,193,118,0.18)', borderRadius: 14, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <span style={{ fontSize: 24 }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '🏅'}</span>
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#e9c176', marginBottom: 2 }}>{prize.place}</div>
-                    <div style={{ fontSize: 14, color: '#fff' }}>{prize.description}</div>
+          <div style={{ marginBottom: 40, animation: 'sb-in 0.6s ease both' }}>
+            <SectionLabel>Prizes</SectionLabel>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              {tournament.prizes.map((prize, i) => {
+                const colors = ['#e9c176', '#94a3b8', '#b87333']
+                const c = colors[i] ?? 'rgba(255,255,255,0.3)'
+                return (
+                  <div key={i} style={{ background: `${c}0d`, border: `1px solid ${c}28`, borderRadius: 14, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, minWidth: 180 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 10, background: `${c}18`, border: `1px solid ${c}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.8" strokeLinecap="round"><path d="M6 9H4.5a2.5 2.5 0 0 0 0 5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 1 0 5H18"/><path d="M4 22h16"/><path d="M8 22V11.3"/><path d="M16 22V11.3"/><rect x="6" y="2" width="12" height="9" rx="1"/></svg>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: c, marginBottom: 3, letterSpacing: '0.04em' }}>{prize.place}</div>
+                      <div style={{ fontSize: 14, color: '#fff', fontWeight: 600 }}>{prize.description}</div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         )}
+
       </div>
 
       {/* Footer */}
-      <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)' }}>Powered by</span>
-        <span style={{ fontSize: 13, fontWeight: 800, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.1em' }}>CLUBSYNQ</span>
+      <div style={{ position: 'relative', zIndex: 1, borderTop: '1px solid rgba(255,255,255,0.06)', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.15)', letterSpacing: '0.06em' }}>Powered by</span>
+        <span style={{ fontSize: 12, fontWeight: 900, color: 'rgba(255,255,255,0.25)', letterSpacing: '0.14em' }}>CLUBSYNQ</span>
       </div>
     </div>
   )
