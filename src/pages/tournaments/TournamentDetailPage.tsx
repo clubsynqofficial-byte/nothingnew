@@ -621,6 +621,36 @@ export default function TournamentDetailPage() {
     setTab('bracket')
   }
 
+  async function generateRoundRobinSchedule() {
+    if (!tournament) return
+    const accepted = teams.filter(t => t.status === 'accepted')
+    if (accepted.length < 2) return
+    setGeneratingBracket(true)
+    await supabase.from('tournament_matches').delete().eq('tournament_id', tournament.id)
+    let matchNum = 1
+    const newMatches: object[] = []
+    for (let i = 0; i < accepted.length; i++) {
+      for (let j = i + 1; j < accepted.length; j++) {
+        newMatches.push({
+          tournament_id: tournament.id,
+          team1_id: accepted[i].id,
+          team2_id: accepted[j].id,
+          round: 1,
+          match_number: matchNum++,
+          status: 'scheduled',
+          score1: 0,
+          score2: 0,
+        })
+      }
+    }
+    await supabase.from('tournament_matches').insert(newMatches)
+    await supabase.from('tournaments').update({ format: 'round_robin' }).eq('id', tournament.id)
+    setTournament(prev => prev ? { ...prev, format: 'round_robin' } : prev)
+    await fetchAll()
+    setGeneratingBracket(false)
+    setTab('bracket')
+  }
+
   if (loading) return (
     <div className="page-content" style={{ display: 'flex', justifyContent: 'center', padding: '80px 0' }}>
       <div style={{ width: 28, height: 28, border: '3px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
@@ -1141,17 +1171,23 @@ export default function TournamentDetailPage() {
                   {/* Selected template badge */}
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(138,21,56,0.18)', border: '1px solid rgba(138,21,56,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>🏀</div>
+                      <div style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(138,21,56,0.18)', border: '1px solid rgba(138,21,56,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
+                        {scoreboardTemplate === 'Round Robin Standings' ? '🏆' : '🏀'}
+                      </div>
                       <div>
                         <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)' }}>{scoreboardTemplate}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Basketball · Selected template</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                          {scoreboardTemplate === 'Round Robin Standings' ? 'Round Robin · Selected template' : 'Basketball · Selected template'}
+                        </div>
                       </div>
                     </div>
                     <button onClick={() => setScoreboardTemplate(null)} style={{ padding: '5px 11px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 7, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11.5, fontFamily: 'inherit' }}>Change</button>
                   </div>
 
                   <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
-                    Add all participating teams, then generate the scoreboard to create matchups.
+                    {scoreboardTemplate === 'Round Robin Standings'
+                      ? 'Every team plays every other team once. Add teams, then generate the full schedule.'
+                      : 'Add all participating teams, then generate the scoreboard to create matchups.'}
                   </div>
 
                   {/* Team list */}
@@ -1194,8 +1230,14 @@ export default function TournamentDetailPage() {
                       {acceptedTeams.length < 2 ? 'Add at least 2 teams to generate' : <span><span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{acceptedTeams.length} teams</span> ready</span>}
                     </div>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <button onClick={generateBracket} disabled={generatingBracket || acceptedTeams.length < 2} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 22px', background: acceptedTeams.length < 2 ? 'rgba(255,255,255,0.04)' : 'var(--accent)', border: 'none', borderRadius: 12, color: '#fff', cursor: acceptedTeams.length < 2 ? 'default' : 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit', opacity: acceptedTeams.length < 2 ? 0.4 : 1, boxShadow: acceptedTeams.length >= 2 && !generatingBracket ? '0 4px 18px rgba(138,21,56,0.4)' : 'none' }}>
-                        {generatingBracket ? <><div style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />Generating…</> : 'Generate Scoreboard →'}
+                      <button
+                        onClick={scoreboardTemplate === 'Round Robin Standings' ? generateRoundRobinSchedule : generateBracket}
+                        disabled={generatingBracket || acceptedTeams.length < 2}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 22px', background: acceptedTeams.length < 2 ? 'rgba(255,255,255,0.04)' : 'var(--accent)', border: 'none', borderRadius: 12, color: '#fff', cursor: acceptedTeams.length < 2 ? 'default' : 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit', opacity: acceptedTeams.length < 2 ? 0.4 : 1, boxShadow: acceptedTeams.length >= 2 && !generatingBracket ? '0 4px 18px rgba(138,21,56,0.4)' : 'none' }}
+                      >
+                        {generatingBracket
+                          ? <><div style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />Generating…</>
+                          : scoreboardTemplate === 'Round Robin Standings' ? 'Generate Schedule →' : 'Generate Scoreboard →'}
                       </button>
                       {matches.length > 0 && scoreboardTemplate === 'Basketball Scoreboard Template' && (
                         <button onClick={() => navigate(`/tournaments/${tournament.id}/scoreboard/basketball`)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '11px 20px', background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 12, color: '#4ade80', cursor: 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit' }}>
@@ -2390,6 +2432,34 @@ const BASKETBALL_TEMPLATES = [
             <span style={{ fontSize: 8, fontWeight: 800, color: '#fff' }}>BOS</span>
           </div>
         </div>
+      </div>
+    ),
+  },
+  {
+    key: 'Round Robin Standings',
+    preview: (
+      <div style={{ width: '100%', padding: '8px 12px', fontFamily: 'inherit' }}>
+        <div style={{ fontSize: 7, fontWeight: 700, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 5, textAlign: 'center' }}>Standings</div>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 7 }}>
+          <thead>
+            <tr style={{ color: 'rgba(255,255,255,0.3)' }}>
+              <th style={{ textAlign: 'left', padding: '1px 3px', fontWeight: 600 }}>Team</th>
+              <th style={{ textAlign: 'center', padding: '1px 3px' }}>W</th>
+              <th style={{ textAlign: 'center', padding: '1px 3px' }}>L</th>
+              <th style={{ textAlign: 'center', padding: '1px 3px' }}>Pts</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[{ name: 'Wolves', w: 4, l: 0 }, { name: 'Hawks', w: 3, l: 1 }, { name: 'Bulls', w: 2, l: 2 }, { name: 'Tigers', w: 0, l: 4 }].map((row, i) => (
+              <tr key={row.name} style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                <td style={{ padding: '2px 3px', color: i === 0 ? '#e9c176' : 'rgba(255,255,255,0.7)', fontWeight: i === 0 ? 700 : 500 }}>{row.name}</td>
+                <td style={{ padding: '2px 3px', textAlign: 'center', color: '#4ade80', fontWeight: 700 }}>{row.w}</td>
+                <td style={{ padding: '2px 3px', textAlign: 'center', color: '#f87171' }}>{row.l}</td>
+                <td style={{ padding: '2px 3px', textAlign: 'center', color: 'rgba(255,255,255,0.5)' }}>{row.w * 2}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     ),
   },
