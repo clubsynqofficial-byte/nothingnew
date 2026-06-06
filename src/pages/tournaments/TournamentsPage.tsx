@@ -46,13 +46,14 @@ function formatDate(iso: string | null) {
 
 type Filter = 'all' | 'open' | 'ongoing' | 'completed'
 
-const MAINTENANCE_MODE = false
+const MAINTENANCE_MODE = true
+const MAINTENANCE_ALLOWED = ['aby.nair08@gmail.com', 'abbasmazin48845@gmail.com']
 
 export default function TournamentsPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
 
-  if (MAINTENANCE_MODE && user?.email !== 'aby.nair08@gmail.com') return (
+  if (MAINTENANCE_MODE && !MAINTENANCE_ALLOWED.includes(user?.email ?? '')) return (
     <div className="page-content" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '65vh', textAlign: 'center' }}>
       <style>{`@keyframes wrench{0%,100%{transform:rotate(-15deg)}50%{transform:rotate(15deg)}}`}</style>
       <div style={{ fontSize: 60, marginBottom: 20, display: 'inline-block', animation: 'wrench 1.6s ease-in-out infinite' }}>🔧</div>
