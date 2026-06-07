@@ -947,7 +947,11 @@ export default function MatchCommandCenterPage() {
                   ['autoPlayBuzzer', 'Auto buzzer on expire'],
                 ] as [keyof Cfg, string][]).map(([key, label]) => (
                   <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
-                    <Toggle on={!!cfg[key]} onChange={() => saveCfg({ ...cfg, [key]: !cfg[key] })} />
+                    <Toggle on={!!cfg[key]} onChange={() => {
+                      const next = !cfg[key]
+                      const extra = (key === 'showShotClock' && next) ? { showTimer: true } : {}
+                      saveCfg({ ...cfg, [key]: next, ...extra })
+                    }} />
                     <span style={{ fontSize: 13, color: cfg[key] ? 'var(--text-primary)' : 'rgba(255,255,255,0.4)' }}>{label}</span>
                   </label>
                 ))}
