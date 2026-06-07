@@ -15,6 +15,13 @@ interface FeedPost extends PostRow {
   likeCount: number; commentCount: number; repostCount: number
   isLiked: boolean; isReposted: boolean; repostSource: PostRow | null
 }
+interface AnnouncementRow {
+  id: string; content: string | null; image_url: string | null
+  created_at: string; club_id: string
+  club: { id: string; name: string; logo_url: string | null } | null
+  profile: { full_name: string | null; avatar_url: string | null } | null
+}
+
 interface CommentRow {
   id: string; post_id: string; user_id: string; content: string; created_at: string
   profile: { full_name: string | null; avatar_url: string | null } | null
@@ -62,6 +69,7 @@ export default function HomePage() {
   const nav = useNavigate()
 
   const [posts, setPosts]           = useState<FeedPost[]>([])
+  const [announcements, setAnnouncements] = useState<AnnouncementRow[]>([])
   const [loading, setLoading]       = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
@@ -175,6 +183,25 @@ export default function HomePage() {
       isReposted: myRepostSet.has(p.id),
       repostSource: p.repost_of ? (srcMap[p.repost_of] ?? null) : null,
     })))
+
+    // Fetch announcements from the user's clubs
+    if (user) {
+      const { data: memberships } = await supabase
+        .from('club_memberships').select('club_id').eq('user_id', user.id)
+      const clubIds = (memberships ?? []).map((m: { club_id: string }) => m.club_id)
+      if (clubIds.length > 0) {
+        const { data: annData } = await supabase
+          .from('club_announcements')
+          .select('id,content,image_url,created_at,club_id,club:clubs(id,name,logo_url),profile:profiles!user_id(full_name,avatar_url)')
+          .in('club_id', clubIds)
+          .order('created_at', { ascending: false })
+          .limit(30)
+        setAnnouncements((annData ?? []) as unknown as AnnouncementRow[])
+      } else {
+        setAnnouncements([])
+      }
+    }
+
     setLoading(false)
   }
 
@@ -677,34 +704,47 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Posts */}
-          {loading ? <Skeleton/> : posts.length === 0 ? <Empty/> : (
-            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-              {posts.map((p, i) => (
-                <Card key={p.id} post={p} idx={i}
-                  uid={user?.id??null} myProfile={profile}
-                  threadOpen={threadId===p.id}
-                  comments={comments[p.id]??[]}
-                  cTxt={cTxts[p.id]??''}
-                  postingC={postingC===p.id}
-                  reposting={reposting===p.id}
-                  menuOpen={menuId===p.id}
-                  poll={pollData[p.id] ?? null}
-                  onMenu={e=>{e.stopPropagation();setMenuId(menuId===p.id?null:p.id)}}
-                  onLike={() => doLike(p.id, p.isLiked)}
-                  onRepost={() => doRepost(p.id)}
-                  onDelete={() => doDelete(p.id)}
-                  onThread={() => toggleThread(p.id)}
-                  onCChange={t => setCTxts(prev=>({...prev,[p.id]:t}))}
-                  onComment={() => doComment(p.id)}
-                  onProfile={uid => nav(`/profile/${uid}`)}
-                  onOpen={() => setOpenPostId(p.id)}
-                  onLoadPoll={() => loadPoll(p.id)}
-                  onPollVote={optId => doPollVote(p.id, optId)}
-                />
-              ))}
-            </div>
-          )}
+          {/* Posts + Announcements merged feed */}
+          {loading ? <Skeleton/> : (posts.length === 0 && announcements.length === 0) ? <Empty/> : (() => {
+            type FeedItem = { kind: 'post'; post: FeedPost } | { kind: 'ann'; ann: AnnouncementRow }
+            const items: FeedItem[] = [
+              ...posts.map(p => ({ kind: 'post' as const, post: p })),
+              ...announcements.map(a => ({ kind: 'ann' as const, ann: a })),
+            ].sort((a, b) => {
+              const ta = a.kind === 'post' ? a.post.created_at : a.ann.created_at
+              const tb = b.kind === 'post' ? b.post.created_at : b.ann.created_at
+              return new Date(tb).getTime() - new Date(ta).getTime()
+            })
+            return (
+              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                {items.map((item, i) =>
+                  item.kind === 'ann'
+                    ? <AnnouncementCard key={`ann-${item.ann.id}`} ann={item.ann} />
+                    : <Card key={item.post.id} post={item.post} idx={i}
+                        uid={user?.id??null} myProfile={profile}
+                        threadOpen={threadId===item.post.id}
+                        comments={comments[item.post.id]??[]}
+                        cTxt={cTxts[item.post.id]??''}
+                        postingC={postingC===item.post.id}
+                        reposting={reposting===item.post.id}
+                        menuOpen={menuId===item.post.id}
+                        poll={pollData[item.post.id] ?? null}
+                        onMenu={e=>{e.stopPropagation();setMenuId(menuId===item.post.id?null:item.post.id)}}
+                        onLike={() => doLike(item.post.id, item.post.isLiked)}
+                        onRepost={() => doRepost(item.post.id)}
+                        onDelete={() => doDelete(item.post.id)}
+                        onThread={() => toggleThread(item.post.id)}
+                        onCChange={t => setCTxts(prev=>({...prev,[item.post.id]:t}))}
+                        onComment={() => doComment(item.post.id)}
+                        onProfile={uid => nav(`/profile/${uid}`)}
+                        onOpen={() => setOpenPostId(item.post.id)}
+                        onLoadPoll={() => loadPoll(item.post.id)}
+                        onPollVote={optId => doPollVote(item.post.id, optId)}
+                      />
+                )}
+              </div>
+            )
+          })()}
         </div>
 
         {/* ── Sidebar ─ */}
@@ -862,6 +902,56 @@ function ImageCarousel({ urls }: { urls: string[] }) {
       {/* Counter badge */}
       <div style={{ position:'absolute', top:10, right:10, background:'rgba(0,0,0,.65)', backdropFilter:'blur(6px)', borderRadius:9999, padding:'3px 9px', fontSize:11, fontWeight:700, color:'#fff' }}>
         {cur + 1} / {urls.length}
+      </div>
+    </div>
+  )
+}
+
+// ─── Announcement Card ────────────────────────────────────────────────────────
+function AnnouncementCard({ ann }: { ann: AnnouncementRow }) {
+  const timeAgo = (iso: string) => {
+    const diff = Date.now() - new Date(iso).getTime()
+    const m = Math.floor(diff / 60000)
+    if (m < 1) return 'just now'
+    if (m < 60) return `${m}m ago`
+    const h = Math.floor(m / 60)
+    if (h < 24) return `${h}h ago`
+    return `${Math.floor(h / 24)}d ago`
+  }
+  const initials = (ann.club?.name ?? 'C').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
+
+  return (
+    <div className="card" style={{ padding: 0, overflow: 'hidden', border: '1px solid rgba(138,21,56,0.2)' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '13px 16px 10px', background: 'rgba(138,21,56,0.06)' }}>
+        {/* Club logo */}
+        <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(138,21,56,0.18)', border: '1px solid rgba(138,21,56,0.3)', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: 'var(--accent)' }}>
+          {ann.club?.logo_url ? <img src={ann.club.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ann.club?.name ?? 'Club'}</div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 1 }}>
+            {ann.profile?.full_name ?? 'Admin'} · {timeAgo(ann.created_at)}
+          </div>
+        </div>
+        {/* Announcement badge */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 9px', background: 'rgba(138,21,56,0.14)', border: '1px solid rgba(138,21,56,0.3)', borderRadius: 20, flexShrink: 0 }}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round"><path d="M22 17H2a3 3 0 0 0 3-3V9a7 7 0 0 1 14 0v5a3 3 0 0 0 3 3zm-8.27 4a2 2 0 0 1-3.46 0"/></svg>
+          <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--accent)', letterSpacing: '0.04em' }}>Announcement</span>
+        </div>
+      </div>
+      {/* Content */}
+      <div style={{ padding: '12px 16px 14px' }}>
+        {ann.content && (
+          <div style={{ fontSize: 14.5, lineHeight: 1.6, color: 'var(--text-primary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+            {ann.content}
+          </div>
+        )}
+        {ann.image_url && (
+          <div style={{ marginTop: 10, borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.07)' }}>
+            <img src={ann.image_url} alt="" style={{ width: '100%', display: 'block', maxHeight: 400, objectFit: 'cover' }} />
+          </div>
+        )}
       </div>
     </div>
   )
