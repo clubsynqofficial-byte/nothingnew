@@ -291,7 +291,6 @@ export default function MatchCommandCenterPage() {
   const [tournamentName, setTournamentName] = useState('')
   const [flashHome, setFlashHome] = useState(false)
   const [flashAway, setFlashAway] = useState(false)
-  const [mobileTab, setMobileTab] = useState<'stats' | 'game' | null>(null)
 
   const [clockRunning, setClockRunning] = useState(false)
   const clockRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -934,194 +933,210 @@ export default function MatchCommandCenterPage() {
             {/* ── MOBILE CONTROLS ── */}
             <div className="cc-mobile" style={{ flexDirection: 'column', gap: 10 }}>
 
-              {/* Timer bar */}
-              <div style={{ ...glass, borderRadius: 16, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 9, fontWeight: 800, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '0.16em', marginBottom: 3 }}>Timer</div>
-                  <div style={{ fontSize: 38, fontWeight: 900, fontVariantNumeric: 'tabular-nums', letterSpacing: '0.04em', lineHeight: 1, color: isUrgent ? '#f87171' : clockRunning ? '#4ade80' : '#fff', textShadow: clockRunning && !isUrgent ? '0 0 24px rgba(74,222,128,0.6)' : isUrgent ? '0 0 18px rgba(248,113,113,0.7)' : 'none' }}>
+              {/* ── Timer ── */}
+              <div style={{ ...glass, borderRadius: 18, overflow: 'hidden' }}>
+                <div style={{ padding: '16px 16px 12px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div style={{ fontSize: 9, fontWeight: 800, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '0.18em', marginBottom: 8 }}>Timer</div>
+                  <div style={{ fontSize: 56, fontWeight: 900, lineHeight: 1, fontVariantNumeric: 'tabular-nums', letterSpacing: '0.04em', color: isUrgent ? '#f87171' : clockRunning ? '#4ade80' : '#fff', animation: clockRunning && !isUrgent ? 'glow-text 2s ease-in-out infinite' : isUrgent ? 'score-flash 0.5s ease-in-out infinite' : 'none', textShadow: clockRunning && !isUrgent ? '0 0 40px rgba(74,222,128,0.7)' : isUrgent ? '0 0 30px rgba(248,113,113,0.8)' : 'none', transition: 'color 0.3s' }}>
                     {clockDisplay}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
-                  <button className="cc-btn" onClick={() => isAdmin && adjustClock(60)} style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 9, color: 'rgba(255,255,255,0.7)', fontWeight: 700, fontSize: 12, opacity: isAdmin ? 1 : 0.35 }}>+1m</button>
+                <div style={{ padding: '12px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6 }}>
+                    {[{ l: '+1m', d: 60 }, { l: '+1s', d: 1 }, { l: '−1m', d: -60 }, { l: '−1s', d: -1 }].map(b => (
+                      <button key={b.l} className="cc-btn" onClick={() => isAdmin && adjustClock(b.d)}
+                        style={{ padding: '10px 0', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 10, color: 'rgba(255,255,255,0.7)', fontWeight: 700, fontSize: 13, opacity: isAdmin ? 1 : 0.35 }}>
+                        {b.l}
+                      </button>
+                    ))}
+                  </div>
                   <button className="cc-btn" onClick={() => { if (!isAdmin) return; clockRunning ? pauseClock() : startClock() }}
-                    style={{ padding: '11px 18px', background: clockRunning ? 'rgba(239,68,68,0.18)' : 'rgba(74,222,128,0.18)', border: `1.5px solid ${clockRunning ? 'rgba(239,68,68,0.4)' : 'rgba(74,222,128,0.4)'}`, borderRadius: 12, color: clockRunning ? '#f87171' : '#4ade80', fontWeight: 800, fontSize: 15, display: 'flex', alignItems: 'center', gap: 6, opacity: isAdmin ? 1 : 0.35 }}>
+                    style={{ width: '100%', padding: '15px', background: clockRunning ? 'rgba(239,68,68,0.15)' : 'rgba(74,222,128,0.15)', border: `1.5px solid ${clockRunning ? 'rgba(239,68,68,0.4)' : 'rgba(74,222,128,0.4)'}`, borderRadius: 13, color: clockRunning ? '#f87171' : '#4ade80', fontWeight: 800, fontSize: 17, opacity: isAdmin ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: clockRunning ? '0 0 20px rgba(239,68,68,0.15)' : '0 0 20px rgba(74,222,128,0.15)' }}>
                     {clockRunning
-                      ? <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-                      : <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                      ? <><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>Pause</>
+                      : <><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>Start</>
                     }
-                    {clockRunning ? 'Pause' : 'Start'}
                   </button>
-                  <button className="cc-btn" onClick={() => isAdmin && resetClock()} style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 9, color: 'rgba(255,255,255,0.4)', fontWeight: 600, fontSize: 12, opacity: isAdmin ? 1 : 0.35, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.36"/></svg>
-                  </button>
-                  <button className="cc-btn" onClick={() => buzz()} style={{ padding: '8px 10px', background: 'rgba(138,21,56,0.18)', border: '1px solid rgba(138,21,56,0.35)', borderRadius: 9, color: 'var(--accent)', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                  </button>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, borderLeft: '1px solid rgba(255,255,255,0.07)', paddingLeft: 10 }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: isFinal ? '#e9c176' : isHalf ? '#60a5fa' : isET ? '#f59e0b' : 'rgba(255,255,255,0.55)', letterSpacing: '0.05em' }}>{periodLabel}</div>
-                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.22)' }}>P{p}/{cfg.periods}</div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="cc-btn" onClick={() => isAdmin && resetClock()} style={{ flex: 1, padding: '11px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 600, fontSize: 13, opacity: isAdmin ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.36"/></svg>Reset
+                    </button>
+                    <button className="cc-btn" onClick={() => buzz()} style={{ flex: 1, padding: '11px', background: 'rgba(138,21,56,0.18)', border: '1px solid rgba(138,21,56,0.35)', borderRadius: 11, color: 'var(--accent)', fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, boxShadow: '0 0 16px rgba(138,21,56,0.2)' }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>Buzzer
+                    </button>
                   </div>
                 </div>
               </div>
 
-              {/* Shot clock bar (mobile) */}
+              {/* ── Shot Clock ── */}
               {cfg.showShotClock && (
-                <div style={{ ...glass, borderRadius: 14, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 9, fontWeight: 800, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '0.16em', marginBottom: 2 }}>Shot Clock</div>
-                    <div style={{ fontSize: 34, fontWeight: 900, fontVariantNumeric: 'tabular-nums', lineHeight: 1, color: shotClock <= 5 ? '#f87171' : shotClockRunning ? '#f59e0b' : '#fff', textShadow: shotClock <= 5 ? '0 0 18px rgba(248,113,113,0.7)' : shotClockRunning ? '0 0 18px rgba(245,158,11,0.4)' : 'none' }}>
+                <div style={{ ...glass, borderRadius: 18, overflow: 'hidden' }}>
+                  <div style={{ padding: '14px 16px 10px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ fontSize: 9, fontWeight: 800, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '0.18em', marginBottom: 8 }}>Shot Clock</div>
+                    <div style={{ fontSize: 52, fontWeight: 900, lineHeight: 1, fontVariantNumeric: 'tabular-nums', letterSpacing: '0.04em', color: shotClock <= 5 ? '#f87171' : shotClockRunning ? '#f59e0b' : '#fff', textShadow: shotClock <= 5 ? '0 0 28px rgba(248,113,113,0.8)' : shotClockRunning ? '0 0 28px rgba(245,158,11,0.5)' : 'none', transition: 'color 0.2s' }}>
                       {shotClock}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <div style={{ padding: '12px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <button className="cc-btn" onClick={() => { if (!isAdmin) return; shotClockRunning ? pauseShotClock() : startShotClock() }}
-                      style={{ padding: '10px 16px', background: shotClockRunning ? 'rgba(239,68,68,0.18)' : 'rgba(245,158,11,0.18)', border: `1.5px solid ${shotClockRunning ? 'rgba(239,68,68,0.4)' : 'rgba(245,158,11,0.4)'}`, borderRadius: 11, color: shotClockRunning ? '#f87171' : '#f59e0b', fontWeight: 800, fontSize: 14, display: 'flex', alignItems: 'center', gap: 5, opacity: isAdmin ? 1 : 0.35 }}>
-                      {shotClockRunning ? <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> : <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>}
-                      {shotClockRunning ? 'Pause' : 'Start'}
+                      style={{ width: '100%', padding: '14px', background: shotClockRunning ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)', border: `1.5px solid ${shotClockRunning ? 'rgba(239,68,68,0.4)' : 'rgba(245,158,11,0.4)'}`, borderRadius: 13, color: shotClockRunning ? '#f87171' : '#f59e0b', fontWeight: 800, fontSize: 16, opacity: isAdmin ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                      {shotClockRunning
+                        ? <><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>Pause</>
+                        : <><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>Start</>
+                      }
                     </button>
-                    {[24, 14, 8].map(v => (
-                      <button key={v} className="cc-btn" onClick={() => isAdmin && resetShotClock(v)} style={{ padding: '10px 11px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 10, color: 'rgba(255,255,255,0.6)', fontWeight: 700, fontSize: 13, opacity: isAdmin ? 1 : 0.35 }}>{v}</button>
-                    ))}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+                      {[24, 14, 8].map(v => (
+                        <button key={v} className="cc-btn" onClick={() => isAdmin && resetShotClock(v)}
+                          style={{ padding: '11px 0', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 10, color: 'rgba(255,255,255,0.65)', fontWeight: 700, fontSize: 14, opacity: isAdmin ? 1 : 0.35 }}>
+                          {v}s
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
 
-              {/* Score panels side by side */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              {/* ── Score panels ── */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 {([
-                  { team: home, side: 1 as const, score: match?.score1 ?? 0, color: cfg.homeColor, textColor: cfg.homeTextColor, flash: flashHome },
-                  { team: away, side: 2 as const, score: match?.score2 ?? 0, color: cfg.awayColor, textColor: cfg.awayTextColor, flash: flashAway },
-                ]).map(({ team, side, score, color, textColor, flash }) => (
-                  <div key={side} style={{ borderRadius: 16, overflow: 'hidden', boxShadow: flash ? `0 0 0 2px ${color}, 0 0 30px ${color}50` : `0 0 0 1px ${color}30`, transition: 'box-shadow 0.3s', ...glass }}>
-                    <div style={{ background: `linear-gradient(160deg, ${color}ee, ${color}cc)`, padding: '12px 10px 10px', textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
-                      <div style={{ position: 'absolute', top: -16, right: -16, width: 64, height: 64, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
+                  { team: home, side: 1 as const, score: match?.score1 ?? 0, fouls: match?.fouls1 ?? 0, timeouts: match?.timeouts1 ?? 0, yellows: stats.yellows1 ?? 0, reds: stats.reds1 ?? 0, color: cfg.homeColor, textColor: cfg.homeTextColor, flash: flashHome },
+                  { team: away, side: 2 as const, score: match?.score2 ?? 0, fouls: match?.fouls2 ?? 0, timeouts: match?.timeouts2 ?? 0, yellows: stats.yellows2 ?? 0, reds: stats.reds2 ?? 0, color: cfg.awayColor, textColor: cfg.awayTextColor, flash: flashAway },
+                ]).map(({ team, side, score, fouls, timeouts, yellows, reds, color, textColor, flash }) => (
+                  <div key={side} style={{ borderRadius: 18, overflow: 'hidden', boxShadow: flash ? `0 0 0 2px ${color}, 0 0 40px ${color}50` : `0 0 0 1px ${color}28`, transition: 'box-shadow 0.3s', ...glass }}>
+                    {/* Score header */}
+                    <div style={{ background: `linear-gradient(160deg,${color}ee,${color}bb)`, padding: '14px 10px 10px', textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
+                      <div style={{ position: 'absolute', top: -20, right: -20, width: 80, height: 80, borderRadius: '50%', background: 'rgba(255,255,255,0.07)', pointerEvents: 'none' }} />
+                      <div style={{ fontSize: 8, fontWeight: 800, color: `${textColor}88`, textTransform: 'uppercase', letterSpacing: '0.16em', marginBottom: 4 }}>{side === 1 ? 'HOME' : 'AWAY'}</div>
                       {team?.logo_url && (
-                        <div style={{ width: 28, height: 28, borderRadius: 7, overflow: 'hidden', margin: '0 auto 5px', border: '1.5px solid rgba(255,255,255,0.25)' }}>
+                        <div style={{ width: 30, height: 30, borderRadius: 8, overflow: 'hidden', margin: '0 auto 6px', border: '2px solid rgba(255,255,255,0.25)' }}>
                           <img src={team.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         </div>
                       )}
-                      <div style={{ fontSize: 12, fontWeight: 800, color: textColor, lineHeight: 1.2, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{team?.team_name ?? (side === 1 ? 'HOME' : 'AWAY')}</div>
-                      <div className={flash ? 'cc-score-pop' : ''} style={{ fontSize: 52, fontWeight: 900, color: textColor, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{score}</div>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: textColor, lineHeight: 1.2, marginBottom: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', position: 'relative' }}>{team?.team_name ?? (side === 1 ? 'HOME' : 'AWAY')}</div>
+                      <div className={flash ? 'cc-score-pop' : ''} style={{ fontSize: 58, fontWeight: 900, color: textColor, lineHeight: 1, fontVariantNumeric: 'tabular-nums', position: 'relative' }}>{score}</div>
                     </div>
+                    {/* Score controls */}
                     <div style={{ padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <div style={{ display: 'flex', gap: 5 }}>
                         {[1, 2, 3].map(n => (
                           <button key={n} className="cc-btn" onClick={() => isAdmin && addScore(side, n)}
-                            style={{ flex: 1, padding: '14px 0', background: `linear-gradient(135deg,${color}ee,${color}99)`, border: 'none', borderRadius: 10, color: textColor, fontWeight: 900, fontSize: 18, opacity: isAdmin ? 1 : 0.35, boxShadow: `0 3px 10px ${color}40` }}>
+                            style={{ flex: 1, padding: '14px 0', background: `linear-gradient(135deg,${color}ee,${color}99)`, border: 'none', borderRadius: 10, color: textColor, fontWeight: 900, fontSize: 18, opacity: isAdmin ? 1 : 0.35, boxShadow: `0 3px 12px ${color}45` }}>
                             +{n}
                           </button>
                         ))}
                       </div>
                       <button className="cc-btn" onClick={() => isAdmin && addScore(side, -1)} style={{ width: '100%', padding: '10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 10, color: 'rgba(255,255,255,0.5)', fontWeight: 700, fontSize: 14, opacity: isAdmin ? 1 : 0.35 }}>−1</button>
                     </div>
+                    {/* Stats */}
+                    <div style={{ padding: '0 8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', marginBottom: 2 }} />
+                      {/* Fouls */}
+                      <div style={{ background: 'rgba(0,0,0,0.28)', borderRadius: 11, padding: '8px 10px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                          <span style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Fouls</span>
+                          <span style={{ fontSize: 20, fontWeight: 900, color: fouls >= 5 ? '#f87171' : '#fff' }}>{fouls}</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: 5 }}>
+                          <button className="cc-btn" onClick={() => isAdmin && addFoul(side, 1)} style={{ flex: 1, padding: '8px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, color: '#fff', fontWeight: 700, fontSize: 15, opacity: isAdmin ? 1 : 0.35 }}>+</button>
+                          <button className="cc-btn" onClick={() => isAdmin && addFoul(side, -1)} style={{ flex: 1, padding: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, color: 'rgba(255,255,255,0.4)', fontWeight: 700, fontSize: 15, opacity: isAdmin ? 1 : 0.35 }}>−</button>
+                        </div>
+                      </div>
+                      {/* Cards */}
+                      <div style={{ background: 'rgba(0,0,0,0.28)', borderRadius: 11, padding: '8px 10px' }}>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>Cards</div>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                              <span style={{ display: 'inline-block', width: 9, height: 13, background: '#eab308', borderRadius: 2 }} />
+                              <span style={{ fontSize: 18, fontWeight: 900, color: '#f59e0b' }}>{yellows}</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              <button className="cc-btn" onClick={() => isAdmin && addCard(side, 'yellow', 1)} style={{ flex: 1, padding: '7px', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 7, color: '#f59e0b', fontWeight: 800, fontSize: 14, opacity: isAdmin ? 1 : 0.35 }}>+</button>
+                              <button className="cc-btn" onClick={() => isAdmin && addCard(side, 'yellow', -1)} style={{ flex: 1, padding: '7px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 7, color: 'rgba(255,255,255,0.35)', fontWeight: 800, fontSize: 14, opacity: isAdmin ? 1 : 0.35 }}>−</button>
+                            </div>
+                          </div>
+                          <div style={{ width: 1, background: 'rgba(255,255,255,0.07)' }} />
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                              <span style={{ display: 'inline-block', width: 9, height: 13, background: '#ef4444', borderRadius: 2 }} />
+                              <span style={{ fontSize: 18, fontWeight: 900, color: '#f87171' }}>{reds}</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              <button className="cc-btn" onClick={() => isAdmin && addCard(side, 'red', 1)} style={{ flex: 1, padding: '7px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 7, color: '#f87171', fontWeight: 800, fontSize: 14, opacity: isAdmin ? 1 : 0.35 }}>+</button>
+                              <button className="cc-btn" onClick={() => isAdmin && addCard(side, 'red', -1)} style={{ flex: 1, padding: '7px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 7, color: 'rgba(255,255,255,0.35)', fontWeight: 800, fontSize: 14, opacity: isAdmin ? 1 : 0.35 }}>−</button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      {/* Timeouts */}
+                      {cfg.showTimeouts && (
+                        <div style={{ background: 'rgba(0,0,0,0.28)', borderRadius: 11, padding: '8px 10px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                            <span style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Timeouts</span>
+                            <span style={{ fontSize: 20, fontWeight: 900, color: '#fff' }}>{timeouts}</span>
+                          </div>
+                          <div style={{ display: 'flex', gap: 5 }}>
+                            <button className="cc-btn" onClick={() => isAdmin && addTimeout(side, 1)} style={{ flex: 1, padding: '8px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, color: '#fff', fontWeight: 700, fontSize: 15, opacity: isAdmin ? 1 : 0.35 }}>+</button>
+                            <button className="cc-btn" onClick={() => isAdmin && addTimeout(side, -1)} style={{ flex: 1, padding: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, color: 'rgba(255,255,255,0.4)', fontWeight: 700, fontSize: 15, opacity: isAdmin ? 1 : 0.35 }}>−</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
 
-              {/* Expandable section tabs */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                {([['stats', 'Stats & Cards'] as const, ['game', 'Game Controls'] as const]).map(([tab, label]) => (
-                  <button key={tab} className="cc-btn" onClick={() => setMobileTab(t => t === tab ? null : tab)}
-                    style={{ padding: '12px', background: mobileTab === tab ? 'rgba(138,21,56,0.2)' : 'rgba(255,255,255,0.04)', border: `1px solid ${mobileTab === tab ? 'rgba(138,21,56,0.5)' : 'rgba(255,255,255,0.09)'}`, borderRadius: 13, color: mobileTab === tab ? 'var(--accent)' : 'rgba(255,255,255,0.5)', fontWeight: 700, fontSize: 13, boxShadow: mobileTab === tab ? '0 0 16px rgba(138,21,56,0.2)' : 'none' }}>
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Stats panel */}
-              {mobileTab === 'stats' && (
-                <div style={{ ...glass, borderRadius: 16, padding: '14px', display: 'flex', flexDirection: 'column', gap: 12, animation: 'cc-in 0.2s ease both' }}>
-                  {([
-                    { label: home?.team_name ?? 'Home', side: 1 as const, fouls: match?.fouls1 ?? 0, yellows: stats.yellows1 ?? 0, reds: stats.reds1 ?? 0, timeouts: match?.timeouts1 ?? 0 },
-                    { label: away?.team_name ?? 'Away', side: 2 as const, fouls: match?.fouls2 ?? 0, yellows: stats.yellows2 ?? 0, reds: stats.reds2 ?? 0, timeouts: match?.timeouts2 ?? 0 },
-                  ]).map(({ label, side, fouls, yellows, reds, timeouts }) => (
-                    <div key={side}>
-                      <div style={{ fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 8 }}>{label}</div>
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        {/* Fouls */}
-                        <div style={{ flex: 1, minWidth: 80, background: 'rgba(0,0,0,0.25)', borderRadius: 11, padding: '8px 10px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                            <span style={{ fontSize: 9.5, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Fouls</span>
-                            <span style={{ fontSize: 20, fontWeight: 900, color: fouls >= 5 ? '#f87171' : '#fff' }}>{fouls}</span>
-                          </div>
-                          <div style={{ display: 'flex', gap: 5 }}>
-                            <button className="cc-btn" onClick={() => isAdmin && addFoul(side, 1)} style={{ flex: 1, padding: '7px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, color: '#fff', fontWeight: 700, fontSize: 14, opacity: isAdmin ? 1 : 0.35 }}>+</button>
-                            <button className="cc-btn" onClick={() => isAdmin && addFoul(side, -1)} style={{ flex: 1, padding: '7px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, color: 'rgba(255,255,255,0.4)', fontWeight: 700, fontSize: 14, opacity: isAdmin ? 1 : 0.35 }}>−</button>
-                          </div>
-                        </div>
-                        {/* Yellow */}
-                        <div style={{ flex: 1, minWidth: 72, background: 'rgba(0,0,0,0.25)', borderRadius: 11, padding: '8px 10px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                            <span style={{ display: 'inline-block', width: 9, height: 13, background: '#eab308', borderRadius: 2 }} />
-                            <span style={{ fontSize: 20, fontWeight: 900, color: '#f59e0b' }}>{yellows}</span>
-                          </div>
-                          <div style={{ display: 'flex', gap: 5 }}>
-                            <button className="cc-btn" onClick={() => isAdmin && addCard(side, 'yellow', 1)} style={{ flex: 1, padding: '7px', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, color: '#f59e0b', fontWeight: 800, fontSize: 14, opacity: isAdmin ? 1 : 0.35 }}>+</button>
-                            <button className="cc-btn" onClick={() => isAdmin && addCard(side, 'yellow', -1)} style={{ flex: 1, padding: '7px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, color: 'rgba(255,255,255,0.35)', fontWeight: 800, fontSize: 14, opacity: isAdmin ? 1 : 0.35 }}>−</button>
-                          </div>
-                        </div>
-                        {/* Red */}
-                        <div style={{ flex: 1, minWidth: 72, background: 'rgba(0,0,0,0.25)', borderRadius: 11, padding: '8px 10px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                            <span style={{ display: 'inline-block', width: 9, height: 13, background: '#ef4444', borderRadius: 2 }} />
-                            <span style={{ fontSize: 20, fontWeight: 900, color: '#f87171' }}>{reds}</span>
-                          </div>
-                          <div style={{ display: 'flex', gap: 5 }}>
-                            <button className="cc-btn" onClick={() => isAdmin && addCard(side, 'red', 1)} style={{ flex: 1, padding: '7px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#f87171', fontWeight: 800, fontSize: 14, opacity: isAdmin ? 1 : 0.35 }}>+</button>
-                            <button className="cc-btn" onClick={() => isAdmin && addCard(side, 'red', -1)} style={{ flex: 1, padding: '7px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, color: 'rgba(255,255,255,0.35)', fontWeight: 800, fontSize: 14, opacity: isAdmin ? 1 : 0.35 }}>−</button>
-                          </div>
-                        </div>
-                        {/* Timeouts */}
-                        {cfg.showTimeouts && (
-                          <div style={{ flex: 1, minWidth: 72, background: 'rgba(0,0,0,0.25)', borderRadius: 11, padding: '8px 10px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                              <span style={{ fontSize: 9.5, fontWeight: 700, color: 'rgba(255,255,255,0.38)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>TO</span>
-                              <span style={{ fontSize: 20, fontWeight: 900, color: '#fff' }}>{timeouts}</span>
-                            </div>
-                            <div style={{ display: 'flex', gap: 5 }}>
-                              <button className="cc-btn" onClick={() => isAdmin && addTimeout(side, 1)} style={{ flex: 1, padding: '7px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, color: '#fff', fontWeight: 700, fontSize: 14, opacity: isAdmin ? 1 : 0.35 }}>+</button>
-                              <button className="cc-btn" onClick={() => isAdmin && addTimeout(side, -1)} style={{ flex: 1, padding: '7px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 8, color: 'rgba(255,255,255,0.4)', fontWeight: 700, fontSize: 14, opacity: isAdmin ? 1 : 0.35 }}>−</button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+              {/* ── Game panel ── */}
+              <div style={{ ...glass, borderRadius: 18, overflow: 'hidden' }}>
+                <div style={{ padding: '14px 14px 10px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div style={{ fontSize: 9, fontWeight: 800, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '0.18em', marginBottom: 6 }}>Game</div>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: isFinal ? '#e9c176' : isHalf ? '#60a5fa' : isET ? '#f59e0b' : '#fff', textShadow: isFinal ? '0 0 20px rgba(233,193,118,0.4)' : isHalf ? '0 0 20px rgba(96,165,250,0.4)' : 'none' }}>{periodLabel}</div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginTop: 3 }}>Period {p} of {cfg.periods}</div>
                 </div>
-              )}
-
-              {/* Game panel */}
-              {mobileTab === 'game' && (
-                <div style={{ ...glass, borderRadius: 16, padding: '14px', display: 'flex', flexDirection: 'column', gap: 8, animation: 'cc-in 0.2s ease both' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
+                <div style={{ padding: '12px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
                     <button className="cc-btn" onClick={() => isAdmin && setPeriod(1)} style={{ padding: '12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 11, color: '#fff', fontWeight: 700, fontSize: 14, opacity: isAdmin ? 1 : 0.35 }}>+1 Period</button>
                     <button className="cc-btn" onClick={() => isAdmin && setPeriod(-1)} style={{ padding: '12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 700, fontSize: 14, opacity: isAdmin ? 1 : 0.35 }}>−1 Period</button>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 7 }}>
-                    <button className="cc-btn" onClick={() => isAdmin && setGameStatus('halftime')} style={{ padding: '12px 6px', background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.25)', borderRadius: 11, color: '#60a5fa', fontWeight: 700, fontSize: 12.5, opacity: isAdmin ? 1 : 0.35 }}>Halftime</button>
-                    <button className="cc-btn" onClick={() => isAdmin && setGameStatus('extra_time')} style={{ padding: '12px 6px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 11, color: '#f59e0b', fontWeight: 700, fontSize: 12.5, opacity: isAdmin ? 1 : 0.35 }}>Extra Time</button>
-                    <button className="cc-btn" onClick={() => isAdmin && setGameStatus('in_progress')} style={{ padding: '12px 6px', background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.25)', borderRadius: 11, color: '#4ade80', fontWeight: 700, fontSize: 12.5, opacity: isAdmin ? 1 : 0.35 }}>Resume</button>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+                    <button className="cc-btn" onClick={() => isAdmin && setGameStatus('halftime')} style={{ padding: '12px 4px', background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.25)', borderRadius: 11, color: '#60a5fa', fontWeight: 700, fontSize: 12, opacity: isAdmin ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>Halftime
+                    </button>
+                    <button className="cc-btn" onClick={() => isAdmin && setGameStatus('extra_time')} style={{ padding: '12px 4px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 11, color: '#f59e0b', fontWeight: 700, fontSize: 12, opacity: isAdmin ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Extra
+                    </button>
+                    <button className="cc-btn" onClick={() => isAdmin && setGameStatus('in_progress')} style={{ padding: '12px 4px', background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.25)', borderRadius: 11, color: '#4ade80', fontWeight: 700, fontSize: 12, opacity: isAdmin ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>Resume
+                    </button>
                   </div>
                   {home && away && isAdmin && (
                     <>
-                      <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase', letterSpacing: '0.12em', textAlign: 'center' }}>Declare Winner</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
-                        <button className="cc-btn" onClick={() => declareWinner(match?.team1_id ?? null)} style={{ padding: '12px 8px', background: `${cfg.homeColor}20`, border: `1px solid ${cfg.homeColor}50`, borderRadius: 11, color: '#fff', fontWeight: 700, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{home.team_name}</button>
-                        <button className="cc-btn" onClick={() => declareWinner(match?.team2_id ?? null)} style={{ padding: '12px 8px', background: `${cfg.awayColor}20`, border: `1px solid ${cfg.awayColor}50`, borderRadius: 11, color: '#fff', fontWeight: 700, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{away.team_name}</button>
+                      <div style={{ height: 1, background: 'linear-gradient(to right,transparent,rgba(255,255,255,0.08),transparent)' }} />
+                      <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase', letterSpacing: '0.14em', textAlign: 'center' }}>Declare Winner</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                        <button className="cc-btn" onClick={() => declareWinner(match?.team1_id ?? null)} style={{ padding: '12px 8px', background: `${cfg.homeColor}20`, border: `1px solid ${cfg.homeColor}50`, borderRadius: 11, color: '#fff', fontWeight: 700, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 9H4.5a2.5 2.5 0 0 0 0 5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 1 0 5H18"/><path d="M4 22h16M8 22V11.3M16 22V11.3"/><rect x="6" y="2" width="12" height="9" rx="1"/></svg>
+                          {home.team_name}
+                        </button>
+                        <button className="cc-btn" onClick={() => declareWinner(match?.team2_id ?? null)} style={{ padding: '12px 8px', background: `${cfg.awayColor}20`, border: `1px solid ${cfg.awayColor}50`, borderRadius: 11, color: '#fff', fontWeight: 700, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 9H4.5a2.5 2.5 0 0 0 0 5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 1 0 5H18"/><path d="M4 22h16M8 22V11.3M16 22V11.3"/><rect x="6" y="2" width="12" height="9" rx="1"/></svg>
+                          {away.team_name}
+                        </button>
                       </div>
                     </>
                   )}
-                  <button className="cc-btn" onClick={() => isAdmin && setGameStatus('final')} style={{ width: '100%', padding: '12px', background: 'rgba(233,193,118,0.1)', border: '1px solid rgba(233,193,118,0.28)', borderRadius: 11, color: '#e9c176', fontWeight: 800, fontSize: 14, opacity: isAdmin ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+                  <div style={{ height: 1, background: 'linear-gradient(to right,transparent,rgba(255,255,255,0.08),transparent)' }} />
+                  <button className="cc-btn" onClick={() => isAdmin && setGameStatus('final')} style={{ width: '100%', padding: '13px', background: 'rgba(233,193,118,0.1)', border: '1px solid rgba(233,193,118,0.28)', borderRadius: 12, color: '#e9c176', fontWeight: 800, fontSize: 14, opacity: isAdmin ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
                     Full Time
                   </button>
-                  <button className="cc-btn" onClick={() => isAdmin && fullReset()} style={{ width: '100%', padding: '10px', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 11, color: '#f87171', fontWeight: 600, fontSize: 13, opacity: isAdmin ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.36"/></svg>
+                  <button className="cc-btn" onClick={() => isAdmin && fullReset()} style={{ width: '100%', padding: '11px', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 12, color: '#f87171', fontWeight: 600, fontSize: 13, opacity: isAdmin ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.36"/></svg>
                     Reset All
                   </button>
                 </div>
-              )}
+              </div>
 
             </div>
           </div>
