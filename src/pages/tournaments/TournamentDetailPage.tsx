@@ -235,6 +235,15 @@ export default function TournamentDetailPage() {
   // Keep ref in sync so the realtime callback can read the latest value
   useEffect(() => { standingsPausedRef.current = standingsPaused }, [standingsPaused])
 
+  // Broadcast channel for instant pause/resume across all viewers
+  const pauseBroadcastRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+  useEffect(() => {
+    if (!tournamentId) return
+    const ch = supabase.channel(`standings-ctrl-${tournamentId}`).subscribe()
+    pauseBroadcastRef.current = ch
+    return () => { supabase.removeChannel(ch) }
+  }, [tournamentId])
+
   // Realtime score updates
   useEffect(() => {
     if (!tournamentId) return
@@ -1318,6 +1327,8 @@ export default function TournamentDetailPage() {
                     const next = !standingsPaused
                     setStandingsPaused(next)
                     standingsPausedRef.current = next
+                    // Broadcast instantly to all viewers, then persist to DB
+                    pauseBroadcastRef.current?.send({ type: 'broadcast', event: 'pause-update', payload: { paused: next } })
                     await supabase.from('tournaments').update({ standings_paused: next }).eq('id', tournament.id)
                     if (!next) fetchAll()
                   }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: standingsPaused ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.05)', border: `1px solid ${standingsPaused ? 'rgba(245,158,11,0.4)' : 'rgba(255,255,255,0.1)'}`, borderRadius: 9, color: standingsPaused ? '#f59e0b' : 'var(--text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit', flexShrink: 0, transition: 'all 0.2s' }}>

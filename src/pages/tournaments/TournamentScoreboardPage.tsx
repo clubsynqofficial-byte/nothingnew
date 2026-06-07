@@ -78,8 +78,17 @@ export default function TournamentScoreboardPage() {
           if (p.eventType === 'UPDATE') { setMatches(prev => prev.map(m => m.id === (p.new as Match).id ? p.new as Match : m)); setLastUpdated(new Date()) }
           if (p.eventType === 'DELETE') setMatches(prev => prev.filter(m => m.id !== (p.old as Match).id))
         })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tournaments', filter: `id=eq.${tournamentId}` },
-        p => setTournament(prev => prev ? { ...prev, ...(p.new as Partial<Tournament>) } : prev))
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [tournamentId])
+
+  // Instant pause/resume via broadcast — no DB round-trip needed
+  useEffect(() => {
+    if (!tournamentId) return
+    const ch = supabase.channel(`standings-ctrl-${tournamentId}`)
+      .on('broadcast', { event: 'pause-update' }, ({ payload }) => {
+        setTournament(prev => prev ? { ...prev, standings_paused: payload.paused as boolean } : prev)
+      })
       .subscribe()
     return () => { supabase.removeChannel(ch) }
   }, [tournamentId])
