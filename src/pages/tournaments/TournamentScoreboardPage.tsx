@@ -203,7 +203,10 @@ export default function TournamentScoreboardPage() {
                 const t1 = match.team1_id ? teamMap[match.team1_id] : null
                 const t2 = match.team2_id ? teamMap[match.team2_id] : null
                 return (
-                  <div key={match.id} style={{ background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.28)', borderRadius: 18, overflow: 'hidden' }}>
+                  <div key={match.id} onClick={() => navigate(`/tournaments/${tournamentId}/control?view=public&match=${match.id}`)} style={{ background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.28)', borderRadius: 18, overflow: 'hidden', cursor: 'pointer', transition: 'border-color 0.15s, box-shadow 0.15s' }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(249,115,22,0.55)'; e.currentTarget.style.boxShadow = '0 0 24px rgba(249,115,22,0.12)' }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(249,115,22,0.28)'; e.currentTarget.style.boxShadow = 'none' }}
+                  >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 18px', borderBottom: '1px solid rgba(249,115,22,0.18)' }}>
                       <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#f97316', flexShrink: 0 }} />
                       <span style={{ fontSize: 11, fontWeight: 800, color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.12em' }}>Live</span>
