@@ -8,6 +8,7 @@ interface Tournament {
   logo_url: string | null; location: string | null
   prizes: Array<{ place: string; description: string }> | null
   club: { name: string } | null
+  standings_paused: boolean | null
 }
 interface Team { id: string; team_name: string; logo_url: string | null }
 interface Match {
@@ -55,7 +56,7 @@ export default function TournamentScoreboardPage() {
   const fetchData = useCallback(async () => {
     if (!tournamentId) return
     const [tRes, teamsRes, matchesRes] = await Promise.all([
-      supabase.from('tournaments').select('id,name,sport,status,format,logo_url,location,prizes,club:clubs(name)').eq('id', tournamentId).single(),
+      supabase.from('tournaments').select('id,name,sport,status,format,logo_url,location,prizes,standings_paused,club:clubs(name)').eq('id', tournamentId).single(),
       supabase.from('tournament_teams').select('id,team_name,logo_url').eq('tournament_id', tournamentId).eq('status', 'accepted'),
       supabase.from('tournament_matches').select('*').eq('tournament_id', tournamentId).order('round').order('match_number'),
     ])
@@ -77,6 +78,8 @@ export default function TournamentScoreboardPage() {
           if (p.eventType === 'UPDATE') { setMatches(prev => prev.map(m => m.id === (p.new as Match).id ? p.new as Match : m)); setLastUpdated(new Date()) }
           if (p.eventType === 'DELETE') setMatches(prev => prev.filter(m => m.id !== (p.old as Match).id))
         })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tournaments', filter: `id=eq.${tournamentId}` },
+        p => setTournament(prev => prev ? { ...prev, ...(p.new as Partial<Tournament>) } : prev))
       .subscribe()
     return () => { supabase.removeChannel(ch) }
   }, [tournamentId])
@@ -160,6 +163,16 @@ export default function TournamentScoreboardPage() {
 
       <div style={{ position: 'relative', zIndex: 1, maxWidth: 960, margin: '0 auto', padding: '40px 20px 80px' }}>
 
+        {/* Pause overlay */}
+        {tournament?.standings_paused && (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 22px', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 14, backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="rgba(245,158,11,0.9)"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b', letterSpacing: '0.04em' }}>Standings Paused</span>
+            </div>
+          </div>
+        )}
+
         {/* Tournament hero */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 22, marginBottom: 48, animation: 'sb-in 0.4s ease both' }}>
           <div style={{ width: 72, height: 72, borderRadius: 18, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
@@ -186,6 +199,9 @@ export default function TournamentScoreboardPage() {
             </div>
           </div>
         </div>
+
+        {/* Blurred content wrapper when paused */}
+        <div style={{ filter: tournament?.standings_paused ? 'blur(6px)' : 'none', transition: 'filter 0.4s ease', userSelect: tournament?.standings_paused ? 'none' : 'auto', pointerEvents: tournament?.standings_paused ? 'none' : 'auto' }}>
 
         {matches.length === 0 && (
           <div style={{ textAlign: 'center', padding: '80px 20px', color: 'rgba(255,255,255,0.2)', fontSize: 14, animation: 'sb-in 0.4s ease both' }}>
@@ -407,6 +423,8 @@ export default function TournamentScoreboardPage() {
             </div>
           </div>
         )}
+
+        </div>{/* end blur wrapper */}
 
       </div>
 

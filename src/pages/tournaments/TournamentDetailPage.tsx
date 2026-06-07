@@ -26,6 +26,7 @@ interface Tournament {
   logo_url: string | null
   type: 'bracket' | 'head_to_head' | 'scoresheet' | 'scoreboard' | null
   maintenance_mode: boolean | null
+  standings_paused: boolean | null
   created_at: string
   club: { id: string; name: string; logo_url: string | null } | null
 }
@@ -173,6 +174,13 @@ export default function TournamentDetailPage() {
   const [scoreboardFlow, setScoreboardFlow] = useState<null | 'sport' | 'template'>(null)
   const [standingsPaused, setStandingsPaused] = useState(false)
   const standingsPausedRef = useRef(false)
+  // Sync local pause state from DB once tournament loads
+  useEffect(() => {
+    if (tournament) {
+      setStandingsPaused(!!tournament.standings_paused)
+      standingsPausedRef.current = !!tournament.standings_paused
+    }
+  }, [tournament?.id])
   const [scoreboardTemplate, setScoreboardTemplate] = useState<string | null>(null)
   const [assignLoading, setAssignLoading] = useState(false)
 
@@ -1306,9 +1314,11 @@ export default function TournamentDetailPage() {
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h2m-1-1v2M15 12h2"/></svg>
                     Command Center
                   </button>
-                  <button onClick={() => {
+                  <button onClick={async () => {
                     const next = !standingsPaused
                     setStandingsPaused(next)
+                    standingsPausedRef.current = next
+                    await supabase.from('tournaments').update({ standings_paused: next }).eq('id', tournament.id)
                     if (!next) fetchAll()
                   }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: standingsPaused ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.05)', border: `1px solid ${standingsPaused ? 'rgba(245,158,11,0.4)' : 'rgba(255,255,255,0.1)'}`, borderRadius: 9, color: standingsPaused ? '#f59e0b' : 'var(--text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit', flexShrink: 0, transition: 'all 0.2s' }}>
                     {standingsPaused
