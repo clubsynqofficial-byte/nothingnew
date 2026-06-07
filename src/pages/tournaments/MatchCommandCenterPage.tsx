@@ -211,7 +211,7 @@ export function MatchPublicView({ match, teams, cfg }: { match: Match | null; te
 
           {/* Centre strip */}
           <div style={{ background: '#050810', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: `${fs(12)}px ${fs(36)}px`, gap: fs(12) }}>
-            {cfg.showTimer ? (
+            {cfg.showTimer && !cfg.showShotClock ? (
               <div style={{ fontSize: fs(28), fontWeight: 900, color: (isFinal || isHalf) ? 'rgba(255,255,255,0.2)' : '#fff', fontVariantNumeric: 'tabular-nums', letterSpacing: '0.04em', minWidth: fs(72) }}>
                 {(isFinal || isHalf) ? '—' : clockStr}
               </div>
