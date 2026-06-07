@@ -46,7 +46,7 @@ function formatDate(iso: string | null) {
 
 type Filter = 'all' | 'open' | 'ongoing' | 'completed'
 
-const MAINTENANCE_MODE = false
+const MAINTENANCE_MODE = true
 const MAINTENANCE_ALLOWED = ['aby.nair08@gmail.com', 'abbasmazin48845@gmail.com']
 
 export default function TournamentsPage() {
