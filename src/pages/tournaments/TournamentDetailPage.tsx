@@ -171,6 +171,8 @@ export default function TournamentDetailPage() {
   const [generatingBracket, setGeneratingBracket] = useState(false)
   const [assigningSlot, setAssigningSlot] = useState<{ matchId: string; slot: 'team1_id' | 'team2_id' } | null>(null)
   const [scoreboardFlow, setScoreboardFlow] = useState<null | 'sport' | 'template'>(null)
+  const [standingsPaused, setStandingsPaused] = useState(false)
+  const standingsPausedRef = useRef(false)
   const [scoreboardTemplate, setScoreboardTemplate] = useState<string | null>(null)
   const [assignLoading, setAssignLoading] = useState(false)
 
@@ -222,18 +224,25 @@ export default function TournamentDetailPage() {
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
+  // Keep ref in sync so the realtime callback can read the latest value
+  useEffect(() => { standingsPausedRef.current = standingsPaused }, [standingsPaused])
+
   // Realtime score updates
   useEffect(() => {
     if (!tournamentId) return
     const ch = supabase.channel(`tourny-matches-${tournamentId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_matches', filter: `tournament_id=eq.${tournamentId}` },
         payload => {
+          if (standingsPausedRef.current) return
           if (payload.eventType === 'INSERT') setMatches(prev => [...prev, payload.new as Match].sort((a, b) => a.round - b.round || a.match_number - b.match_number))
           if (payload.eventType === 'UPDATE') setMatches(prev => prev.map(m => m.id === (payload.new as Match).id ? payload.new as Match : m))
           if (payload.eventType === 'DELETE') setMatches(prev => prev.filter(m => m.id !== (payload.old as Match).id))
         })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tournament_teams', filter: `tournament_id=eq.${tournamentId}` },
-        payload => setTeams(prev => prev.map(t => t.id === (payload.new as Team).id ? { ...t, ...payload.new } : t)))
+        payload => {
+          if (standingsPausedRef.current) return
+          setTeams(prev => prev.map(t => t.id === (payload.new as Team).id ? { ...t, ...payload.new } : t))
+        })
       .subscribe()
     return () => { supabase.removeChannel(ch) }
   }, [tournamentId])
@@ -1294,8 +1303,27 @@ export default function TournamentDetailPage() {
                     onMouseEnter={e => { e.currentTarget.style.background = 'rgba(138,21,56,0.25)' }}
                     onMouseLeave={e => { e.currentTarget.style.background = 'rgba(138,21,56,0.15)' }}
                   >
-                    🎮 Command Center
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h2m-1-1v2M15 12h2"/></svg>
+                    Command Center
                   </button>
+                  <button onClick={() => {
+                    const next = !standingsPaused
+                    setStandingsPaused(next)
+                    if (!next) fetchAll()
+                  }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: standingsPaused ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.05)', border: `1px solid ${standingsPaused ? 'rgba(245,158,11,0.4)' : 'rgba(255,255,255,0.1)'}`, borderRadius: 9, color: standingsPaused ? '#f59e0b' : 'var(--text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit', flexShrink: 0, transition: 'all 0.2s' }}>
+                    {standingsPaused
+                      ? <><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>Resume</>
+                      : <><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>Pause Standings</>
+                    }
+                  </button>
+                </div>
+              )}
+
+              {/* Paused banner */}
+              {standingsPaused && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 10, marginBottom: 16, fontSize: 13, color: '#f59e0b' }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                  Standings paused — live updates are frozen. Click <strong style={{ fontWeight: 800 }}>Resume</strong> to sync again.
                 </div>
               )}
 
