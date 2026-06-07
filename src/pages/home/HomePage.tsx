@@ -70,6 +70,7 @@ export default function HomePage() {
 
   const [posts, setPosts]           = useState<FeedPost[]>([])
   const [announcements, setAnnouncements] = useState<AnnouncementRow[]>([])
+  const [userClubIds, setUserClubIds] = useState<string[]>([])
   const [loading, setLoading]       = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
@@ -184,22 +185,18 @@ export default function HomePage() {
       repostSource: p.repost_of ? (srcMap[p.repost_of] ?? null) : null,
     })))
 
-    // Fetch announcements from the user's clubs
+    // Fetch recent announcements from all clubs + user's membership list
     if (user) {
       const { data: memberships } = await supabase
         .from('club_memberships').select('club_id').eq('user_id', user.id)
       const clubIds = (memberships ?? []).map((m: { club_id: string }) => m.club_id)
-      if (clubIds.length > 0) {
-        const { data: annData } = await supabase
-          .from('club_announcements')
-          .select('id,content,image_url,created_at,club_id,club:clubs(id,name,logo_url),profile:profiles!user_id(full_name,avatar_url)')
-          .in('club_id', clubIds)
-          .order('created_at', { ascending: false })
-          .limit(30)
-        setAnnouncements((annData ?? []) as unknown as AnnouncementRow[])
-      } else {
-        setAnnouncements([])
-      }
+      setUserClubIds(clubIds)
+      const { data: annData } = await supabase
+        .from('club_announcements')
+        .select('id,content,image_url,created_at,club_id,club:clubs(id,name,logo_url),profile:profiles!user_id(full_name,avatar_url)')
+        .order('created_at', { ascending: false })
+        .limit(30)
+      setAnnouncements((annData ?? []) as unknown as AnnouncementRow[])
     }
 
     setLoading(false)
@@ -719,7 +716,7 @@ export default function HomePage() {
               <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
                 {items.map((item, i) =>
                   item.kind === 'ann'
-                    ? <AnnouncementCard key={`ann-${item.ann.id}`} ann={item.ann} />
+                    ? <AnnouncementCard key={`ann-${item.ann.id}`} ann={item.ann} userId={user?.id ?? null} userClubIds={userClubIds} onJoined={clubId => setUserClubIds(prev => [...prev, clubId])} />
                     : <Card key={item.post.id} post={item.post} idx={i}
                         uid={user?.id??null} myProfile={profile}
                         threadOpen={threadId===item.post.id}
@@ -908,7 +905,15 @@ function ImageCarousel({ urls }: { urls: string[] }) {
 }
 
 // ─── Announcement Card ────────────────────────────────────────────────────────
-function AnnouncementCard({ ann }: { ann: AnnouncementRow }) {
+function AnnouncementCard({ ann, userId, userClubIds, onJoined }: {
+  ann: AnnouncementRow
+  userId: string | null
+  userClubIds: string[]
+  onJoined: (clubId: string) => void
+}) {
+  const [joining, setJoining] = useState(false)
+  const isMember = userClubIds.includes(ann.club_id)
+
   const timeAgo = (iso: string) => {
     const diff = Date.now() - new Date(iso).getTime()
     const m = Math.floor(diff / 60000)
@@ -918,6 +923,15 @@ function AnnouncementCard({ ann }: { ann: AnnouncementRow }) {
     if (h < 24) return `${h}h ago`
     return `${Math.floor(h / 24)}d ago`
   }
+
+  async function handleJoin() {
+    if (!userId || joining || isMember) return
+    setJoining(true)
+    await supabase.from('club_memberships').insert({ club_id: ann.club_id, user_id: userId, role: 'member' })
+    onJoined(ann.club_id)
+    setJoining(false)
+  }
+
   const initials = (ann.club?.name ?? 'C').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
 
   return (
@@ -925,7 +939,7 @@ function AnnouncementCard({ ann }: { ann: AnnouncementRow }) {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '13px 16px 10px', background: 'rgba(138,21,56,0.06)' }}>
         {/* Club logo */}
-        <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(138,21,56,0.18)', border: '1px solid rgba(138,21,56,0.3)', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: 'var(--accent)' }}>
+        <div style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(138,21,56,0.18)', border: '1px solid rgba(138,21,56,0.3)', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: 'var(--accent)' }}>
           {ann.club?.logo_url ? <img src={ann.club.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -940,6 +954,7 @@ function AnnouncementCard({ ann }: { ann: AnnouncementRow }) {
           <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--accent)', letterSpacing: '0.04em' }}>Announcement</span>
         </div>
       </div>
+
       {/* Content */}
       <div style={{ padding: '12px 16px 14px' }}>
         {ann.content && (
@@ -953,6 +968,30 @@ function AnnouncementCard({ ann }: { ann: AnnouncementRow }) {
           </div>
         )}
       </div>
+
+      {/* Footer: join button */}
+      {userId && (
+        <div style={{ padding: '0 16px 14px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+          {isMember ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+              Joined
+            </div>
+          ) : (
+            <button
+              onClick={handleJoin}
+              disabled={joining}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', background: 'var(--accent)', border: 'none', borderRadius: 20, color: '#fff', fontSize: 13, fontWeight: 700, cursor: joining ? 'default' : 'pointer', fontFamily: 'inherit', opacity: joining ? 0.7 : 1, boxShadow: '0 2px 12px rgba(138,21,56,0.35)', transition: 'all 0.15s' }}
+            >
+              {joining ? (
+                <><div style={{ width: 12, height: 12, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />Joining…</>
+              ) : (
+                <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Join Club</>
+              )}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
