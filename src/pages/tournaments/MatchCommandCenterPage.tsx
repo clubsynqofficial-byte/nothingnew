@@ -24,9 +24,10 @@ interface Cfg {
   boardBg: string; boardText: string
   titleText: string; showTitle: boolean
   showTimer: boolean; showPeriod: boolean; showFouls: boolean
-  showCards: boolean; showTimeouts: boolean
+  showCards: boolean; showTimeouts: boolean; showShotClock: boolean
   timerLength: number; timerCountsDown: boolean
   fontSize: number; periods: number; autoPlayBuzzer: boolean
+  shotClockLength: number
 }
 
 const DEFAULT_CFG: Cfg = {
@@ -35,9 +36,10 @@ const DEFAULT_CFG: Cfg = {
   boardBg: '#0f172a', boardText: '#ffffff',
   titleText: 'Live Match', showTitle: true,
   showTimer: true, showPeriod: true, showFouls: true,
-  showCards: true, showTimeouts: false,
+  showCards: true, showTimeouts: false, showShotClock: false,
   timerLength: 2700, timerCountsDown: true,
   fontSize: 100, periods: 2, autoPlayBuzzer: false,
+  shotClockLength: 24,
 }
 
 const CSS = `
@@ -58,6 +60,10 @@ const CSS = `
 .cc-btn:hover{filter:brightness(1.2);transform:translateY(-2px);}
 .cc-btn:active{transform:scale(.93)!important;filter:brightness(.9)!important;}
 .cc-score-pop{animation:score-pop .45s cubic-bezier(.34,1.56,.64,1) both;}
+.cc-grid{display:grid;grid-template-columns:minmax(175px,215px) 1fr 1fr minmax(175px,210px);gap:12px;align-items:start;}
+@media(max-width:960px){.cc-grid{grid-template-columns:minmax(160px,200px) 1fr 1fr;}}
+@media(max-width:700px){.cc-grid{grid-template-columns:1fr 1fr;}}
+@media(max-width:440px){.cc-grid{grid-template-columns:1fr;}}
 `
 
 function fmtClock(secs: number, down: boolean, length: number) {
@@ -204,15 +210,24 @@ export function MatchPublicView({ match, teams, cfg }: { match: Match | null; te
           />
 
           {/* Centre strip */}
-          <div style={{ background: '#050810', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: `${fs(12)}px ${fs(36)}px` }}>
+          <div style={{ background: '#050810', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: `${fs(12)}px ${fs(36)}px`, gap: fs(12) }}>
             {cfg.showTimer ? (
-              <div style={{ fontSize: fs(28), fontWeight: 900, color: (isFinal || isHalf) ? 'rgba(255,255,255,0.2)' : '#fff', fontVariantNumeric: 'tabular-nums', letterSpacing: '0.04em', minWidth: fs(80) }}>
+              <div style={{ fontSize: fs(28), fontWeight: 900, color: (isFinal || isHalf) ? 'rgba(255,255,255,0.2)' : '#fff', fontVariantNumeric: 'tabular-nums', letterSpacing: '0.04em', minWidth: fs(72) }}>
                 {(isFinal || isHalf) ? '—' : clockStr}
               </div>
             ) : <div />}
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: fs(12) }}>
-              {/* Score diff badge when final */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: fs(16) }}>
+              {/* Shot clock */}
+              {cfg.showShotClock && typeof stats.shotClock === 'number' && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: fs(2), background: 'rgba(255,255,255,0.04)', border: `1px solid ${(stats.shotClock as number) <= 5 ? 'rgba(248,113,113,0.4)' : 'rgba(255,255,255,0.1)'}`, borderRadius: fs(10), padding: `${fs(5)}px ${fs(12)}px` }}>
+                  <div style={{ fontSize: fs(8), fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.14em' }}>Shot</div>
+                  <div style={{ fontSize: fs(26), fontWeight: 900, color: (stats.shotClock as number) <= 5 ? '#f87171' : '#f59e0b', fontVariantNumeric: 'tabular-nums', lineHeight: 1, textShadow: (stats.shotClock as number) <= 5 ? `0 0 ${fs(16)}px rgba(248,113,113,0.7)` : 'none' }}>
+                    {stats.shotClock}
+                  </div>
+                </div>
+              )}
+              {/* Score diff when final */}
               {isFinal && match.score1 !== match.score2 && (
                 <div style={{ fontSize: fs(10), fontWeight: 700, color: 'rgba(233,193,118,0.6)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
                   {Math.abs(match.score1 - match.score2)} goal{Math.abs(match.score1 - match.score2) !== 1 ? 's' : ''}
@@ -220,9 +235,9 @@ export function MatchPublicView({ match, teams, cfg }: { match: Match | null; te
               )}
             </div>
 
-            {cfg.showTimer ? (
-              <div style={{ fontSize: fs(28), fontWeight: 900, color: 'rgba(255,255,255,0.15)', fontVariantNumeric: 'tabular-nums', letterSpacing: '0.04em', minWidth: fs(80), textAlign: 'right' }}>
-                —
+            {cfg.showPeriod ? (
+              <div style={{ fontSize: fs(13), fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: statusColor, minWidth: fs(72), textAlign: 'right' }}>
+                {periodLabel}
               </div>
             ) : <div />}
           </div>
@@ -283,6 +298,11 @@ export default function MatchCommandCenterPage() {
   const matchRef = useRef<Match | null>(null)
   matchRef.current = match
 
+  const [shotClock, setShotClock] = useState(24)
+  const [shotClockRunning, setShotClockRunning] = useState(false)
+  const shotClockRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const shotClockValRef = useRef(24)
+
   const stats = ((match?.live_stats ?? {}) as Record<string, number>)
 
   const loadData = useCallback(async () => {
@@ -305,6 +325,8 @@ export default function MatchCommandCenterPage() {
       setMatch(auto)
       const savedCfg = (auto.live_stats as Record<string, unknown>)?.config
       if (savedCfg) setCfg(c => ({ ...c, ...(savedCfg as Cfg) }))
+      const savedSC = (auto.live_stats as Record<string, unknown>)?.shotClock
+      if (typeof savedSC === 'number') { setShotClock(savedSC); shotClockValRef.current = savedSC }
     }
     if (user && tData) {
       if (tData.created_by === user.id) setIsAdmin(true)
@@ -355,15 +377,21 @@ export default function MatchCommandCenterPage() {
       })
   }, [match?.team1_id, match?.team2_id])
 
-  useEffect(() => () => { if (clockRef.current) clearInterval(clockRef.current) }, [])
+  useEffect(() => () => {
+    if (clockRef.current) clearInterval(clockRef.current)
+    if (shotClockRef.current) clearInterval(shotClockRef.current)
+  }, [])
 
   function selectMatch(id: string) {
     const m = matches.find(mx => mx.id === id) ?? null
     setSelectedMatchId(id); setMatch(m)
     setClockRunning(false)
     if (clockRef.current) clearInterval(clockRef.current)
+    clearInterval(shotClockRef.current!); setShotClockRunning(false)
     const savedCfg = (m?.live_stats as Record<string, unknown>)?.config
     if (savedCfg) setCfg(c => ({ ...c, ...(savedCfg as Cfg) }))
+    const savedSC = (m?.live_stats as Record<string, unknown>)?.shotClock
+    if (typeof savedSC === 'number') { setShotClock(savedSC); shotClockValRef.current = savedSC }
   }
 
   function startClock() {
@@ -400,6 +428,49 @@ export default function MatchCommandCenterPage() {
     clockCounterRef.current = 0; setClockRunning(false)
     setMatch(prev => prev ? { ...prev, game_clock: 0 } : prev)
     if (matchRef.current) await supabase.from('tournament_matches').update({ game_clock: 0 }).eq('id', matchRef.current.id)
+  }
+
+  function startShotClock() {
+    if (shotClockRunning) return
+    setShotClockRunning(true)
+    shotClockRef.current = setInterval(async () => {
+      shotClockValRef.current -= 1
+      const val = shotClockValRef.current
+      const m = matchRef.current
+      if (val <= 0) {
+        clearInterval(shotClockRef.current!); setShotClockRunning(false)
+        shotClockValRef.current = 0; setShotClock(0)
+        if (m) {
+          const ns = { ...(m.live_stats ?? {}), shotClock: 0 }
+          setMatch(prev => prev ? { ...prev, live_stats: ns } : prev)
+          await supabase.from('tournament_matches').update({ live_stats: ns }).eq('id', m.id)
+        }
+        if (cfg.autoPlayBuzzer) buzz()
+      } else {
+        setShotClock(val)
+        if (m) {
+          const ns = { ...(m.live_stats ?? {}), shotClock: val }
+          setMatch(prev => prev ? { ...prev, live_stats: ns } : prev)
+          await supabase.from('tournament_matches').update({ live_stats: ns }).eq('id', m.id)
+        }
+      }
+    }, 1000)
+  }
+
+  function pauseShotClock() {
+    clearInterval(shotClockRef.current!); shotClockRef.current = null
+    setShotClockRunning(false)
+  }
+
+  async function resetShotClock(val?: number) {
+    clearInterval(shotClockRef.current!); shotClockRef.current = null
+    setShotClockRunning(false)
+    const newVal = val ?? cfg.shotClockLength
+    shotClockValRef.current = newVal; setShotClock(newVal)
+    const m = matchRef.current; if (!m) return
+    const ns = { ...(m.live_stats ?? {}), shotClock: newVal }
+    setMatch(prev => prev ? { ...prev, live_stats: ns } : prev)
+    await supabase.from('tournament_matches').update({ live_stats: ns }).eq('id', m.id)
   }
 
   function adjustClock(delta: number) {
@@ -474,7 +545,9 @@ export default function MatchCommandCenterPage() {
   async function fullReset() {
     const m = matchRef.current; if (!m) return
     clearInterval(clockRef.current!); setClockRunning(false); clockCounterRef.current = 0
-    const newStats = { ...(m.live_stats ?? {}), yellows1: 0, yellows2: 0, reds1: 0, reds2: 0 }
+    clearInterval(shotClockRef.current!); setShotClockRunning(false)
+    shotClockValRef.current = cfg.shotClockLength; setShotClock(cfg.shotClockLength)
+    const newStats = { ...(m.live_stats ?? {}), yellows1: 0, yellows2: 0, reds1: 0, reds2: 0, shotClock: cfg.shotClockLength }
     setMatch(prev => prev ? { ...prev, score1: 0, score2: 0, fouls1: 0, fouls2: 0, timeouts1: 3, timeouts2: 3, current_period: 1, game_clock: 0, game_status: 'not_started', status: 'scheduled', winner_id: null, live_stats: newStats } : prev)
     await supabase.from('tournament_matches').update({ score1: 0, score2: 0, fouls1: 0, fouls2: 0, timeouts1: 3, timeouts2: 3, current_period: 1, game_clock: 0, game_status: 'not_started', status: 'scheduled', winner_id: null, live_stats: newStats }).eq('id', m.id)
   }
@@ -726,7 +799,7 @@ export default function MatchCommandCenterPage() {
               </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(175px, 215px) 1fr 1fr minmax(175px, 210px)', gap: 12, alignItems: 'start' }}>
+            <div className="cc-grid">
 
               {/* ── Timer ── */}
               <div style={{ borderRadius: 20, overflow: 'hidden', boxShadow: clockRunning ? `0 0 40px rgba(74,222,128,0.15), 0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06)` : '0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06)', transition: 'box-shadow 0.4s ease', ...glass }}>
@@ -762,6 +835,31 @@ export default function MatchCommandCenterPage() {
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>Buzzer
                     </button>
                   </div>
+
+                  {/* Shot Clock */}
+                  {cfg.showShotClock && (
+                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 7 }}>
+                      <div style={{ fontSize: 9, fontWeight: 800, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '0.16em', textAlign: 'center' }}>Shot Clock</div>
+                      <div style={{ fontSize: 42, fontWeight: 900, textAlign: 'center', fontVariantNumeric: 'tabular-nums', letterSpacing: '0.04em', lineHeight: 1, color: shotClock <= 5 ? '#f87171' : shotClockRunning ? '#f59e0b' : '#fff', textShadow: shotClock <= 5 ? '0 0 24px rgba(248,113,113,0.7)' : shotClockRunning ? '0 0 24px rgba(245,158,11,0.5)' : 'none', transition: 'color 0.2s' }}>
+                        {shotClock}
+                      </div>
+                      <button className="cc-btn" onClick={() => { if (!isAdmin) return; shotClockRunning ? pauseShotClock() : startShotClock() }}
+                        style={{ width: '100%', padding: '10px', background: shotClockRunning ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)', border: `1.5px solid ${shotClockRunning ? 'rgba(239,68,68,0.4)' : 'rgba(245,158,11,0.4)'}`, borderRadius: 10, color: shotClockRunning ? '#f87171' : '#f59e0b', fontWeight: 800, fontSize: 13, opacity: isAdmin ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                        {shotClockRunning
+                          ? <><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>Pause</>
+                          : <><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>Start</>
+                        }
+                      </button>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5 }}>
+                        {[24, 14, 8].map(v => (
+                          <button key={v} className="cc-btn" onClick={() => isAdmin && resetShotClock(v)}
+                            style={{ padding: '7px 0', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 8, color: 'rgba(255,255,255,0.6)', fontWeight: 700, fontSize: 12, opacity: isAdmin ? 1 : 0.35 }}>
+                            {v}s
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -844,6 +942,7 @@ export default function MatchCommandCenterPage() {
                   ['showFouls', 'Show fouls'],
                   ['showCards', 'Show yellow / red cards'],
                   ['showTimeouts', 'Show timeouts'],
+                  ['showShotClock', 'Show shot clock'],
                   ['timerCountsDown', 'Timer counts down'],
                   ['autoPlayBuzzer', 'Auto buzzer on expire'],
                 ] as [keyof Cfg, string][]).map(([key, label]) => (
@@ -868,6 +967,17 @@ export default function MatchCommandCenterPage() {
                     <button key={b.l} className="cc-btn" onClick={() => saveCfg({ ...cfg, timerLength: b.v })} style={{ padding: '5px 13px', background: cfg.timerLength === b.v ? 'rgba(138,21,56,0.3)' : 'rgba(255,255,255,0.05)', border: `1px solid ${cfg.timerLength === b.v ? 'rgba(138,21,56,0.6)' : 'rgba(255,255,255,0.09)'}`, borderRadius: 8, color: cfg.timerLength === b.v ? 'var(--accent)' : 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 600, boxShadow: cfg.timerLength === b.v ? '0 0 14px rgba(138,21,56,0.25)' : 'none' }}>{b.l}</button>
                   ))}
                 </div>
+
+                {cfg.showShotClock && (
+                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>Shot clock default (seconds)</div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {[{ l: '24s', v: 24 }, { l: '14s', v: 14 }, { l: '30s', v: 30 }, { l: '8s', v: 8 }].map(b => (
+                        <button key={b.l} className="cc-btn" onClick={() => saveCfg({ ...cfg, shotClockLength: b.v })} style={{ padding: '5px 13px', background: cfg.shotClockLength === b.v ? 'rgba(245,158,11,0.2)' : 'rgba(255,255,255,0.05)', border: `1px solid ${cfg.shotClockLength === b.v ? 'rgba(245,158,11,0.5)' : 'rgba(255,255,255,0.09)'}`, borderRadius: 8, color: cfg.shotClockLength === b.v ? '#f59e0b' : 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 600 }}>{b.l}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Periods */}
