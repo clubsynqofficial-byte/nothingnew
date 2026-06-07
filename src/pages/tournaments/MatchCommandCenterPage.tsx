@@ -353,7 +353,11 @@ export default function MatchCommandCenterPage() {
     if (!isPublicView || !selectedMatchId) return
     const poll = setInterval(async () => {
       const { data } = await supabase.from('tournament_matches').select('*').eq('id', selectedMatchId).single()
-      if (data) setMatch(data as Match)
+      if (data) {
+        setMatch(data as Match)
+        const savedCfg = (data.live_stats as Record<string, unknown>)?.config
+        if (savedCfg) setCfg(c => ({ ...c, ...(savedCfg as Cfg) }))
+      }
     }, 1000)
     return () => clearInterval(poll)
   }, [isPublicView, selectedMatchId])
