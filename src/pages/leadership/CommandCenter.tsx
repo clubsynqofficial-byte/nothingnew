@@ -238,6 +238,7 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
   const [tournamentError, setTournamentError] = useState('')
   const [tourCustomSport, setTourCustomSport] = useState('')
   const [tourCustomFields, setTourCustomFields] = useState<Array<{ id: string; label: string; type: string; options: string[] }>>([])
+  const [tourSections, setTourSections] = useState<Array<{ id: string; name: string; maxTeams: string }>>([])
   const [tourLogoFile, setTourLogoFile] = useState<File | null>(null)
   const [tourLogoPreview, setTourLogoPreview] = useState<string | null>(null)
   const tourLogoRef = useRef<HTMLInputElement>(null)
@@ -380,6 +381,9 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
       type: tourType,
       logo_url: tournamentLogoUrl,
       prizes: filledPrizes.length > 0 ? filledPrizes : null,
+      sections: tourSections.filter(s => s.name.trim()).map(s => ({ id: s.id, name: s.name.trim(), maxTeams: s.maxTeams ? parseInt(s.maxTeams) || null : null })).length > 0
+        ? tourSections.filter(s => s.name.trim()).map(s => ({ id: s.id, name: s.name.trim(), maxTeams: s.maxTeams ? parseInt(s.maxTeams) || null : null }))
+        : null,
       registration_fields: tourCustomFields.filter(f => f.label.trim()).map(f => ({ id: f.id, label: f.label.trim(), type: f.type, options: f.options })),
       is_test: window.location.hostname === 'localhost',
     })
@@ -388,7 +392,7 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
     setTourName(''); setTourSport('Basketball'); setTourDesc(''); setTourRules('')
     setTourLocation(''); setTourRegDeadline(''); setTourStartDate(''); setTourMaxTeams('16')
     setTourPrizes([{ place: '1st Place', description: '' }, { place: '2nd Place', description: '' }, { place: '3rd Place', description: '' }])
-    setTourCustomSport(''); setTourCustomFields([])
+    setTourCustomSport(''); setTourCustomFields([]); setTourSections([])
     setTourLogoFile(null); setTourLogoPreview(null)
     setShowTournamentForm(false)
     fetchTournaments()
@@ -2398,6 +2402,98 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
                               </button>
                             </div>
                           )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Sections / Divisions */}
+                <div style={{ marginTop: 14, padding: 16, background: 'rgba(56,189,248,0.04)', border: '1px solid rgba(56,189,248,0.18)', borderRadius: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10, gap: 10 }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#38bdf8' }}>🏷️ Sections / Divisions</div>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>Split the tournament into age or gender groups (e.g. U19 Boys, U16 Girls)</div>
+                    </div>
+                    <button
+                      onClick={() => setTourSections(prev => [...prev, { id: `s_${Date.now()}`, name: '', maxTeams: '' }])}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 5, padding: '6px 11px', flexShrink: 0,
+                        background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.3)',
+                        borderRadius: 8, color: '#38bdf8', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit',
+                      }}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                      Add Section
+                    </button>
+                  </div>
+
+                  {/* Quick-add chips */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+                    {['U19 Boys','U19 Girls','U16 Boys','U16 Girls','U14 Boys','U14 Girls','Open Men','Open Women','Mixed Open'].map(preset => {
+                      const alreadyAdded = tourSections.some(s => s.name === preset)
+                      return (
+                        <button
+                          key={preset}
+                          disabled={alreadyAdded}
+                          onClick={() => !alreadyAdded && setTourSections(prev => [...prev, { id: `s_${Date.now()}_${Math.random()}`, name: preset, maxTeams: '' }])}
+                          style={{
+                            padding: '4px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 600, fontFamily: 'inherit',
+                            cursor: alreadyAdded ? 'default' : 'pointer',
+                            background: alreadyAdded ? 'rgba(56,189,248,0.12)' : 'rgba(255,255,255,0.05)',
+                            border: alreadyAdded ? '1px solid rgba(56,189,248,0.35)' : '1px solid rgba(255,255,255,0.1)',
+                            color: alreadyAdded ? '#38bdf8' : 'var(--text-muted)',
+                            transition: 'all 0.12s',
+                          }}
+                        >
+                          {alreadyAdded ? '✓ ' : '+ '}{preset}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {tourSections.length === 0 ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '8px 0' }}>
+                      No sections added — all teams compete in one bracket. Tap a chip above or "Add Section" to split into groups.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {tourSections.map((sec, i) => (
+                        <div key={sec.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 160px', minWidth: 120 }}>
+                            <div style={{
+                              width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+                              background: 'rgba(56,189,248,0.15)', border: '1px solid rgba(56,189,248,0.25)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontSize: 10, fontWeight: 800, color: '#38bdf8',
+                            }}>
+                              {i + 1}
+                            </div>
+                            <input
+                              value={sec.name}
+                              onChange={e => setTourSections(prev => prev.map(s => s.id === sec.id ? { ...s, name: e.target.value } : s))}
+                              placeholder="e.g. U19 Boys"
+                              style={{ flex: 1, padding: '8px 10px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none', fontFamily: 'inherit', fontWeight: 600, minWidth: 0 }}
+                            />
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 1 130px', minWidth: 100 }}>
+                            <input
+                              type="number"
+                              min={2}
+                              max={128}
+                              value={sec.maxTeams}
+                              onChange={e => setTourSections(prev => prev.map(s => s.id === sec.id ? { ...s, maxTeams: e.target.value } : s))}
+                              placeholder="Max teams"
+                              style={{ flex: 1, padding: '8px 10px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12.5, outline: 'none', fontFamily: 'inherit', minWidth: 0 }}
+                            />
+                          </div>
+                          <button
+                            onClick={() => setTourSections(prev => prev.filter(s => s.id !== sec.id))}
+                            title="Remove section"
+                            style={{ width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 7, color: '#f87171', cursor: 'pointer', flexShrink: 0 }}
+                          >
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                          </button>
                         </div>
                       ))}
                     </div>

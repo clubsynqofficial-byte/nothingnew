@@ -23,6 +23,7 @@ interface Tournament {
   prize_description: string | null
   prizes: Array<{ place: string; description: string }> | null
   registration_fields: Array<{ id: string; label: string; type: string; options?: string[] }> | null
+  sections: Array<{ id: string; name: string; maxTeams?: number | null }> | null
   logo_url: string | null
   type: 'bracket' | 'head_to_head' | 'scoresheet' | 'scoreboard' | null
   maintenance_mode: boolean | null
@@ -44,6 +45,7 @@ interface Team {
   logo_url: string | null
   registration_answers: Record<string, string> | null
   players: Array<{ name: string; role: string }> | null
+  section: string | null
   captain?: { full_name: string | null; school: string | null } | null
 }
 
@@ -120,6 +122,7 @@ export default function TournamentDetailPage() {
   const [regLogoFile, setRegLogoFile] = useState<File | null>(null)
   const [regLogoPreview, setRegLogoPreview] = useState<string | null>(null)
   const [regCustomAnswers, setRegCustomAnswers] = useState<Record<string, string>>({})
+  const [regSection, setRegSection] = useState('')
   const [registering, setRegistering] = useState(false)
   const [regError, setRegError] = useState('')
   const regLogoRef = useRef<HTMLInputElement>(null)
@@ -172,6 +175,7 @@ export default function TournamentDetailPage() {
   const [generatingBracket, setGeneratingBracket] = useState(false)
   const [assigningSlot, setAssigningSlot] = useState<{ matchId: string; slot: 'team1_id' | 'team2_id' } | null>(null)
   const [scoreboardFlow, setScoreboardFlow] = useState<null | 'sport' | 'template'>(null)
+  const [bracketActiveSection, setBracketActiveSection] = useState('')
   const [standingsPaused, setStandingsPaused] = useState(false)
   const standingsPausedRef = useRef(false)
   // Sync local pause state from DB once tournament loads
@@ -267,6 +271,7 @@ export default function TournamentDetailPage() {
   async function handleRegister() {
     if (!user || !tournament) return
     if (!regTeamName.trim()) { setRegError('Team name is required'); return }
+    if ((tournament.sections?.length ?? 0) > 0 && !regSection) { setRegError('Please select a section'); return }
     setRegistering(true)
     setRegError('')
 
@@ -291,6 +296,7 @@ export default function TournamentDetailPage() {
       players: filteredPlayers.length > 0 ? filteredPlayers : null,
       logo_url: logoUrl,
       registration_answers: answers,
+      section: regSection || null,
     })
     setRegistering(false)
     if (error) { setRegError(error.message.includes('unique') ? 'You already registered or that team name is taken.' : error.message); return }
@@ -718,6 +724,17 @@ export default function TournamentDetailPage() {
   const rounds = [...new Set(matches.map(m => m.round))].sort((a, b) => a - b)
   const teamMap = Object.fromEntries(teams.map(t => [t.id, t]))
 
+  const hasBracketSections = (tournament.sections?.length ?? 0) > 0
+  const activeBracketSec = bracketActiveSection || tournament.sections?.[0]?.name || ''
+  function bracketMatchSection(m: Match): string | null {
+    const s1 = m.team1_id ? (teamMap[m.team1_id] as Team | undefined)?.section ?? null : null
+    const s2 = m.team2_id ? (teamMap[m.team2_id] as Team | undefined)?.section ?? null : null
+    if (s1 && s1 === s2) return s1
+    if (s1 && !s2) return s1
+    if (!s1 && s2) return s2
+    return null
+  }
+
   const canRegister = tournament.status === 'registration_open' && !myRegistration && !!user
 
   const TABS: { key: Tab; label: string; badge?: number }[] = [
@@ -808,7 +825,7 @@ export default function TournamentDetailPage() {
       </div>
 
       {/* Tournament Header */}
-      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, padding: 24, marginBottom: 20, animation: 'td-in 0.3s cubic-bezier(0.22,1,0.36,1) both' }}>
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 20, padding: 24, marginBottom: 20, animation: 'td-in 0.3s cubic-bezier(0.22,1,0.36,1) both' }}>
         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
           <div
             onClick={() => isAdmin && adminLogoRef.current?.click()}
@@ -981,20 +998,24 @@ export default function TournamentDetailPage() {
       )}
 
       {/* Tab bar */}
-      <div style={{ display: 'flex', gap: 3, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: 4, marginBottom: 20, overflowX: 'auto' }}>
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: 24, overflowX: 'auto', scrollbarWidth: 'none' }}>
         {TABS.map(t => (
           <button key={t.key} className="td-tab" onClick={() => setTab(t.key)} style={{
-            flex: 1, minWidth: 80, padding: '10px 14px', borderRadius: 10, fontSize: 13,
+            flexShrink: 0, padding: '12px 18px',
             fontWeight: tab === t.key ? 700 : 500,
-            color: tab === t.key ? '#fff' : 'var(--text-muted)',
-            background: tab === t.key ? 'rgba(138,21,56,0.22)' : 'transparent',
-            border: tab === t.key ? '1px solid rgba(138,21,56,0.32)' : '1px solid transparent',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-            whiteSpace: 'nowrap',
+            fontSize: 13,
+            color: tab === t.key ? 'var(--text-primary)' : 'var(--text-muted)',
+            background: 'none',
+            border: 'none',
+            borderBottom: `2px solid ${tab === t.key ? 'var(--accent)' : 'transparent'}`,
+            marginBottom: -1,
+            display: 'flex', alignItems: 'center', gap: 7,
+            whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'inherit',
+            transition: 'color 0.15s, border-color 0.15s',
           }}>
             {t.label}
             {!!t.badge && t.badge > 0 && (
-              <span style={{ minWidth: 17, height: 17, borderRadius: 999, background: t.key === 'teams' && isAdmin ? '#f87171' : t.key === 'bracket' ? '#f97316' : 'var(--accent)', color: '#fff', fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>
+              <span style={{ minWidth: 17, height: 17, borderRadius: 999, background: t.key === 'teams' && isAdmin ? 'rgba(248,113,113,0.2)' : t.key === 'bracket' ? 'rgba(249,115,22,0.2)' : 'rgba(138,21,56,0.3)', color: t.key === 'teams' && isAdmin ? '#f87171' : t.key === 'bracket' ? '#f97316' : 'var(--text-secondary)', fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>
                 {t.badge}
               </span>
             )}
@@ -1068,7 +1089,7 @@ export default function TournamentDetailPage() {
 
               {/* About */}
               {tournament.description && (
-                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: '18px 20px' }}>
+                <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: '18px 20px' }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>About</div>
                   <p style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.7, margin: 0 }}>{tournament.description}</p>
                 </div>
@@ -1076,7 +1097,7 @@ export default function TournamentDetailPage() {
 
               {/* Rules */}
               {tournament.rules && (
-                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: '18px 20px' }}>
+                <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: '18px 20px' }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Rules</div>
                   <p style={{ fontSize: 13.5, color: 'var(--text-primary)', lineHeight: 1.75, margin: 0, whiteSpace: 'pre-wrap' }}>{tournament.rules}</p>
                 </div>
@@ -1104,8 +1125,26 @@ export default function TournamentDetailPage() {
                 </div>
               )}
 
+              {/* Sections */}
+              {tournament.sections && tournament.sections.length > 0 && (
+                <div style={{ background: 'rgba(56,189,248,0.05)', border: '1px solid rgba(56,189,248,0.18)', borderRadius: 14, padding: '18px 20px' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>🏷️ Sections / Divisions</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {tournament.sections.map((sec, i) => (
+                      <div key={sec.id} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(56,189,248,0.07)', border: '1px solid rgba(56,189,248,0.2)', borderRadius: 10, padding: '10px 14px' }}>
+                        <div style={{ width: 22, height: 22, borderRadius: 6, background: 'rgba(56,189,248,0.18)', border: '1px solid rgba(56,189,248,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, color: '#38bdf8', flexShrink: 0 }}>{i + 1}</div>
+                        <div>
+                          <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)' }}>{sec.name}</div>
+                          {sec.maxTeams && <div style={{ fontSize: 11, color: 'rgba(56,189,248,0.55)', marginTop: 1 }}>Max {sec.maxTeams} teams</div>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Empty state */}
-              {!tournament.description && !tournament.rules && !((tournament.prizes && tournament.prizes.length > 0) || tournament.prize_description) && (
+              {!tournament.description && !tournament.rules && !((tournament.prizes && tournament.prizes.length > 0) || tournament.prize_description) && !(tournament.sections && tournament.sections.length > 0) && (
                 <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)', fontSize: 13 }}>
                   No additional details yet.{isAdmin && ' Use Edit Details to add a description and rules.'}
                 </div>
@@ -1163,6 +1202,50 @@ export default function TournamentDetailPage() {
                 </div>
               )}
             </>
+          ) : tournament.sections && tournament.sections.length > 0 ? (
+            /* Grouped by section */
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+              {tournament.sections.map(sec => {
+                const sectionTeams = acceptedTeams.filter(t => t.section === sec.name)
+                return (
+                  <div key={sec.id}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{sec.name}</div>
+                      <div style={{ flex: 1, height: 1, background: 'linear-gradient(to right, rgba(56,189,248,0.2), transparent)' }} />
+                      <span style={{ fontSize: 11, color: 'rgba(56,189,248,0.5)', fontWeight: 600 }}>{sectionTeams.length}{sec.maxTeams ? `/${sec.maxTeams}` : ''} teams</span>
+                    </div>
+                    {sectionTeams.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)', fontSize: 13, background: 'rgba(56,189,248,0.03)', border: '1px dashed rgba(56,189,248,0.15)', borderRadius: 12 }}>
+                        No teams registered for this section yet.
+                      </div>
+                    ) : (
+                      <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
+                        {sectionTeams.map(team => (
+                          <TeamCard key={team.id} team={team} isAdmin={false} actionLoading={null} deleteLoading={null} onAccept={() => {}} onDecline={() => {}} onDelete={() => {}} onExpand={() => setSelectedTeam(team)} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+              {/* Unassigned teams */}
+              {acceptedTeams.filter(t => !t.section).length > 0 && (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Unassigned</div>
+                    <div style={{ flex: 1, height: 1, background: 'linear-gradient(to right, rgba(255,255,255,0.08), transparent)' }} />
+                  </div>
+                  <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
+                    {acceptedTeams.filter(t => !t.section).map(team => (
+                      <TeamCard key={team.id} team={team} isAdmin={false} actionLoading={null} deleteLoading={null} onAccept={() => {}} onDecline={() => {}} onDelete={() => {}} onExpand={() => setSelectedTeam(team)} />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {acceptedTeams.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)', fontSize: 14 }}>No teams accepted yet.</div>
+              )}
+            </div>
           ) : (
             <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
               {acceptedTeams.length === 0 ? (
@@ -1348,8 +1431,38 @@ export default function TournamentDetailPage() {
                 </div>
               )}
 
+              {/* ── Section tab bar ── */}
+              {hasBracketSections && (
+                <div style={{ marginBottom: 24 }}>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {(tournament.sections ?? []).map(sec => {
+                      const isActive = activeBracketSec === sec.name
+                      const secLive = matches.filter(m => bracketMatchSection(m) === sec.name && m.status === 'live').length
+                      const secTeamCount = acceptedTeams.filter(t => t.section === sec.name).length
+                      return (
+                        <button key={sec.id} onClick={() => setBracketActiveSection(sec.name)} style={{
+                          display: 'flex', alignItems: 'center', gap: 7,
+                          padding: '8px 15px', borderRadius: 10, fontSize: 13, fontWeight: isActive ? 700 : 500,
+                          cursor: 'pointer', fontFamily: 'inherit',
+                          background: isActive ? 'rgba(56,189,248,0.13)' : 'rgba(255,255,255,0.04)',
+                          border: `1px solid ${isActive ? 'rgba(56,189,248,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                          color: isActive ? '#38bdf8' : 'var(--text-muted)',
+                          transition: 'all 0.13s',
+                        }}>
+                          {sec.name}
+                          <span style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: isActive ? 'rgba(56,189,248,0.18)' : 'rgba(255,255,255,0.07)', color: isActive ? '#38bdf8' : 'rgba(255,255,255,0.3)' }}>
+                            {secTeamCount}
+                          </span>
+                          {secLive > 0 && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f97316', animation: 'live-pulse 1.4s ease-in-out infinite' }} />}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* ── LIVE NOW hero section ── */}
-              {matches.filter(m => m.status === 'live').length > 0 && (
+              {(hasBracketSections ? matches.filter(m => m.status === 'live' && bracketMatchSection(m) === activeBracketSec) : matches.filter(m => m.status === 'live')).length > 0 && (
                 <div style={{ marginBottom: 32 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
                     <div style={{ width: 9, height: 9, borderRadius: '50%', background: '#f97316', animation: 'live-pulse 1.4s ease-in-out infinite', boxShadow: '0 0 10px rgba(249,115,22,0.6)' }} />
@@ -1357,7 +1470,7 @@ export default function TournamentDetailPage() {
                     <div style={{ flex: 1, height: 1, background: 'linear-gradient(to right, rgba(249,115,22,0.3), transparent)' }} />
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
-                    {matches.filter(m => m.status === 'live').map(match => (
+                    {(hasBracketSections ? matches.filter(m => m.status === 'live' && bracketMatchSection(m) === activeBracketSec) : matches.filter(m => m.status === 'live')).map(match => (
                       <LiveMatchHero
                         key={match.id}
                         match={match}
@@ -1380,85 +1493,183 @@ export default function TournamentDetailPage() {
 
               {/* Round Robin Standings */}
               {tournament.format === 'round_robin' && (
-                <RoundRobinStandings teams={acceptedTeams} matches={matches} />
+                <RoundRobinStandings teams={acceptedTeams} matches={matches} sections={tournament.sections} activeSection={activeBracketSec} />
               )}
 
               {/* Bracket or match list */}
               {tournament.format === 'single_elimination' ? (
                 <>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Bracket</span>
-                    <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
-                  </div>
-                  <div style={{ overflowX: 'auto', paddingBottom: 12 }}>
-                    <div style={{ display: 'flex', gap: 12, minWidth: Math.max(rounds.length * 240, 400) }}>
-                      {rounds.map(round => (
-                        <div key={round} style={{ flex: 1, minWidth: 220 }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12, textAlign: 'center', color: round === Math.max(...rounds) ? '#e9c176' : 'var(--text-muted)' }}>
-                            {round === Math.max(...rounds) ? '🏆 Final' : round === Math.max(...rounds) - 1 && rounds.length > 2 ? 'Semi-finals' : `Round ${round}`}
+                  {tournament.sections && tournament.sections.length > 0 ? (
+                    /* Section-grouped brackets */
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+                      {tournament.sections.map(sec => {
+                        const secMatches = matches.filter(m => {
+                          const s1 = m.team1_id ? teamMap[m.team1_id]?.section ?? null : null
+                          const s2 = m.team2_id ? teamMap[m.team2_id]?.section ?? null : null
+                          const ms = (s1 && s1 === s2) ? s1 : (s1 && !s2) ? s1 : (!s1 && s2) ? s2 : null
+                          return ms === sec.name
+                        })
+                        const secRounds = [...new Set(secMatches.map(m => m.round))].sort((a, b) => a - b)
+                        const secMax = Math.max(...secRounds, 0)
+                        return (
+                          <div key={sec.id}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                              <span style={{ fontSize: 12, fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{sec.name}</span>
+                              <div style={{ flex: 1, height: 1, background: 'linear-gradient(to right, rgba(56,189,248,0.25), transparent)' }} />
+                            </div>
+                            {secMatches.length === 0 ? (
+                              <div style={{ textAlign: 'center', padding: '20px', fontSize: 13, color: 'var(--text-muted)', background: 'rgba(56,189,248,0.03)', border: '1px dashed rgba(56,189,248,0.15)', borderRadius: 12 }}>
+                                No matches for this section yet.
+                              </div>
+                            ) : (
+                              <div style={{ overflowX: 'auto', paddingBottom: 12 }}>
+                                <div style={{ display: 'flex', gap: 12, minWidth: Math.max(secRounds.length * 240, 400) }}>
+                                  {secRounds.map(round => (
+                                    <div key={round} style={{ flex: 1, minWidth: 220 }}>
+                                      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12, textAlign: 'center', color: round === secMax ? '#e9c176' : 'var(--text-muted)' }}>
+                                        {round === secMax ? '🏆 Final' : round === secMax - 1 && secRounds.length > 2 ? 'Semi-finals' : `Round ${round}`}
+                                      </div>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                        {secMatches.filter(m => m.round === round).map(match => (
+                                          <MatchCard
+                                            key={match.id} match={match} teamMap={teamMap} isAdmin={isAdmin}
+                                            isEditing={editMatch === match.id} editScore1={editScore1} editScore2={editScore2} savingMatch={savingMatch}
+                                            onEdit={() => { setEditMatch(match.id); setEditScore1(String(match.score1)); setEditScore2(String(match.score2)) }}
+                                            onCancelEdit={() => setEditMatch(null)}
+                                            onSave={(wid) => handleSaveScore(match.id, wid)}
+                                            onSetLive={() => handleSetMatchLive(match.id)}
+                                            onScore1Change={setEditScore1} onScore2Change={setEditScore2}
+                                            onAssignTeam1={isAdmin ? () => setAssigningSlot({ matchId: match.id, slot: 'team1_id' }) : undefined}
+                                            onAssignTeam2={isAdmin ? () => setAssigningSlot({ matchId: match.id, slot: 'team2_id' }) : undefined}
+                                            onClearTeam1={isAdmin ? () => clearMatchSlot(match.id, 'team1_id') : undefined}
+                                            onClearTeam2={isAdmin ? () => clearMatchSlot(match.id, 'team2_id') : undefined}
+                                          />
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                            {matches.filter(m => m.round === round).map(match => (
-                              <MatchCard
-                                key={match.id}
-                                match={match}
-                                teamMap={teamMap}
-                                isAdmin={isAdmin}
-                                isEditing={editMatch === match.id}
-                                editScore1={editScore1}
-                                editScore2={editScore2}
-                                savingMatch={savingMatch}
-                                onEdit={() => { setEditMatch(match.id); setEditScore1(String(match.score1)); setEditScore2(String(match.score2)) }}
-                                onCancelEdit={() => setEditMatch(null)}
-                                onSave={(wid) => handleSaveScore(match.id, wid)}
-                                onSetLive={() => handleSetMatchLive(match.id)}
-                                onScore1Change={setEditScore1}
-                                onScore2Change={setEditScore2}
-                                onAssignTeam1={isAdmin ? () => setAssigningSlot({ matchId: match.id, slot: 'team1_id' }) : undefined}
-                                onAssignTeam2={isAdmin ? () => setAssigningSlot({ matchId: match.id, slot: 'team2_id' }) : undefined}
-                                onClearTeam1={isAdmin ? () => clearMatchSlot(match.id, 'team1_id') : undefined}
-                                onClearTeam2={isAdmin ? () => clearMatchSlot(match.id, 'team2_id') : undefined}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
-                  </div>
+                  ) : (
+                    /* Standard bracket (no sections) */
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Bracket</span>
+                        <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
+                      </div>
+                      <div style={{ overflowX: 'auto', paddingBottom: 12 }}>
+                        <div style={{ display: 'flex', gap: 12, minWidth: Math.max(rounds.length * 240, 400) }}>
+                          {rounds.map(round => (
+                            <div key={round} style={{ flex: 1, minWidth: 220 }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12, textAlign: 'center', color: round === Math.max(...rounds) ? '#e9c176' : 'var(--text-muted)' }}>
+                                {round === Math.max(...rounds) ? '🏆 Final' : round === Math.max(...rounds) - 1 && rounds.length > 2 ? 'Semi-finals' : `Round ${round}`}
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                {matches.filter(m => m.round === round).map(match => (
+                                  <MatchCard
+                                    key={match.id} match={match} teamMap={teamMap} isAdmin={isAdmin}
+                                    isEditing={editMatch === match.id} editScore1={editScore1} editScore2={editScore2} savingMatch={savingMatch}
+                                    onEdit={() => { setEditMatch(match.id); setEditScore1(String(match.score1)); setEditScore2(String(match.score2)) }}
+                                    onCancelEdit={() => setEditMatch(null)}
+                                    onSave={(wid) => handleSaveScore(match.id, wid)}
+                                    onSetLive={() => handleSetMatchLive(match.id)}
+                                    onScore1Change={setEditScore1} onScore2Change={setEditScore2}
+                                    onAssignTeam1={isAdmin ? () => setAssigningSlot({ matchId: match.id, slot: 'team1_id' }) : undefined}
+                                    onAssignTeam2={isAdmin ? () => setAssigningSlot({ matchId: match.id, slot: 'team2_id' }) : undefined}
+                                    onClearTeam1={isAdmin ? () => clearMatchSlot(match.id, 'team1_id') : undefined}
+                                    onClearTeam2={isAdmin ? () => clearMatchSlot(match.id, 'team2_id') : undefined}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </>
               ) : (
                 <>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>All Matches</span>
-                    <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {[...matches].sort((a, b) => {
-                      const order = { live: 0, scheduled: 1, completed: 2 }
-                      return (order[a.status] ?? 1) - (order[b.status] ?? 1)
-                    }).map(match => (
-                      <MatchCard
-                        key={match.id}
-                        match={match}
-                        teamMap={teamMap}
-                        isAdmin={isAdmin}
-                        isEditing={editMatch === match.id}
-                        editScore1={editScore1}
-                        editScore2={editScore2}
-                        savingMatch={savingMatch}
-                        onEdit={() => { setEditMatch(match.id); setEditScore1(String(match.score1)); setEditScore2(String(match.score2)) }}
-                        onCancelEdit={() => setEditMatch(null)}
-                        onSave={(wid) => handleSaveScore(match.id, wid)}
-                        onSetLive={() => handleSetMatchLive(match.id)}
-                        onScore1Change={setEditScore1}
-                        onScore2Change={setEditScore2}
-                        onAssignTeam1={isAdmin ? () => setAssigningSlot({ matchId: match.id, slot: 'team1_id' }) : undefined}
-                        onAssignTeam2={isAdmin ? () => setAssigningSlot({ matchId: match.id, slot: 'team2_id' }) : undefined}
-                        onClearTeam1={isAdmin ? () => clearMatchSlot(match.id, 'team1_id') : undefined}
-                        onClearTeam2={isAdmin ? () => clearMatchSlot(match.id, 'team2_id') : undefined}
-                      />
-                    ))}
-                  </div>
+                  {tournament.sections && tournament.sections.length > 0 ? (
+                    /* Section-grouped match list */
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+                      {tournament.sections.map(sec => {
+                        const secMatches = [...matches].filter(m => {
+                          const s1 = m.team1_id ? teamMap[m.team1_id]?.section ?? null : null
+                          const s2 = m.team2_id ? teamMap[m.team2_id]?.section ?? null : null
+                          const ms = (s1 && s1 === s2) ? s1 : (s1 && !s2) ? s1 : (!s1 && s2) ? s2 : null
+                          return ms === sec.name
+                        }).sort((a, b) => {
+                          const order = { live: 0, scheduled: 1, completed: 2 }
+                          return (order[a.status] ?? 1) - (order[b.status] ?? 1)
+                        })
+                        return (
+                          <div key={sec.id}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                              <span style={{ fontSize: 12, fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{sec.name}</span>
+                              <div style={{ flex: 1, height: 1, background: 'linear-gradient(to right, rgba(56,189,248,0.25), transparent)' }} />
+                            </div>
+                            {secMatches.length === 0 ? (
+                              <div style={{ textAlign: 'center', padding: '20px', fontSize: 13, color: 'var(--text-muted)', background: 'rgba(56,189,248,0.03)', border: '1px dashed rgba(56,189,248,0.15)', borderRadius: 12 }}>
+                                No matches for this section yet.
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                {secMatches.map(match => (
+                                  <MatchCard
+                                    key={match.id} match={match} teamMap={teamMap} isAdmin={isAdmin}
+                                    isEditing={editMatch === match.id} editScore1={editScore1} editScore2={editScore2} savingMatch={savingMatch}
+                                    onEdit={() => { setEditMatch(match.id); setEditScore1(String(match.score1)); setEditScore2(String(match.score2)) }}
+                                    onCancelEdit={() => setEditMatch(null)}
+                                    onSave={(wid) => handleSaveScore(match.id, wid)}
+                                    onSetLive={() => handleSetMatchLive(match.id)}
+                                    onScore1Change={setEditScore1} onScore2Change={setEditScore2}
+                                    onAssignTeam1={isAdmin ? () => setAssigningSlot({ matchId: match.id, slot: 'team1_id' }) : undefined}
+                                    onAssignTeam2={isAdmin ? () => setAssigningSlot({ matchId: match.id, slot: 'team2_id' }) : undefined}
+                                    onClearTeam1={isAdmin ? () => clearMatchSlot(match.id, 'team1_id') : undefined}
+                                    onClearTeam2={isAdmin ? () => clearMatchSlot(match.id, 'team2_id') : undefined}
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    /* Standard all-matches list */
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>All Matches</span>
+                        <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {[...matches].sort((a, b) => {
+                          const order = { live: 0, scheduled: 1, completed: 2 }
+                          return (order[a.status] ?? 1) - (order[b.status] ?? 1)
+                        }).map(match => (
+                          <MatchCard
+                            key={match.id} match={match} teamMap={teamMap} isAdmin={isAdmin}
+                            isEditing={editMatch === match.id} editScore1={editScore1} editScore2={editScore2} savingMatch={savingMatch}
+                            onEdit={() => { setEditMatch(match.id); setEditScore1(String(match.score1)); setEditScore2(String(match.score2)) }}
+                            onCancelEdit={() => setEditMatch(null)}
+                            onSave={(wid) => handleSaveScore(match.id, wid)}
+                            onSetLive={() => handleSetMatchLive(match.id)}
+                            onScore1Change={setEditScore1} onScore2Change={setEditScore2}
+                            onAssignTeam1={isAdmin ? () => setAssigningSlot({ matchId: match.id, slot: 'team1_id' }) : undefined}
+                            onAssignTeam2={isAdmin ? () => setAssigningSlot({ matchId: match.id, slot: 'team2_id' }) : undefined}
+                            onClearTeam1={isAdmin ? () => clearMatchSlot(match.id, 'team1_id') : undefined}
+                            onClearTeam2={isAdmin ? () => clearMatchSlot(match.id, 'team2_id') : undefined}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </>
@@ -1603,7 +1814,7 @@ export default function TournamentDetailPage() {
                                  m.status === 'declined' ? { color: '#f87171', bg: 'rgba(239,68,68,0.1)' } :
                                  { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' }
                       return (
-                        <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 9 }}>
+                        <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 9 }}>
                           <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', flexShrink: 0, overflow: 'hidden' }}>
                             {m.profile?.avatar_url ? <img src={m.profile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
                           </div>
@@ -1642,7 +1853,7 @@ export default function TournamentDetailPage() {
                   </p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {acceptedTeams.map(team => (
-                      <div key={team.id} style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 10, padding: '10px 14px' }}>
+                      <div key={team.id} style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px' }}>
                         <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(138,21,56,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, overflow: 'hidden', flexShrink: 0 }}>
                           {team.logo_url ? <img src={team.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : team.team_name[0]}
                         </div>
@@ -1712,6 +1923,37 @@ export default function TournamentDetailPage() {
                   style={{ width: '100%', padding: '10px 14px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, color: 'var(--text-primary)', fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
                 />
               </div>
+
+              {/* Section picker */}
+              {tournament.sections && tournament.sections.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    Section <span style={{ color: '#f87171', fontWeight: 700 }}>*</span>
+                  </label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {tournament.sections.map(sec => {
+                      const selected = regSection === sec.name
+                      return (
+                        <button
+                          key={sec.id}
+                          type="button"
+                          onClick={() => setRegSection(sec.name)}
+                          style={{
+                            padding: '9px 16px', borderRadius: 10, fontSize: 13.5, fontWeight: selected ? 700 : 500,
+                            fontFamily: 'inherit', cursor: 'pointer',
+                            background: selected ? 'rgba(56,189,248,0.14)' : 'rgba(255,255,255,0.05)',
+                            border: `1px solid ${selected ? 'rgba(56,189,248,0.45)' : 'rgba(255,255,255,0.12)'}`,
+                            color: selected ? '#38bdf8' : 'var(--text-muted)',
+                            transition: 'all 0.12s',
+                          }}
+                        >
+                          {selected && '✓ '}{sec.name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Players */}
               <div style={{ marginBottom: (tournament.registration_fields?.length ?? 0) > 0 ? 16 : 20 }}>
@@ -1865,9 +2107,16 @@ function TeamCard({ team, isAdmin, actionLoading, deleteLoading, onAccept, onDec
               {team.status.charAt(0).toUpperCase() + team.status.slice(1)}
             </span>
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-            {team.captain?.full_name ?? 'Unknown captain'}
-            {playerCount > 0 && <span style={{ opacity: 0.6 }}> · {playerCount} player{playerCount !== 1 ? 's' : ''}</span>}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              {team.captain?.full_name ?? 'Unknown captain'}
+              {playerCount > 0 && <span style={{ opacity: 0.6 }}> · {playerCount} player{playerCount !== 1 ? 's' : ''}</span>}
+            </span>
+            {team.section && (
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: '#38bdf8', background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.25)', borderRadius: 999, padding: '1px 7px', flexShrink: 0 }}>
+                {team.section}
+              </span>
+            )}
           </div>
         </div>
 
@@ -2236,19 +2485,25 @@ function MatchCard({ match, teamMap, isAdmin, isEditing, editScore1, editScore2,
 }
 
 // ─── Round Robin Standings ────────────────────────────────────────────────────
-function RoundRobinStandings({ teams, matches }: { teams: Team[]; matches: Match[] }) {
-  const stats = teams.map(team => {
-    const myMatches = matches.filter(m => (m.team1_id === team.id || m.team2_id === team.id) && m.status === 'completed')
-    const wins = myMatches.filter(m => m.winner_id === team.id).length
-    const losses = myMatches.filter(m => m.winner_id && m.winner_id !== team.id).length
-    const gf = myMatches.reduce((s, m) => s + (m.team1_id === team.id ? m.score1 : m.score2), 0)
-    const ga = myMatches.reduce((s, m) => s + (m.team1_id === team.id ? m.score2 : m.score1), 0)
-    return { team, played: myMatches.length, wins, losses, gf, ga }
-  }).sort((a, b) => b.wins - a.wins || (b.gf - b.ga) - (a.gf - a.ga))
+function RoundRobinStandings({ teams, matches, sections, activeSection }: {
+  teams: Team[]
+  matches: Match[]
+  sections?: Array<{ id: string; name: string; maxTeams?: number | null }> | null
+  activeSection?: string
+}) {
+  function buildStats(teamList: Team[]) {
+    return teamList.map(team => {
+      const myMatches = matches.filter(m => (m.team1_id === team.id || m.team2_id === team.id) && m.status === 'completed')
+      const wins = myMatches.filter(m => m.winner_id === team.id).length
+      const losses = myMatches.filter(m => m.winner_id && m.winner_id !== team.id).length
+      const gf = myMatches.reduce((s, m) => s + (m.team1_id === team.id ? m.score1 : m.score2), 0)
+      const ga = myMatches.reduce((s, m) => s + (m.team1_id === team.id ? m.score2 : m.score1), 0)
+      return { team, played: myMatches.length, wins, losses, gf, ga }
+    }).sort((a, b) => b.wins - a.wins || (b.gf - b.ga) - (a.gf - a.ga))
+  }
 
-  return (
-    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: 20, marginBottom: 20, overflowX: 'auto' }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Standings</div>
+  function StatsTable({ stats }: { stats: ReturnType<typeof buildStats> }) {
+    return (
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
           <tr style={{ color: 'var(--text-muted)', fontSize: 11 }}>
@@ -2275,6 +2530,64 @@ function RoundRobinStandings({ teams, matches }: { teams: Team[]; matches: Match
           ))}
         </tbody>
       </table>
+    )
+  }
+
+  const hasSections = (sections?.length ?? 0) > 0
+  // When a parent passes activeSection (e.g. bracket tab's own tab bar), use it.
+  // Only maintain internal tab state when rendering standalone (no parent controller).
+  const [internalSec, setInternalSec] = React.useState(() => sections?.[0]?.name ?? '')
+  const controlled = !!activeSection && hasSections
+  const currentSec = controlled ? activeSection : (internalSec || sections?.[0]?.name || '')
+
+  if (hasSections) {
+    const secTeams = teams.filter(t => t.section === currentSec)
+    const stats = buildStats(secTeams)
+    return (
+      <div style={{ marginBottom: 20 }}>
+        {/* Only render own tab pills when not controlled by a parent tab bar */}
+        {!controlled && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+            {(sections ?? []).map(sec => {
+              const isActive = currentSec === sec.name
+              const count = teams.filter(t => t.section === sec.name).length
+              return (
+                <button key={sec.id} onClick={() => setInternalSec(sec.name)} style={{
+                  padding: '7px 14px', borderRadius: 10, fontSize: 13, fontWeight: isActive ? 700 : 500,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                  background: isActive ? 'rgba(56,189,248,0.13)' : 'rgba(255,255,255,0.04)',
+                  border: `1px solid ${isActive ? 'rgba(56,189,248,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                  color: isActive ? '#38bdf8' : 'var(--text-muted)',
+                  display: 'flex', alignItems: 'center', gap: 7, transition: 'all 0.13s',
+                }}>
+                  {sec.name}
+                  <span style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: isActive ? 'rgba(56,189,248,0.18)' : 'rgba(255,255,255,0.07)', color: isActive ? '#38bdf8' : 'rgba(255,255,255,0.3)' }}>
+                    {count}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+        {/* Active section table */}
+        <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, overflow: 'hidden' }}>
+          <div style={{ padding: '10px 18px 8px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{currentSec}</span>
+          </div>
+          <div style={{ padding: '0 8px 8px', overflowX: 'auto' }}>
+            {secTeams.length === 0
+              ? <div style={{ textAlign: 'center', padding: '24px 0', fontSize: 13, color: 'var(--text-muted)' }}>No teams in this section yet.</div>
+              : <StatsTable stats={stats} />}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: 20, marginBottom: 20, overflowX: 'auto' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Standings</div>
+      <StatsTable stats={buildStats(teams)} />
     </div>
   )
 }

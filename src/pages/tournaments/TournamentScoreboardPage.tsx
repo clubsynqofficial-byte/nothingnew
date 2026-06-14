@@ -1,28 +1,139 @@
+import React from 'react'
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+
+const SPORT_EMOJIS: Record<string, string> = { Basketball:'🏀', Football:'⚽', Volleyball:'🏐', Tennis:'🎾', Badminton:'🏸', Cricket:'🏏', Swimming:'🏊', Athletics:'🏃', Chess:'♟️', Gaming:'🎮', 'Table Tennis':'🏓', Rugby:'🏉', Baseball:'⚾', Hockey:'🏑' }
+
+type StandingsRow = { team: Team; played: number; wins: number; draws: number; losses: number; pf: number; pa: number; pts: number }
+function StandingsTable({ rows, maxPts }: { rows: StandingsRow[]; maxPts: number }) {
+  return (
+    <div style={{ borderRadius: 16, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.06)' }}>
+      {/* Header */}
+      <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr repeat(5,40px) 56px', gap: 0, padding: '8px 16px', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.06)', fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase' as const, letterSpacing: '0.14em' }}>
+        <span></span><span>Team</span>
+        <span style={{ textAlign:'center' }}>P</span>
+        <span style={{ textAlign:'center' }}>W</span>
+        <span style={{ textAlign:'center' }}>D</span>
+        <span style={{ textAlign:'center' }}>L</span>
+        <span style={{ textAlign:'center' }}>±</span>
+        <span style={{ textAlign:'center' }}>Pts</span>
+      </div>
+      {rows.map((row, i) => {
+        const pct = maxPts > 0 ? row.pts / maxPts : 0
+        const medal = i === 0 ? { icon: '🥇', border: 'rgba(233,193,118,0.5)', bg: 'rgba(233,193,118,0.04)' }
+                    : i === 1 ? { icon: '🥈', border: 'rgba(148,163,184,0.3)', bg: 'transparent' }
+                    : i === 2 ? { icon: '🥉', border: 'rgba(184,115,51,0.3)', bg: 'transparent' }
+                    : null
+        return (
+          <div
+            key={row.team.id}
+            style={{
+              display: 'grid', gridTemplateColumns: '40px 1fr repeat(5,40px) 56px',
+              gap: 0, padding: '14px 16px',
+              borderBottom: i < rows.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+              borderLeft: medal ? `3px solid ${medal.border}` : '3px solid transparent',
+              background: medal?.bg ?? 'transparent',
+              alignItems: 'center',
+              animation: `row-in 0.3s ${i * 0.06}s ease both`,
+              transition: 'background 0.15s',
+            }}
+          >
+            <span style={{ fontSize: medal ? 18 : 13, textAlign: 'center' }}>
+              {medal ? medal.icon : <span style={{ color: 'rgba(255,255,255,0.15)', fontWeight: 700 }}>{i + 1}</span>}
+            </span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: i === 0 ? 800 : 600, color: i === 0 ? '#fff' : 'rgba(255,255,255,0.8)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {row.team.team_name}
+              </div>
+              <div style={{ marginTop: 5, height: 3, width: 80, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${pct * 100}%`, background: i === 0 ? '#e9c176' : i === 1 ? '#94a3b8' : i === 2 ? '#b87333' : 'rgba(255,255,255,0.2)', borderRadius: 2, transition: 'width 0.8s ease' }} />
+              </div>
+            </div>
+            <span style={{ textAlign:'center', fontSize: 13, color: 'rgba(255,255,255,0.3)' }}>{row.played}</span>
+            <span style={{ textAlign:'center', fontSize: 13, fontWeight: 700, color: row.wins > 0 ? '#4ade80' : 'rgba(255,255,255,0.15)' }}>{row.wins}</span>
+            <span style={{ textAlign:'center', fontSize: 13, color: row.draws > 0 ? '#f59e0b' : 'rgba(255,255,255,0.15)' }}>{row.draws}</span>
+            <span style={{ textAlign:'center', fontSize: 13, color: row.losses > 0 ? '#f87171' : 'rgba(255,255,255,0.15)' }}>{row.losses}</span>
+            <span style={{ textAlign:'center', fontSize: 12, color: (row.pf-row.pa)>=0 ? 'rgba(255,255,255,0.4)' : '#f87171' }}>
+              {row.pf-row.pa>0?'+':''}{row.pf-row.pa}
+            </span>
+            <div style={{ display:'flex', justifyContent:'center' }}>
+              <span style={{ fontSize: 15, fontWeight: 900, color: i===0?'#e9c176':i===1?'#94a3b8':i===2?'#b87333':'#fff', fontVariantNumeric:'tabular-nums', minWidth: 32, textAlign:'center' }}>
+                {row.pts}
+              </span>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+interface Match { id: string; tournament_id: string; team1_id: string | null; team2_id: string | null; score1: number; score2: number; winner_id: string | null; round: number; match_number: number; status: 'scheduled' | 'live' | 'completed' }
+interface Team { id: string; team_name: string; logo_url: string | null; section: string | null }
+
+function BracketGrid({ matches, rounds, maxRound, teamMap }: { matches: Match[]; rounds: number[]; maxRound: number; teamMap: Record<string, Team> }) {
+  return (
+    <div style={{ overflowX: 'auto', paddingBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 10, minWidth: rounds.length * 210 }}>
+        {rounds.map(round => (
+          <div key={round} style={{ flex: 1, minWidth: 195 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 12, textAlign: 'center', color: round === maxRound ? '#e9c176' : 'rgba(255,255,255,0.25)' }}>
+              {round === maxRound ? 'Final' : round === maxRound - 1 && rounds.length > 2 ? 'Semi-finals' : `Round ${round}`}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {matches.filter(m => m.round === round).map(match => {
+                const t1 = match.team1_id ? teamMap[match.team1_id] : null
+                const t2 = match.team2_id ? teamMap[match.team2_id] : null
+                const isLive = match.status === 'live'
+                const isDone = match.status === 'completed'
+                const t1w = match.winner_id === match.team1_id
+                const t2w = match.winner_id === match.team2_id
+                return (
+                  <div key={match.id} style={{ background: isLive ? 'rgba(249,115,22,0.06)' : 'rgba(255,255,255,0.03)', border: `1px solid ${isLive ? 'rgba(249,115,22,0.3)' : 'rgba(255,255,255,0.08)'}`, borderRadius: 13, overflow: 'hidden' }}>
+                    <div style={{ padding: '4px 11px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      {isLive && <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#f97316', flexShrink: 0 }} />}
+                      <span style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: isLive ? '#f97316' : isDone ? 'rgba(74,222,128,0.5)' : 'rgba(255,255,255,0.18)' }}>
+                        {isLive ? 'Live' : isDone ? 'Final' : 'Upcoming'}
+                      </span>
+                    </div>
+                    {[{ team: t1, score: match.score1, wins: t1w, loses: t2w && isDone }, { team: t2, score: match.score2, wins: t2w, loses: t1w && isDone }].map((row, ri) => (
+                      <div key={ri} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 11px', background: row.wins ? 'rgba(74,222,128,0.05)' : 'transparent', borderBottom: ri === 0 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+                        <Logo team={row.team} size={22} />
+                        <span style={{ flex: 1, fontSize: 12.5, fontWeight: row.wins ? 700 : 400, color: row.loses ? 'rgba(255,255,255,0.22)' : row.wins ? '#fff' : 'rgba(255,255,255,0.7)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {row.team?.team_name ?? (!((ri === 0 ? t2 : t1)) ? 'Bye' : 'TBD')}
+                        </span>
+                        {row.wins && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                        <span style={{ fontSize: 18, fontWeight: 900, minWidth: 24, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: row.wins ? '#4ade80' : row.loses ? 'rgba(255,255,255,0.15)' : isLive ? '#f97316' : 'rgba(255,255,255,0.3)' }}>
+                          {isDone || isLive ? (ri === 0 ? match.score1 : match.score2) : '—'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 interface Tournament {
   id: string; name: string; sport: string; status: string
   format: 'single_elimination' | 'round_robin'
   logo_url: string | null; location: string | null
   prizes: Array<{ place: string; description: string }> | null
+  sections: Array<{ id: string; name: string; maxTeams?: number | null }> | null
   club: { name: string } | null
   standings_paused: boolean | null
 }
-interface Team { id: string; team_name: string; logo_url: string | null }
-interface Match {
-  id: string; tournament_id: string
-  team1_id: string | null; team2_id: string | null
-  score1: number; score2: number
-  winner_id: string | null; round: number; match_number: number
-  status: 'scheduled' | 'live' | 'completed'
-}
-
 const CSS = `
 @keyframes spin{to{transform:rotate(360deg)}}
-@keyframes sb-in{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
-@keyframes row-in{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
+@keyframes sb-in{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+@keyframes row-in{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:translateX(0)}}
+@keyframes score-pop{0%{transform:scale(1)}50%{transform:scale(1.08)}100%{transform:scale(1)}}
 `
 
 function Logo({ team, size }: { team: Team | null | undefined; size: number }) {
@@ -36,9 +147,9 @@ function Logo({ team, size }: { team: Team | null | undefined; size: number }) {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
-      <span style={{ fontSize: 11, fontWeight: 800, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.14em', whiteSpace: 'nowrap' }}>{children}</span>
-      <div style={{ flex: 1, height: 1, background: 'linear-gradient(to right, rgba(255,255,255,0.08), transparent)' }} />
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+      <div style={{ width: 3, height: 18, borderRadius: 2, background: '#8a1538', flexShrink: 0 }} />
+      <span style={{ fontSize: 12, fontWeight: 800, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '0.16em' }}>{children}</span>
     </div>
   )
 }
@@ -52,12 +163,13 @@ export default function TournamentScoreboardPage() {
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
   const [lastUpdated, setLastUpdated] = useState(new Date())
+  const [activeSectionName, setActiveSectionName] = useState('')
 
   const fetchData = useCallback(async () => {
     if (!tournamentId) return
     const [tRes, teamsRes, matchesRes] = await Promise.all([
-      supabase.from('tournaments').select('id,name,sport,status,format,logo_url,location,prizes,standings_paused,club:clubs(name)').eq('id', tournamentId).single(),
-      supabase.from('tournament_teams').select('id,team_name,logo_url').eq('tournament_id', tournamentId).eq('status', 'accepted'),
+      supabase.from('tournaments').select('id,name,sport,status,format,logo_url,location,prizes,sections,standings_paused,club:clubs(name)').eq('id', tournamentId).single(),
+      supabase.from('tournament_teams').select('id,team_name,logo_url,section').eq('tournament_id', tournamentId).eq('status', 'accepted'),
       supabase.from('tournament_matches').select('*').eq('tournament_id', tournamentId).order('round').order('match_number'),
     ])
     if (tRes.data) setTournament(tRes.data as unknown as Tournament)
@@ -105,19 +217,34 @@ export default function TournamentScoreboardPage() {
   const rounds = [...new Set(matches.map(m => m.round))].sort((a, b) => a - b)
   const maxRound = Math.max(...rounds, 0)
 
-  // Standings for round robin
-  const standings = teams.map(team => {
-    const played = matches.filter(m => (m.team1_id === team.id || m.team2_id === team.id) && m.status === 'completed')
-    const wins = played.filter(m => m.winner_id === team.id).length
-    const losses = played.filter(m => m.winner_id && m.winner_id !== team.id).length
-    const draws = played.length - wins - losses
-    const pf = played.reduce((s, m) => s + (m.team1_id === team.id ? m.score1 : m.score2), 0)
-    const pa = played.reduce((s, m) => s + (m.team1_id === team.id ? m.score2 : m.score1), 0)
-    const pts = wins * 3 + draws
-    return { team, played: played.length, wins, draws, losses, pf, pa, pts }
-  }).sort((a, b) => b.pts - a.pts || b.wins - a.wins || (b.pf - b.pa) - (a.pf - a.pa))
+  const hasSections = (tournament?.sections?.length ?? 0) > 0
+  const activeSec = hasSections ? (activeSectionName || tournament!.sections![0].name) : ''
 
+  function buildStandings(teamList: Team[]) {
+    return teamList.map(team => {
+      const played = matches.filter(m => (m.team1_id === team.id || m.team2_id === team.id) && m.status === 'completed')
+      const wins = played.filter(m => m.winner_id === team.id).length
+      const losses = played.filter(m => m.winner_id && m.winner_id !== team.id).length
+      const draws = played.length - wins - losses
+      const pf = played.reduce((s, m) => s + (m.team1_id === team.id ? m.score1 : m.score2), 0)
+      const pa = played.reduce((s, m) => s + (m.team1_id === team.id ? m.score2 : m.score1), 0)
+      const pts = wins * 3 + draws
+      return { team, played: played.length, wins, draws, losses, pf, pa, pts }
+    }).sort((a, b) => b.pts - a.pts || b.wins - a.wins || (b.pf - b.pa) - (a.pf - a.pa))
+  }
+
+  // Standings for round robin
+  const standings = buildStandings(teams)
   const maxPts = standings[0]?.pts || 1
+
+  function matchSection(match: Match): string | null {
+    const s1 = match.team1_id ? teamMap[match.team1_id]?.section ?? null : null
+    const s2 = match.team2_id ? teamMap[match.team2_id]?.section ?? null : null
+    if (s1 && s1 === s2) return s1
+    if (s1 && !s2) return s1
+    if (!s1 && s2) return s2
+    return null
+  }
 
   if (loading) return (
     <div style={{ minHeight: '100vh', background: '#070b14', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -136,10 +263,8 @@ export default function TournamentScoreboardPage() {
     <div style={{ minHeight: '100vh', background: '#070b14', color: '#fff', fontFamily: 'inherit', position: 'relative' }}>
       <style>{CSS}</style>
 
-      {/* Background */}
-      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0 }}>
-        <div style={{ position: 'absolute', top: '-5%', left: '20%', width: '60vw', height: '40vw', borderRadius: '50%', background: 'radial-gradient(circle, rgba(138,21,56,0.12) 0%, transparent 70%)', filter: 'blur(60px)' }} />
-      </div>
+      {/* Subtle top accent line */}
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(to right, #8a1538, #c2185b, #8a1538)', zIndex: 30 }} />
 
       {/* Sticky header */}
       <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'rgba(7,11,20,0.88)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.07)', padding: '12px 24px', display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -183,28 +308,42 @@ export default function TournamentScoreboardPage() {
         )}
 
         {/* Tournament hero */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 22, marginBottom: 48, animation: 'sb-in 0.4s ease both' }}>
-          <div style={{ width: 72, height: 72, borderRadius: 18, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
-            {tournament.logo_url
-              ? <img src={tournament.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              : <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" strokeLinecap="round"><path d="M6 9H4.5a2.5 2.5 0 0 0 0 5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 1 0 5H18"/><path d="M4 22h16"/><path d="M8 22V11.3"/><path d="M16 22V11.3"/><rect x="6" y="2" width="12" height="9" rx="1"/></svg>
-            }
-          </div>
-          <div>
-            <h1 style={{ fontSize: 28, fontWeight: 900, margin: '0 0 6px', letterSpacing: '-0.025em', lineHeight: 1.1 }}>{tournament.name}</h1>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>{tournament.sport}</span>
-              {tournament.club && <>
-                <span style={{ width: 3, height: 3, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'inline-block' }} />
-                <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>{tournament.club.name}</span>
-              </>}
-              {tournament.location && <>
-                <span style={{ width: 3, height: 3, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'inline-block' }} />
-                <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>{tournament.location}</span>
-              </>}
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.1em', padding: '2px 8px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6 }}>
-                {tournament.format === 'round_robin' ? 'Round Robin' : 'Single Elimination'}
-              </span>
+        <div style={{ marginBottom: 52, animation: 'sb-in 0.4s ease both' }}>
+          {/* Sport banner */}
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 24, paddingBottom: 28, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ width: 88, height: 88, borderRadius: 20, background: 'linear-gradient(135deg, rgba(138,21,56,0.6) 0%, rgba(80,10,30,0.9) 100%)', border: '1px solid rgba(138,21,56,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0, boxShadow: '0 8px 32px rgba(138,21,56,0.3)' }}>
+              {tournament.logo_url
+                ? <img src={tournament.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : <span style={{ fontSize: 40 }}>{SPORT_EMOJIS[tournament.sport] ?? '🏆'}</span>
+              }
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {tournament.club && (
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(138,21,56,0.9)', textTransform: 'uppercase', letterSpacing: '0.14em', marginBottom: 6 }}>
+                  {tournament.club.name}
+                </div>
+              )}
+              <h1 style={{ fontSize: 'clamp(24px, 5vw, 42px)', fontWeight: 900, margin: '0 0 10px', letterSpacing: '-0.03em', lineHeight: 1.05, color: '#fff' }}>
+                {tournament.name}
+              </h1>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', padding: '4px 10px', background: tournament.format === 'round_robin' ? 'rgba(99,102,241,0.2)' : 'rgba(245,158,11,0.2)', border: `1px solid ${tournament.format === 'round_robin' ? 'rgba(99,102,241,0.4)' : 'rgba(245,158,11,0.4)'}`, borderRadius: 6, color: tournament.format === 'round_robin' ? '#818cf8' : '#f59e0b' }}>
+                  {tournament.format === 'round_robin' ? 'Round Robin' : 'Single Elimination'}
+                </span>
+                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', fontWeight: 500 }}>{tournament.sport}</span>
+                {tournament.location && (
+                  <>
+                    <span style={{ width: 2, height: 2, borderRadius: '50%', background: 'rgba(255,255,255,0.2)' }} />
+                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>{tournament.location}</span>
+                  </>
+                )}
+                {liveMatches.length > 0 && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 800, color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.12em', padding: '4px 10px', background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.35)', borderRadius: 20 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f97316', animation: 'live-pulse 1.5s ease-in-out infinite' }} />
+                    {liveMatches.length} Live
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -212,19 +351,60 @@ export default function TournamentScoreboardPage() {
         {/* Blurred content wrapper when paused */}
         <div style={{ filter: tournament?.standings_paused ? 'blur(6px)' : 'none', transition: 'filter 0.4s ease', userSelect: tournament?.standings_paused ? 'none' : 'auto', pointerEvents: tournament?.standings_paused ? 'none' : 'auto' }}>
 
-        {matches.length === 0 && (
+        {/* ── Section tab bar ── */}
+        {hasSections && (
+          <div style={{ marginBottom: 40, animation: 'sb-in 0.38s ease both' }}>
+            <style>{`.sb-section-tabs::-webkit-scrollbar{display:none}`}</style>
+            <div className="sb-section-tabs" style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.08)', overflowX: 'auto', scrollbarWidth: 'none' }}>
+              {(tournament.sections ?? []).map(sec => {
+                const isActive = activeSec === sec.name
+                const secTeamCount = teams.filter(t => t.section === sec.name).length
+                const secLiveCount = liveMatches.filter(m => matchSection(m) === sec.name).length
+                return (
+                  <button
+                    key={sec.id}
+                    onClick={() => setActiveSectionName(sec.name)}
+                    style={{
+                      flexShrink: 0,
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      padding: '14px 20px',
+                      background: 'none', border: 'none',
+                      borderBottom: `2px solid ${isActive ? '#8a1538' : 'transparent'}`,
+                      marginBottom: -1,
+                      color: isActive ? '#fff' : 'rgba(255,255,255,0.38)',
+                      fontSize: 14, fontWeight: isActive ? 700 : 500,
+                      cursor: 'pointer', fontFamily: 'inherit',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    {sec.name}
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: isActive ? 'rgba(138,21,56,0.25)' : 'rgba(255,255,255,0.06)', color: isActive ? '#e57399' : 'rgba(255,255,255,0.25)' }}>
+                      {secTeamCount}
+                    </span>
+                    {secLiveCount > 0 && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f97316', animation: 'live-pulse 1.5s ease-in-out infinite' }} />}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── Empty state ── */}
+        {(hasSections ? matches.filter(m => matchSection(m) === activeSec) : matches).length === 0 && (
           <div style={{ textAlign: 'center', padding: '80px 20px', color: 'rgba(255,255,255,0.2)', fontSize: 14, animation: 'sb-in 0.4s ease both' }}>
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5" style={{ display: 'block', margin: '0 auto 16px' }} strokeLinecap="round"><path d="M6 9H4.5a2.5 2.5 0 0 0 0 5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 1 0 5H18"/><path d="M4 22h16"/><path d="M8 22V11.3"/><path d="M16 22V11.3"/><rect x="6" y="2" width="12" height="9" rx="1"/></svg>
-            Bracket hasn't been set up yet. Check back soon.
+            {hasSections ? `No matches for ${activeSec} yet. Check back soon.` : 'Bracket hasn\'t been set up yet. Check back soon.'}
           </div>
         )}
 
         {/* ── LIVE NOW ── */}
-        {liveMatches.length > 0 && (
+        {(hasSections ? liveMatches.filter(m => matchSection(m) === activeSec) : liveMatches).length > 0 && (() => {
+          const visibleLive = hasSections ? liveMatches.filter(m => matchSection(m) === activeSec) : liveMatches
+          return (
           <div style={{ marginBottom: 52, animation: 'sb-in 0.45s ease both' }}>
             <SectionLabel>Live Now</SectionLabel>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px,1fr))', gap: 14 }}>
-              {liveMatches.map(match => {
+              {visibleLive.map(match => {
                 const t1 = match.team1_id ? teamMap[match.team1_id] : null
                 const t2 = match.team2_id ? teamMap[match.team2_id] : null
                 return (
@@ -242,14 +422,14 @@ export default function TournamentScoreboardPage() {
                     <div style={{ padding: '22px 20px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
                       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9 }}>
                         <Logo team={t1} size={48} />
-                        <span style={{ fontSize: 13, fontWeight: 700, textAlign: 'center', lineHeight: 1.3, color: 'rgba(255,255,255,0.85)' }}>{t1?.team_name ?? 'TBD'}</span>
-                        <span style={{ fontSize: 56, fontWeight: 900, lineHeight: 1, color: '#fff' }}>{match.score1}</span>
+                        <span style={{ fontSize: 15, fontWeight: 700, textAlign: 'center', lineHeight: 1.3, color: 'rgba(255,255,255,0.85)' }}>{t1?.team_name ?? 'TBD'}</span>
+                        <span style={{ fontSize: 72, fontWeight: 900, lineHeight: 1, color: '#fff', fontVariantNumeric: 'tabular-nums', fontFeatureSettings: '"tnum"' }}>{match.score1}</span>
                       </div>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.2)', letterSpacing: '0.06em' }}>vs</span>
+                      <span style={{ fontSize: 11, fontWeight: 500, color: 'rgba(255,255,255,0.12)', letterSpacing: '0.06em' }}>—</span>
                       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9 }}>
                         <Logo team={t2} size={48} />
-                        <span style={{ fontSize: 13, fontWeight: 700, textAlign: 'center', lineHeight: 1.3, color: 'rgba(255,255,255,0.85)' }}>{t2?.team_name ?? 'TBD'}</span>
-                        <span style={{ fontSize: 56, fontWeight: 900, lineHeight: 1, color: '#fff' }}>{match.score2}</span>
+                        <span style={{ fontSize: 15, fontWeight: 700, textAlign: 'center', lineHeight: 1.3, color: 'rgba(255,255,255,0.85)' }}>{t2?.team_name ?? 'TBD'}</span>
+                        <span style={{ fontSize: 72, fontWeight: 900, lineHeight: 1, color: '#fff', fontVariantNumeric: 'tabular-nums', fontFeatureSettings: '"tnum"' }}>{match.score2}</span>
                       </div>
                     </div>
                   </div>
@@ -257,54 +437,23 @@ export default function TournamentScoreboardPage() {
               })}
             </div>
           </div>
-        )}
+          )
+        })()}
 
         {/* ── Standings (round robin) ── */}
-        {tournament.format === 'round_robin' && standings.length > 0 && (
+        {tournament.format === 'round_robin' && (hasSections ? teams.filter(t => t.section === activeSec) : teams).length > 0 && (
           <div style={{ marginBottom: 52, animation: 'sb-in 0.5s ease both' }}>
             <SectionLabel>Standings</SectionLabel>
-            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 18, overflow: 'hidden' }}>
-              {/* Header */}
-              <div style={{ display: 'grid', gridTemplateColumns: '36px 1fr 44px 44px 44px 44px 44px 52px', gap: 4, padding: '10px 20px', borderBottom: '1px solid rgba(255,255,255,0.07)', fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
-                <span>#</span>
-                <span>Team</span>
-                <span style={{ textAlign: 'center' }}>P</span>
-                <span style={{ textAlign: 'center' }}>W</span>
-                <span style={{ textAlign: 'center' }}>D</span>
-                <span style={{ textAlign: 'center' }}>L</span>
-                <span style={{ textAlign: 'center' }}>+/−</span>
-                <span style={{ textAlign: 'center' }}>Pts</span>
-              </div>
-              {standings.map((row, i) => {
-                const pct = maxPts > 0 ? row.pts / maxPts : 0
-                const medal = i === 0 ? '#e9c176' : i === 1 ? '#94a3b8' : i === 2 ? '#b87333' : null
-                return (
-                  <div key={row.team.id} style={{ display: 'grid', gridTemplateColumns: '36px 1fr 44px 44px 44px 44px 44px 52px', gap: 4, padding: '13px 20px', borderBottom: i < standings.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none', alignItems: 'center', background: i === 0 ? 'rgba(233,193,118,0.04)' : 'transparent', animation: `row-in 0.3s ${i * 0.05}s ease both` }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: medal ?? 'rgba(255,255,255,0.2)' }}>{i + 1}</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                      <Logo team={row.team} size={30} />
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: i < 3 ? 700 : 500, color: i === 0 ? '#fff' : 'rgba(255,255,255,0.8)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.team.team_name}</div>
-                        {/* Win bar */}
-                        <div style={{ marginTop: 4, height: 2, width: 60, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
-                          <div style={{ height: '100%', width: `${pct * 100}%`, background: medal ?? 'rgba(255,255,255,0.25)', borderRadius: 2, transition: 'width 0.6s ease' }} />
-                        </div>
-                      </div>
-                    </div>
-                    <span style={{ textAlign: 'center', fontSize: 14, color: 'rgba(255,255,255,0.35)' }}>{row.played}</span>
-                    <span style={{ textAlign: 'center', fontSize: 14, fontWeight: 700, color: row.wins > 0 ? '#4ade80' : 'rgba(255,255,255,0.2)' }}>{row.wins}</span>
-                    <span style={{ textAlign: 'center', fontSize: 14, color: row.draws > 0 ? '#f59e0b' : 'rgba(255,255,255,0.2)' }}>{row.draws}</span>
-                    <span style={{ textAlign: 'center', fontSize: 14, color: row.losses > 0 ? '#f87171' : 'rgba(255,255,255,0.2)' }}>{row.losses}</span>
-                    <span style={{ textAlign: 'center', fontSize: 13, color: (row.pf - row.pa) >= 0 ? 'rgba(255,255,255,0.45)' : '#f87171' }}>
-                      {row.pf - row.pa > 0 ? '+' : ''}{row.pf - row.pa}
-                    </span>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <span style={{ fontSize: 16, fontWeight: 900, color: medal ?? '#fff', background: medal ? `${medal}18` : 'rgba(255,255,255,0.06)', border: `1px solid ${medal ? `${medal}35` : 'rgba(255,255,255,0.1)'}`, borderRadius: 8, padding: '3px 10px', minWidth: 36, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{row.pts}</span>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+            {hasSections ? (() => {
+              const secTeams = teams.filter(t => t.section === activeSec)
+              const secStandings = buildStandings(secTeams)
+              const secMaxPts = secStandings[0]?.pts || 1
+              return secTeams.length === 0
+                ? <div style={{ textAlign: 'center', padding: '32px', color: 'rgba(255,255,255,0.2)', fontSize: 13 }}>No teams registered for {activeSec} yet.</div>
+                : <StandingsTable rows={secStandings} maxPts={secMaxPts} />
+            })() : (
+              <StandingsTable rows={standings} maxPts={maxPts} />
+            )}
             <div style={{ marginTop: 10, display: 'flex', gap: 16, paddingLeft: 4 }}>
               {[['#4ade80','W = win (3 pts)'], ['#f59e0b','D = draw (1 pt)'], ['#f87171','L = loss (0 pts)']].map(([c, l]) => (
                 <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -320,84 +469,49 @@ export default function TournamentScoreboardPage() {
         {tournament.format === 'single_elimination' && matches.length > 0 && (
           <div style={{ marginBottom: 52, animation: 'sb-in 0.5s ease both' }}>
             <SectionLabel>Bracket</SectionLabel>
-            <div style={{ overflowX: 'auto', paddingBottom: 12 }}>
-              <div style={{ display: 'flex', gap: 10, minWidth: rounds.length * 210 }}>
-                {rounds.map(round => (
-                  <div key={round} style={{ flex: 1, minWidth: 195 }}>
-                    <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 12, textAlign: 'center', color: round === maxRound ? '#e9c176' : 'rgba(255,255,255,0.25)' }}>
-                      {round === maxRound ? 'Final' : round === maxRound - 1 && rounds.length > 2 ? 'Semi-finals' : `Round ${round}`}
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {matches.filter(m => m.round === round).map(match => {
-                        const t1 = match.team1_id ? teamMap[match.team1_id] : null
-                        const t2 = match.team2_id ? teamMap[match.team2_id] : null
-                        const isLive = match.status === 'live'
-                        const isDone = match.status === 'completed'
-                        const t1w = match.winner_id === match.team1_id
-                        const t2w = match.winner_id === match.team2_id
-                        return (
-                          <div key={match.id} style={{ background: isLive ? 'rgba(249,115,22,0.06)' : 'rgba(255,255,255,0.03)', border: `1px solid ${isLive ? 'rgba(249,115,22,0.3)' : 'rgba(255,255,255,0.08)'}`, borderRadius: 13, overflow: 'hidden' }}>
-                            <div style={{ padding: '4px 11px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                              {isLive && <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#f97316', flexShrink: 0 }} />}
-                              <span style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: isLive ? '#f97316' : isDone ? 'rgba(74,222,128,0.5)' : 'rgba(255,255,255,0.18)' }}>
-                                {isLive ? 'Live' : isDone ? 'Final' : 'Upcoming'}
-                              </span>
-                            </div>
-                            {[{ team: t1, score: match.score1, wins: t1w, loses: t2w && isDone }, { team: t2, score: match.score2, wins: t2w, loses: t1w && isDone }].map((row, ri) => (
-                              <div key={ri} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 11px', background: row.wins ? 'rgba(74,222,128,0.05)' : 'transparent', borderBottom: ri === 0 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
-                                <Logo team={row.team} size={22} />
-                                <span style={{ flex: 1, fontSize: 12.5, fontWeight: row.wins ? 700 : 400, color: row.loses ? 'rgba(255,255,255,0.22)' : row.wins ? '#fff' : 'rgba(255,255,255,0.7)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {row.team?.team_name ?? (!((ri === 0 ? t2 : t1)) ? 'Bye' : 'TBD')}
-                                </span>
-                                {row.wins && (
-                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
-                                )}
-                                <span style={{ fontSize: 18, fontWeight: 900, minWidth: 24, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: row.wins ? '#4ade80' : row.loses ? 'rgba(255,255,255,0.15)' : isLive ? '#f97316' : 'rgba(255,255,255,0.3)' }}>
-                                  {isDone || isLive ? (ri === 0 ? match.score1 : match.score2) : '—'}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            {hasSections ? (() => {
+              const secMatches = matches.filter(m => matchSection(m) === activeSec)
+              const secRounds = [...new Set(secMatches.map(m => m.round))].sort((a, b) => a - b)
+              const secMaxRound = Math.max(...secRounds, 0)
+              return secMatches.length === 0
+                ? <div style={{ textAlign: 'center', padding: '32px', color: 'rgba(255,255,255,0.2)', fontSize: 13 }}>No bracket matches for {activeSec} yet.</div>
+                : <BracketGrid matches={secMatches} rounds={secRounds} maxRound={secMaxRound} teamMap={teamMap} />
+            })() : (
+              <BracketGrid matches={matches} rounds={rounds} maxRound={maxRound} teamMap={teamMap} />
+            )}
           </div>
         )}
 
         {/* ── Results ── */}
-        {completedMatches.length > 0 && (
+        {(hasSections ? completedMatches.filter(m => matchSection(m) === activeSec) : completedMatches).length > 0 && (
           <div style={{ marginBottom: 52, animation: 'sb-in 0.55s ease both' }}>
             <SectionLabel>Results</SectionLabel>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {[...completedMatches].reverse().slice(0, 12).map((match, i) => {
+              {[...(hasSections ? completedMatches.filter(m => matchSection(m) === activeSec) : completedMatches)].reverse().slice(0, 12).map((match, i) => {
                 const t1 = match.team1_id ? teamMap[match.team1_id] : null
                 const t2 = match.team2_id ? teamMap[match.team2_id] : null
                 const t1w = match.winner_id === match.team1_id
                 const t2w = match.winner_id === match.team2_id
                 return (
-                  <div key={match.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 12, background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, padding: '11px 18px', animation: `row-in 0.3s ${i * 0.03}s ease both` }}>
+                  <div key={match.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 12, background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: '11px 18px', animation: `row-in 0.3s ${i * 0.03}s ease both` }}>
                     {/* Team 1 */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <Logo team={t1} size={26} />
-                      <span style={{ fontSize: 13.5, fontWeight: t1w ? 700 : 400, color: t1w ? '#fff' : 'rgba(255,255,255,0.32)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: t1w ? 14 : 13, fontWeight: t1w ? 800 : 400, color: t1w ? '#fff' : 'rgba(255,255,255,0.25)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {t1?.team_name ?? 'TBD'}
                       </span>
                       {t1w && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12"/></svg>}
                     </div>
                     {/* Score */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                      <span style={{ fontSize: 22, fontWeight: 900, minWidth: 28, textAlign: 'center', fontVariantNumeric: 'tabular-nums', color: t1w ? '#fff' : 'rgba(255,255,255,0.25)' }}>{match.score1}</span>
-                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.18)', fontWeight: 600 }}>—</span>
-                      <span style={{ fontSize: 22, fontWeight: 900, minWidth: 28, textAlign: 'center', fontVariantNumeric: 'tabular-nums', color: t2w ? '#fff' : 'rgba(255,255,255,0.25)' }}>{match.score2}</span>
+                      <span style={{ fontSize: 24, fontWeight: 900, minWidth: 28, textAlign: 'center', fontVariantNumeric: 'tabular-nums', color: t1w ? '#fff' : 'rgba(255,255,255,0.2)' }}>{match.score1}</span>
+                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.15)', fontWeight: 600 }}>—</span>
+                      <span style={{ fontSize: 24, fontWeight: 900, minWidth: 28, textAlign: 'center', fontVariantNumeric: 'tabular-nums', color: t2w ? '#fff' : 'rgba(255,255,255,0.2)' }}>{match.score2}</span>
                     </div>
                     {/* Team 2 */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'flex-end' }}>
                       {t2w && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12"/></svg>}
-                      <span style={{ fontSize: 13.5, fontWeight: t2w ? 700 : 400, color: t2w ? '#fff' : 'rgba(255,255,255,0.32)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: t2w ? 14 : 13, fontWeight: t2w ? 800 : 400, color: t2w ? '#fff' : 'rgba(255,255,255,0.25)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {t2?.team_name ?? 'TBD'}
                       </span>
                       <Logo team={t2} size={26} />
@@ -413,18 +527,20 @@ export default function TournamentScoreboardPage() {
         {tournament.prizes && tournament.prizes.length > 0 && (
           <div style={{ marginBottom: 40, animation: 'sb-in 0.6s ease both' }}>
             <SectionLabel>Prizes</SectionLabel>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               {tournament.prizes.map((prize, i) => {
+                const medals = ['🥇', '🥈', '🥉']
                 const colors = ['#e9c176', '#94a3b8', '#b87333']
                 const c = colors[i] ?? 'rgba(255,255,255,0.3)'
+                const medalIcon = medals[i] ?? '🏅'
                 return (
-                  <div key={i} style={{ background: `${c}0d`, border: `1px solid ${c}28`, borderRadius: 14, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, minWidth: 180 }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 10, background: `${c}18`, border: `1px solid ${c}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.8" strokeLinecap="round"><path d="M6 9H4.5a2.5 2.5 0 0 0 0 5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 1 0 5H18"/><path d="M4 22h16"/><path d="M8 22V11.3"/><path d="M16 22V11.3"/><rect x="6" y="2" width="12" height="9" rx="1"/></svg>
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 20px', background: i === 0 ? 'rgba(233,193,118,0.06)' : 'rgba(255,255,255,0.02)', border: `1px solid ${c}30`, borderLeft: `3px solid ${c}`, borderRadius: 12, minWidth: 200, flex: '1 1 200px' }}>
+                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: `${c}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>
+                      {medalIcon}
                     </div>
                     <div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: c, marginBottom: 3, letterSpacing: '0.04em' }}>{prize.place}</div>
-                      <div style={{ fontSize: 14, color: '#fff', fontWeight: 600 }}>{prize.description}</div>
+                      <div style={{ fontSize: 10, fontWeight: 800, color: c, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 4 }}>{prize.place}</div>
+                      <div style={{ fontSize: 15, color: '#fff', fontWeight: 700, lineHeight: 1.3 }}>{prize.description}</div>
                     </div>
                   </div>
                 )
@@ -438,9 +554,9 @@ export default function TournamentScoreboardPage() {
       </div>
 
       {/* Footer */}
-      <div style={{ position: 'relative', zIndex: 1, borderTop: '1px solid rgba(255,255,255,0.06)', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.15)', letterSpacing: '0.06em' }}>Powered by</span>
-        <span style={{ fontSize: 12, fontWeight: 900, color: 'rgba(255,255,255,0.25)', letterSpacing: '0.14em' }}>CLUBSYNQ</span>
+      <div style={{ position: 'relative', zIndex: 1, borderTop: '1px solid rgba(255,255,255,0.05)', background: 'linear-gradient(to bottom, transparent, rgba(138,21,56,0.04))', padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+        <span style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.12)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Powered by</span>
+        <span style={{ fontSize: 13, fontWeight: 900, color: 'rgba(138,21,56,0.6)', letterSpacing: '0.18em', textTransform: 'uppercase' }}>CLUBSYNQ</span>
       </div>
     </div>
   )
