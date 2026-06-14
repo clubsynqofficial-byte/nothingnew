@@ -31,13 +31,6 @@ const SPORT_EMOJIS: Record<string, string> = {
   Baseball: '⚾', Hockey: '🏑', Other: '🏆',
 }
 
-const STATUS_STYLES: Record<string, { label: string; color: string; bg: string; dot?: boolean }> = {
-  registration_open: { label: 'Registration Open', color: '#4ade80', bg: 'rgba(74,222,128,0.12)' },
-  registration_closed: { label: 'Reg. Closed', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
-  ongoing: { label: 'Live', color: '#f97316', bg: 'rgba(249,115,22,0.14)', dot: true },
-  completed: { label: 'Completed', color: '#6b7280', bg: 'rgba(107,114,128,0.12)' },
-  cancelled: { label: 'Cancelled', color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
-}
 
 function formatDate(iso: string | null) {
   if (!iso) return null
@@ -221,7 +214,6 @@ export default function TournamentsPage() {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {live.map((t, i) => {
-                    const fillPct = t.max_teams > 0 ? Math.min(t._accepted / t.max_teams, 1) : 0
                     return (
                       <div key={t.id} className="tourny-card" onClick={() => navigate(`/tournaments/${t.id}`)}
                         style={{ background: 'var(--bg-card)', border: '1px solid rgba(249,115,22,0.2)', borderLeft: '4px solid #f97316', borderRadius: 14, padding: '18px 20px', display: 'flex', gap: 16, alignItems: 'center', animation: `tourny-in 0.3s ease both`, animationDelay: `${i * 0.05}s` }}
