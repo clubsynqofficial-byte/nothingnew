@@ -24,6 +24,7 @@ interface Tournament {
   prizes: Array<{ place: string; description: string }> | null
   registration_fields: Array<{ id: string; label: string; type: string; options?: string[] }> | null
   sections: Array<{ id: string; name: string; maxTeams?: number | null }> | null
+  admins: string[] | null
   logo_url: string | null
   type: 'bracket' | 'head_to_head' | 'scoresheet' | 'scoreboard' | null
   maintenance_mode: boolean | null
@@ -216,9 +217,11 @@ export default function TournamentDetailPage() {
     }
     if (matchesRes.data) setMatches(matchesRes.data)
 
-    // Check admin: creator or club president
+    // Check admin: creator, explicit admins array, or club president/officer
     if (user && tournRes.data) {
-      if (tournRes.data.created_by === user.id) {
+      const isCreator = tournRes.data.created_by === user.id
+      const isExplicitAdmin = (tournRes.data.admins ?? []).includes(user.id)
+      if (isCreator || isExplicitAdmin) {
         setIsAdmin(true)
       } else {
         const { data: mem } = await supabase

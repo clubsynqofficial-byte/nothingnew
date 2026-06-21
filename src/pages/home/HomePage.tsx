@@ -1,9 +1,23 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { parseTS } from '../../lib/time'
 import { useAuth } from '../../contexts/AuthContext'
+
+function linkify(text: string) {
+  const re = /https?:\/\/[^\s<>"]+|www\.[^\s<>"]+/g
+  const nodes: ReactNode[] = []
+  let last = 0; let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) nodes.push(text.slice(last, m.index))
+    const href = m[0].startsWith('http') ? m[0] : `https://${m[0]}`
+    nodes.push(<a key={m.index} href={href} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ color:'var(--accent)', textDecoration:'underline', wordBreak:'break-all' }}>{m[0]}</a>)
+    last = m.index + m[0].length
+  }
+  if (last < text.length) nodes.push(text.slice(last))
+  return nodes
+}
 
 interface PostRow {
   id: string; user_id: string; content: string | null
@@ -119,11 +133,8 @@ export default function HomePage() {
 
   useEffect(() => { fetchFeed() }, [user])
   useEffect(() => {
-    const ch = supabase.channel('hfrt')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts' }, fetchFeed)
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'posts' }, fetchFeed)
-      .subscribe()
-    return () => { supabase.removeChannel(ch) }
+    const interval = setInterval(fetchFeed, 60000)
+    return () => clearInterval(interval)
   }, [])
   useEffect(() => {
     if (!menuId) return
@@ -959,7 +970,7 @@ function AnnouncementCard({ ann, userId, userClubIds, onJoined }: {
       <div style={{ padding: '12px 16px 14px' }}>
         {ann.content && (
           <div style={{ fontSize: 14.5, lineHeight: 1.6, color: 'var(--text-primary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-            {ann.content}
+            {linkify(ann.content)}
           </div>
         )}
         {ann.image_url && (

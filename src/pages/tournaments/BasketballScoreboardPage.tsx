@@ -12,6 +12,8 @@ interface Match {
   fouls1: number; fouls2: number
   timeouts1: number; timeouts2: number
   live_stats: Record<string, unknown> | null
+  shot_clock: number
+  shot_clock_running: boolean
   round: number; match_number: number; status: string
 }
 
@@ -68,6 +70,26 @@ function playBuzzer() {
 // No local clock — displays game_clock directly from DB.
 // Admin writes to DB every second when running; admin pausing stops writes → public freezes.
 export function BasketballPublicView({ match, teams, cfg }: { match: Match | null; teams: Record<string, Team>; cfg: Config }) {
+  const [localShotClock, setLocalShotClock] = useState(match?.shot_clock ?? 24)
+  const scIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // When DB signals shot_clock_running=true, start local countdown from the DB value.
+  // When false, stop and show the DB value directly.
+  useEffect(() => {
+    if (!match) return
+    setLocalShotClock(match.shot_clock ?? 24)
+    if (scIntervalRef.current) { clearInterval(scIntervalRef.current); scIntervalRef.current = null }
+    if (match.shot_clock_running) {
+      scIntervalRef.current = setInterval(() => {
+        setLocalShotClock(prev => {
+          if (prev <= 1) { clearInterval(scIntervalRef.current!); scIntervalRef.current = null; return 0 }
+          return prev - 1
+        })
+      }, 1000)
+    }
+    return () => { if (scIntervalRef.current) clearInterval(scIntervalRef.current) }
+  }, [match?.shot_clock_running, match?.shot_clock, match?.id])
+
   if (!match) return (
     <div style={{ minHeight: '100vh', background: cfg.boardBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ fontSize: 18, color: 'rgba(255,255,255,0.4)' }}>Waiting for match to start…</div>
@@ -139,6 +161,14 @@ export function BasketballPublicView({ match, teams, cfg }: { match: Match | nul
           }
           {cfg.showPeriod && (
             <div style={{ fontSize: Math.round(18 * cfg.fontSize / 100), fontWeight: 800, color: match.game_status === 'in_progress' ? '#f97316' : 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{periodLabel}</div>
+          )}
+          {cfg.showShotClock && !isFinal && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <div style={{ fontSize: Math.round(11 * cfg.fontSize / 100), fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 2 }}>Shot</div>
+              <div style={{ fontSize: Math.round(28 * cfg.fontSize / 100), fontWeight: 900, color: localShotClock <= 5 ? '#ef4444' : '#f59e0b', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+                {localShotClock}
+              </div>
+            </div>
           )}
         </div>
       </div>
@@ -284,6 +314,7 @@ export default function BasketballScoreboardPage() {
     setMatch(m)
     setClockRunning(false)
     if (clockIntervalRef.current) clearInterval(clockIntervalRef.current)
+    if (m?.shot_clock != null) setShotClock(m.shot_clock)
     const savedCfg = (m?.live_stats as any)?.config
     if (savedCfg) setCfg(c => ({ ...c, ...savedCfg }))
   }
@@ -356,22 +387,34 @@ export default function BasketballScoreboardPage() {
   function startShotClock() {
     if (shotClockRunning) return
     setShotClockRunning(true)
+    // Write start signal to DB once — public view picks it up via postgres_changes and runs locally
+    if (matchRef.current) supabase.from('tournament_matches').update({ shot_clock: shotClock, shot_clock_running: true }).eq('id', matchRef.current.id)
     shotRef.current = setInterval(() => {
       setShotClock(prev => {
-        if (prev <= 1) {
-          clearInterval(shotRef.current!); setShotClockRunning(false); if (cfg.autoPlayBuzzer) playBuzzer(); return 0
+        const next = prev <= 1 ? 0 : prev - 1
+        if (next === 0) {
+          clearInterval(shotRef.current!)
+          setShotClockRunning(false)
+          if (cfg.autoPlayBuzzer) playBuzzer()
+          if (matchRef.current) supabase.from('tournament_matches').update({ shot_clock: 0, shot_clock_running: false }).eq('id', matchRef.current.id)
         }
-        return prev - 1
+        return next
       })
     }, 1000)
   }
 
   function pauseShotClock() {
-    clearInterval(shotRef.current!); setShotClockRunning(false)
+    clearInterval(shotRef.current!)
+    setShotClockRunning(false)
+    // Write current value + stopped signal so public view freezes at the right number
+    if (matchRef.current) supabase.from('tournament_matches').update({ shot_clock: shotClock, shot_clock_running: false }).eq('id', matchRef.current.id)
   }
 
   function resetShotClock(val = 24) {
-    clearInterval(shotRef.current!); setShotClockRunning(false); setShotClock(val)
+    clearInterval(shotRef.current!)
+    setShotClockRunning(false)
+    setShotClock(val)
+    if (matchRef.current) supabase.from('tournament_matches').update({ shot_clock: val, shot_clock_running: false }).eq('id', matchRef.current.id)
   }
 
   // ── Score / game controls ────────────────────────────────────────────────

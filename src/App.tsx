@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { PresenceProvider } from './contexts/PresenceContext'
 import AppLayout from './components/layout/AppLayout'
@@ -99,6 +99,15 @@ function ProtectedRouteRaw({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+// Basketball scoreboard: public view (?view=public) loads without auth or AppLayout
+// so hundreds of viewers each only use 1 Realtime connection instead of 6.
+// Admin view (no param) still requires auth + AppLayout as before.
+function BasketballScoreboardRoute() {
+  const [searchParams] = useSearchParams()
+  if (searchParams.get('view') === 'public') return <BasketballScoreboardPage />
+  return <ProtectedRoute><BasketballScoreboardPage /></ProtectedRoute>
+}
+
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
   if (loading) return <LoadingScreen />
@@ -164,7 +173,7 @@ function AppRoutes() {
       <Route path="/tournaments" element={<ProtectedRoute><TournamentsPage /></ProtectedRoute>} />
       <Route path="/tournaments/:tournamentId" element={<ProtectedRoute><TournamentDetailPage /></ProtectedRoute>} />
       <Route path="/tournaments/:tournamentId/scoreboard" element={<TournamentScoreboardPage />} />
-      <Route path="/tournaments/:tournamentId/scoreboard/basketball" element={<ProtectedRoute><BasketballScoreboardPage /></ProtectedRoute>} />
+      <Route path="/tournaments/:tournamentId/scoreboard/basketball" element={<BasketballScoreboardRoute />} />
       <Route path="/tournaments/:tournamentId/control" element={<MatchCommandCenterPage />} />
       <Route path="/teams" element={<ProtectedRoute><MyTeamsPage /></ProtectedRoute>} />
       <Route path="/matches/:matchId" element={<ProtectedRoute><MatchCenterPage /></ProtectedRoute>} />

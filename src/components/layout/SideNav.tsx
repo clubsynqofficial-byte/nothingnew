@@ -185,13 +185,7 @@ export default function SideNav({ open = false, onClose }: Props) {
     if (!user) return
     fetchUnread()
     const interval = setInterval(fetchUnread, 15000)
-    const ch = supabase.channel(`sidenav-unread-${user.id}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'direct_messages' }, fetchUnread)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'direct_messages' }, fetchUnread)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'skill_trade_messages' }, fetchUnread)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'group_messages' }, fetchUnread)
-      .subscribe()
-    return () => { clearInterval(interval); supabase.removeChannel(ch) }
+    return () => { clearInterval(interval) }
   }, [user, fetchUnread])
 
   return (
@@ -289,7 +283,10 @@ export default function SideNav({ open = false, onClose }: Props) {
               </div>
 
               {/* Name + pts */}
-              <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+              <div
+                onClick={() => { navigate('/profile'); onClose?.() }}
+                style={{ flex: 1, minWidth: 0, overflow: 'hidden', cursor: 'pointer' }}
+              >
                 <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {profile.full_name ?? 'Student'}
                 </div>

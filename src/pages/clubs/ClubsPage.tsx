@@ -27,6 +27,10 @@ const CATEGORY_COLORS: Record<string, string> = {
   Entrepreneurship: '#f97316',
   Engineering: '#22c55e',
   Business: '#ec4899',
+  Community: '#f43f5e',
+  Law: '#8b5cf6',
+  Science: '#06b6d4',
+  Media: '#f59e0b',
 }
 
 const ROLE_STYLES: Record<string, { bg: string; color: string; label: string }> = {
@@ -217,7 +221,7 @@ function ClubCard({
         position: 'relative',
         background: club.banner_url
           ? 'var(--bg-dark)'
-          : 'linear-gradient(135deg, var(--bg-card) 0%, var(--bg-muted) 100%)',
+          : `linear-gradient(135deg, #0a0408 0%, ${catColor}55 45%, ${catColor}22 75%, #0a0408 100%)`,
         overflow: 'hidden',
         flexShrink: 0,
       }}>

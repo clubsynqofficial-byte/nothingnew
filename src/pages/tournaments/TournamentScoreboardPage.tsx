@@ -162,7 +162,7 @@ export default function TournamentScoreboardPage() {
   const [matches, setMatches] = useState<Match[]>([])
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
-  const [lastUpdated, setLastUpdated] = useState(new Date())
+  const [, setLastUpdated] = useState(new Date())
   const [activeSectionName, setActiveSectionName] = useState('')
 
   const fetchData = useCallback(async () => {
@@ -283,9 +283,6 @@ export default function TournamentScoreboardPage() {
           )}
         </div>
 
-        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.18)', flexShrink: 0 }}>
-          {lastUpdated.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-        </span>
         <button onClick={share} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: copied ? 'rgba(74,222,128,0.1)' : 'rgba(255,255,255,0.05)', border: `1px solid ${copied ? 'rgba(74,222,128,0.28)' : 'rgba(255,255,255,0.1)'}`, borderRadius: 9, color: copied ? '#4ade80' : 'rgba(255,255,255,0.55)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit', transition: 'all 0.2s', flexShrink: 0 }}>
           {copied ? (
             <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>Copied!</>

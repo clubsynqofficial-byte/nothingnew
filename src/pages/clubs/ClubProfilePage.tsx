@@ -1,9 +1,22 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { filterText } from '../../lib/contentFilter'
+function linkify(text: string) {
+  const re = /https?:\/\/[^\s<>"]+|www\.[^\s<>"]+/g
+  const nodes: ReactNode[] = []
+  let last = 0; let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) nodes.push(text.slice(last, m.index))
+    const href = m[0].startsWith('http') ? m[0] : `https://${m[0]}`
+    nodes.push(<a key={m.index} href={href} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ color:'var(--accent)', textDecoration:'underline', wordBreak:'break-all' }}>{m[0]}</a>)
+    last = m.index + m[0].length
+  }
+  if (last < text.length) nodes.push(text.slice(last))
+  return nodes
+}
 
 // ─────────────────────────────────────────── Types ──
 
@@ -69,6 +82,7 @@ type EventFilter = 'upcoming' | 'live' | 'past'
 const CATEGORY_COLORS: Record<string, string> = {
   Technology: '#0ea5e9', 'Arts & Culture': '#a855f7', Sports: '#e9c176',
   Entrepreneurship: '#f97316', Engineering: '#22c55e', Business: '#ec4899',
+  Community: '#f43f5e', Law: '#8b5cf6', Science: '#06b6d4', Media: '#f59e0b',
 }
 
 const ROLE_STYLES: Record<string, { bg: string; color: string; label: string }> = {
@@ -321,7 +335,7 @@ export default function ClubProfilePage() {
       <div className="cp-banner cp-banner-wrap" style={{ position: 'relative', height: 240, margin: '16px 28px 0', borderRadius: 20, overflow: 'hidden' }}>
         {club.banner_url
           ? <img src={club.banner_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
-          : <div style={{ width: '100%', height: '100%', background: `linear-gradient(135deg, var(--bg-card) 0%, var(--bg-muted) 60%, ${catColor}28 100%)` }}/>
+          : <div style={{ width: '100%', height: '100%', background: `linear-gradient(135deg, #0a0408 0%, ${catColor}55 45%, ${catColor}22 75%, #0a0408 100%)` }}/>
         }
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(18,8,10,0.95) 0%, rgba(18,8,10,0.45) 55%, transparent 100%)' }}/>
         {club.is_verified && (
@@ -1240,7 +1254,7 @@ function AnnouncementsSection({
                 {/* Content */}
                 {ann.content && (
                   <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.75, margin: 0, whiteSpace: 'pre-wrap' }}>
-                    {ann.content}
+                    {linkify(ann.content)}
                   </p>
                 )}
                 {ann.image_url && (
@@ -1648,7 +1662,7 @@ function EventAnnouncementsModal({
                     </span>
                   </div>
                   <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.7, margin: 0, whiteSpace: 'pre-wrap' }}>
-                    {ann.content}
+                    {linkify(ann.content)}
                   </p>
                 </div>
               ))}
