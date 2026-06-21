@@ -103,6 +103,7 @@ export default function SideNav({ open = false, onClose }: Props) {
   const navigate = useNavigate()
   const { myStatus, setMyStatus } = usePresence()
   const [msgUnread, setMsgUnread] = useState(0)
+  const [msgRequests, setMsgRequests] = useState(0)
   const [statusOpen, setStatusOpen] = useState(false)
   const statusRef = useRef<HTMLDivElement>(null)
 
@@ -178,6 +179,14 @@ export default function SideNav({ open = false, onClose }: Props) {
       }
     }
 
+    // Pending DM requests sent to me
+    const { count: requestCount } = await supabase
+      .from('message_requests')
+      .select('*', { count: 'exact', head: true })
+      .eq('to_user_id', user.id)
+      .eq('status', 'pending')
+
+    setMsgRequests(requestCount ?? 0)
     setMsgUnread(dmCount + tradeCount + groupCount)
   }, [user])
 
@@ -241,16 +250,32 @@ export default function SideNav({ open = false, onClose }: Props) {
                 </span>
                 {item.label}
               </span>
-              {item.path === '/messages' && msgUnread > 0 && profile?.notification_prefs?.direct_messages !== false && (
-                <span style={{
-                  minWidth: 18, height: 18, borderRadius: 9999,
-                  background: 'var(--accent)', color: '#fff',
-                  fontSize: 10, fontWeight: 800,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  padding: '0 5px', lineHeight: 1,
-                  animation: 'notifPop 0.25s ease',
-                }}>
-                  {msgUnread > 99 ? '99+' : msgUnread}
+              {item.path === '/messages' && (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {msgRequests > 0 && (
+                    <span style={{
+                      minWidth: 18, height: 18, borderRadius: 9999,
+                      background: '#22c55e', color: '#fff',
+                      fontSize: 10, fontWeight: 800,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      padding: '0 5px', lineHeight: 1,
+                      animation: 'notifPop 0.25s ease',
+                    }}>
+                      {msgRequests > 99 ? '99+' : msgRequests}
+                    </span>
+                  )}
+                  {msgUnread > 0 && profile?.notification_prefs?.direct_messages !== false && (
+                    <span style={{
+                      minWidth: 18, height: 18, borderRadius: 9999,
+                      background: 'var(--accent)', color: '#fff',
+                      fontSize: 10, fontWeight: 800,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      padding: '0 5px', lineHeight: 1,
+                      animation: 'notifPop 0.25s ease',
+                    }}>
+                      {msgUnread > 99 ? '99+' : msgUnread}
+                    </span>
+                  )}
                 </span>
               )}
             </NavLink>

@@ -1069,7 +1069,7 @@ function Card({
               <span style={{ fontSize:11, color:'var(--text-muted)', flexShrink:0, fontVariantNumeric:'tabular-nums' }}>{reltime(dTime)}</span>
             </div>
             {dContent && (
-              <p style={{ fontSize:14.5, color:'var(--text-primary)', lineHeight:1.76, margin:0, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{dContent}</p>
+              <p style={{ fontSize:14.5, color:'var(--text-primary)', lineHeight:1.76, margin:0, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{linkify(dContent)}</p>
             )}
           </div>
 
@@ -1112,7 +1112,7 @@ function Card({
                 <div style={{ fontSize:10, color:'var(--text-muted)' }}>{reltime(post.repostSource.created_at)}</div>
               </div>
             </div>
-            {post.repostSource.content && <p style={{ fontSize:13, color:'var(--text-secondary)', lineHeight:1.65, margin:0, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{post.repostSource.content}</p>}
+            {post.repostSource.content && <p style={{ fontSize:13, color:'var(--text-secondary)', lineHeight:1.65, margin:0, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{linkify(post.repostSource.content)}</p>}
             {effectiveImgs(post.repostSource).length > 0 && <div style={{ marginTop:8 }}><ImageCarousel urls={effectiveImgs(post.repostSource)}/></div>}
           </div>
         )}
@@ -1354,7 +1354,7 @@ function PostModal({
             {/* Content */}
             {dContent && (
               <p style={{ fontSize: 17.5, color: 'var(--text-primary)', lineHeight: 1.82, margin: '0 0 18px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontWeight: 450, letterSpacing: '.01em' }}>
-                {dContent}
+                {linkify(dContent)}
               </p>
             )}
 
@@ -1377,7 +1377,7 @@ function PostModal({
                     <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,.3)' }}>{reltime(post.repostSource.created_at)}</div>
                   </div>
                 </div>
-                {post.repostSource.content && <p style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.65, margin: '0 0 0 6px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{post.repostSource.content}</p>}
+                {post.repostSource.content && <p style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.65, margin: '0 0 0 6px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{linkify(post.repostSource.content)}</p>}
               </div>
             )}
 

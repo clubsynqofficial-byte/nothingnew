@@ -316,6 +316,9 @@ export default function ProfilePage() {
           .maybeSingle()
         setConvId(conv?.id ?? null)
         setMsgStatus('accepted')
+      } else if (data.status === 'declined') {
+        // Treat declined as none so either side can re-initiate
+        setMsgStatus('none')
       } else if (data.from_user_id === user!.id) {
         setMsgStatus('sent')
       } else {
@@ -329,6 +332,7 @@ export default function ProfilePage() {
     if (!user || !paramUserId) return
     setMsgLoading(true)
     if (msgStatus === 'none') {
+      await supabase.from('message_requests').delete().eq('from_user_id', user.id).eq('to_user_id', paramUserId).eq('status', 'declined')
       await supabase.from('message_requests').insert({ from_user_id: user.id, to_user_id: paramUserId })
       setMsgStatus('sent')
     } else if (msgStatus === 'received' && msgReqId) {
