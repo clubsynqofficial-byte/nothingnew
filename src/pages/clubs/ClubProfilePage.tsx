@@ -335,7 +335,17 @@ export default function ClubProfilePage() {
       <div className="cp-banner cp-banner-wrap" style={{ position: 'relative', height: 240, margin: '16px 28px 0', borderRadius: 20, overflow: 'hidden' }}>
         {club.banner_url
           ? <img src={club.banner_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
-          : <div style={{ width: '100%', height: '100%', background: `linear-gradient(135deg, #0a0408 0%, ${catColor}55 45%, ${catColor}22 75%, #0a0408 100%)` }}/>
+          : <div style={{
+              width: '100%', height: '100%',
+              backgroundColor: '#0b0210',
+              backgroundImage: [
+                'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.09) 1px, transparent 0)',
+                `radial-gradient(ellipse 75% 120% at 18% 55%, ${catColor}cc 0%, transparent 55%)`,
+                `radial-gradient(ellipse 60% 85% at 82% 22%, ${catColor}88 0%, transparent 52%)`,
+                `radial-gradient(ellipse 50% 65% at 55% 95%, ${catColor}55 0%, transparent 50%)`,
+              ].join(', '),
+              backgroundSize: '22px 22px, 100% 100%, 100% 100%, 100% 100%',
+            }}/>
         }
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(18,8,10,0.95) 0%, rgba(18,8,10,0.45) 55%, transparent 100%)' }}/>
         {club.is_verified && (

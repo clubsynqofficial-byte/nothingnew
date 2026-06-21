@@ -216,22 +216,21 @@ function ClubCard({
       }}
     >
       {/* Banner */}
-      <div style={{
-        height: 130,
-        position: 'relative',
-        background: club.banner_url
-          ? 'var(--bg-dark)'
-          : `linear-gradient(135deg, #0a0408 0%, ${catColor}55 45%, ${catColor}22 75%, #0a0408 100%)`,
-        overflow: 'hidden',
-        flexShrink: 0,
-      }}>
-        {club.banner_url && (
-          <img
-            src={club.banner_url}
-            alt=""
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-          />
-        )}
+      <div style={{ height: 130, position: 'relative', background: 'var(--bg-dark)', overflow: 'hidden', flexShrink: 0 }}>
+        {club.banner_url
+          ? <img src={club.banner_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          : <div style={{
+              position: 'absolute', inset: 0,
+              backgroundColor: '#0b0210',
+              backgroundImage: [
+                'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.09) 1px, transparent 0)',
+                `radial-gradient(ellipse 80% 140% at 18% 60%, ${catColor}cc 0%, transparent 55%)`,
+                `radial-gradient(ellipse 65% 100% at 82% 20%, ${catColor}88 0%, transparent 52%)`,
+                `radial-gradient(ellipse 55% 75% at 55% 110%, ${catColor}55 0%, transparent 50%)`,
+              ].join(', '),
+              backgroundSize: '20px 20px, 100% 100%, 100% 100%, 100% 100%',
+            }} />
+        }
         <div style={{
           position: 'absolute', inset: 0,
           background: 'linear-gradient(to top, rgba(18,8,10,0.82) 0%, rgba(18,8,10,0.1) 55%, transparent 100%)',

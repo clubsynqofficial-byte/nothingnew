@@ -18,13 +18,40 @@ const INTERESTS = [
   { key: 'food',      label: 'Food & Cooking',    icon: '🍳' },
 ]
 
+const INTEREST_TO_CATEGORY: Record<string, string[]> = {
+  tech:      ['Technology', 'Engineering'],
+  arts:      ['Arts & Culture', 'Media'],
+  sports:    ['Sports'],
+  business:  ['Business', 'Entrepreneurship'],
+  social:    ['Community'],
+  academic:  ['Science', 'Law'],
+  gaming:    ['Technology'],
+  music:     ['Arts & Culture'],
+  health:    ['Sports'],
+  volunteer: ['Community'],
+  science:   ['Science', 'Engineering'],
+  food:      ['Community'],
+}
+
+interface ClubRow {
+  id: string
+  name: string
+  category: string | null
+  logo_url: string | null
+  member_count: number
+}
+
 interface Props { onDone: () => void }
 
 export default function OnboardingModal({ onDone }: Props) {
   const { user, refreshProfile } = useAuth()
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [saving, setSaving] = useState(false)
-  const [step, setStep] = useState<'interests' | 'done'>('interests')
+  const [selected, setSelected]       = useState<Set<string>>(new Set())
+  const [saving, setSaving]           = useState(false)
+  const [step, setStep]               = useState<'interests' | 'clubs'>('interests')
+  const [suggestedClubs, setSuggested] = useState<ClubRow[]>([])
+  const [clubsLoading, setClubsLoading] = useState(false)
+  const [joiningIds, setJoiningIds]   = useState<Set<string>>(new Set())
+  const [joinedIds, setJoinedIds]     = useState<Set<string>>(new Set())
 
   function toggle(key: string) {
     setSelected(prev => {
@@ -40,7 +67,45 @@ export default function OnboardingModal({ onDone }: Props) {
     await supabase.from('profiles').update({ interests: [...selected], onboarded: true }).eq('id', user.id)
     await refreshProfile()
     setSaving(false)
-    setStep('done')
+    await fetchSuggestedClubs()
+    setStep('clubs')
+  }
+
+  async function fetchSuggestedClubs() {
+    setClubsLoading(true)
+    const categories = [...selected].flatMap(k => INTEREST_TO_CATEGORY[k] ?? [])
+    const unique = [...new Set(categories)]
+
+    let clubs: ClubRow[] = []
+    if (unique.length > 0) {
+      const { data } = await supabase
+        .from('clubs')
+        .select('id,name,category,logo_url,member_count')
+        .in('category', unique)
+        .order('member_count', { ascending: false })
+        .limit(3)
+      clubs = (data ?? []) as ClubRow[]
+    }
+
+    if (clubs.length === 0) {
+      const { data } = await supabase
+        .from('clubs')
+        .select('id,name,category,logo_url,member_count')
+        .order('member_count', { ascending: false })
+        .limit(3)
+      clubs = (data ?? []) as ClubRow[]
+    }
+
+    setSuggested(clubs)
+    setClubsLoading(false)
+  }
+
+  async function joinClub(club: ClubRow) {
+    if (!user || joiningIds.has(club.id) || joinedIds.has(club.id)) return
+    setJoiningIds(prev => new Set([...prev, club.id]))
+    await supabase.from('club_memberships').insert({ club_id: club.id, user_id: user.id, role: 'member' })
+    setJoinedIds(prev => new Set([...prev, club.id]))
+    setJoiningIds(prev => { const s = new Set(prev); s.delete(club.id); return s })
   }
 
   async function handleSkip() {
@@ -53,16 +118,28 @@ export default function OnboardingModal({ onDone }: Props) {
   return createPortal(
     <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(4,1,3,0.92)', backdropFilter: 'blur(20px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px 16px' }}>
       <style>{`
-        @keyframes obIn { from{opacity:0;transform:translateY(28px) scale(.97)} to{opacity:1;transform:none} }
+        @keyframes obIn   { from{opacity:0;transform:translateY(28px) scale(.97)} to{opacity:1;transform:none} }
+        @keyframes obStep { from{opacity:0;transform:translateX(20px)} to{opacity:1;transform:none} }
         .ob-chip { transition: all .15s; cursor: pointer; }
         .ob-chip:hover { transform: translateY(-1px); }
+        .ob-join:hover:not(:disabled) { filter: brightness(1.12); transform: scale(1.04); }
       `}</style>
 
-      <div style={{ width: '100%', maxWidth: 520, background: 'linear-gradient(170deg,#16090d,#0d050a)', border: '1px solid rgba(138,21,56,.3)', borderRadius: 24, overflow: 'hidden', animation: 'obIn .3s cubic-bezier(.22,1,.36,1) both', boxShadow: '0 40px 100px rgba(0,0,0,.85)' }}>
-        {/* Top gradient strip */}
-        <div style={{ height: 4, background: 'linear-gradient(90deg,#8a1538,#c0185c,#e57c9a,#c0185c,#8a1538)' }} />
+      <div style={{
+        width: '100%', maxWidth: step === 'clubs' ? 540 : 520,
+        background: 'linear-gradient(170deg,#16090d,#0d050a)',
+        border: '1px solid rgba(138,21,56,.3)', borderRadius: 24,
+        overflow: 'hidden', animation: 'obIn .3s cubic-bezier(.22,1,.36,1) both',
+        boxShadow: '0 40px 100px rgba(0,0,0,.85)',
+        transition: 'max-width .25s ease',
+      }}>
+        {/* Progress strip */}
+        <div style={{ height: 4, background: 'rgba(138,21,56,.18)', position: 'relative' }}>
+          <div style={{ position: 'absolute', inset: 0, right: step === 'interests' ? '50%' : '0%', background: 'linear-gradient(90deg,#8a1538,#c0185c,#e57c9a)', transition: 'right .4s cubic-bezier(.22,1,.36,1)' }} />
+        </div>
 
-        {step === 'interests' ? (
+        {/* ── Step 1: Interests ── */}
+        {step === 'interests' && (
           <div style={{ padding: '32px 28px 28px' }}>
             <div style={{ textAlign: 'center', marginBottom: 28 }}>
               <div style={{ fontSize: 40, marginBottom: 10 }}>👋</div>
@@ -82,8 +159,7 @@ export default function OnboardingModal({ onDone }: Props) {
                     border: `1px solid ${on ? 'rgba(138,21,56,.55)' : 'rgba(255,255,255,.1)'}`,
                     background: on ? 'rgba(138,21,56,.22)' : 'rgba(255,255,255,.04)',
                     color: on ? '#fff' : 'rgba(255,255,255,.6)',
-                    fontSize: 13, fontWeight: on ? 700 : 500,
-                    fontFamily: 'inherit',
+                    fontSize: 13, fontWeight: on ? 700 : 500, fontFamily: 'inherit',
                   }}>
                     <span>{it.icon}</span>
                     <span>{it.label}</span>
@@ -93,24 +169,110 @@ export default function OnboardingModal({ onDone }: Props) {
               })}
             </div>
 
+            {/* Step indicator */}
+            <div style={{ textAlign: 'center', fontSize: 11, color: 'rgba(255,255,255,.2)', marginBottom: 16, fontWeight: 600, letterSpacing: '.06em' }}>
+              STEP 1 OF 2
+            </div>
+
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={handleSkip} style={{ flex: 1, padding: '11px', borderRadius: 12, background: 'transparent', border: '1px solid rgba(255,255,255,.1)', color: 'rgba(255,255,255,.4)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                 Skip for now
               </button>
-              <button onClick={handleFinish} disabled={saving} style={{ flex: 2, padding: '11px', borderRadius: 12, background: selected.size > 0 ? 'linear-gradient(135deg,#8a1538,#c0185c)' : 'rgba(87,65,68,.3)', border: 'none', color: '#fff', fontSize: 13, fontWeight: 800, cursor: selected.size > 0 && !saving ? 'pointer' : 'default', fontFamily: 'inherit', boxShadow: selected.size > 0 ? '0 4px 20px rgba(138,21,56,.5)' : 'none', opacity: saving ? .7 : 1 }}>
-                {saving ? 'Saving…' : `Continue${selected.size > 0 ? ` (${selected.size} selected)` : ''}`}
+              <button onClick={handleFinish} disabled={saving || selected.size === 0} style={{
+                flex: 2, padding: '11px', borderRadius: 12, border: 'none', color: '#fff',
+                fontSize: 13, fontWeight: 800, fontFamily: 'inherit',
+                background: selected.size > 0 ? 'linear-gradient(135deg,#8a1538,#c0185c)' : 'rgba(87,65,68,.3)',
+                cursor: selected.size > 0 && !saving ? 'pointer' : 'default',
+                boxShadow: selected.size > 0 ? '0 4px 20px rgba(138,21,56,.5)' : 'none',
+                opacity: saving ? .7 : 1,
+              }}>
+                {saving ? 'Finding clubs…' : selected.size > 0 ? `Continue (${selected.size} selected)` : 'Select at least one'}
               </button>
             </div>
           </div>
-        ) : (
-          <div style={{ padding: '40px 28px', textAlign: 'center' }}>
-            <div style={{ fontSize: 52, marginBottom: 14 }}>🎉</div>
-            <h2 style={{ fontSize: 22, fontWeight: 900, color: '#fff', marginBottom: 10 }}>You're all set!</h2>
-            <p style={{ fontSize: 14, color: 'rgba(255,255,255,.55)', lineHeight: 1.65, marginBottom: 24 }}>
-              Head to <strong style={{ color: '#fff' }}>Clubs</strong> to discover communities that match your interests.
-            </p>
-            <button onClick={onDone} style={{ padding: '12px 32px', borderRadius: 12, background: 'linear-gradient(135deg,#8a1538,#c0185c)', border: 'none', color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 20px rgba(138,21,56,.5)' }}>
-              Explore ClubSynq →
+        )}
+
+        {/* ── Step 2: Join clubs ── */}
+        {step === 'clubs' && (
+          <div style={{ padding: '32px 28px 28px', animation: 'obStep .22s ease both' }}>
+            <div style={{ textAlign: 'center', marginBottom: 22 }}>
+              <div style={{ fontSize: 36, marginBottom: 10 }}>🏛️</div>
+              <h2 style={{ fontSize: 20, fontWeight: 900, color: '#fff', letterSpacing: '-.5px', marginBottom: 8 }}>Join your first club</h2>
+              <p style={{ fontSize: 13.5, color: 'rgba(255,255,255,.5)', lineHeight: 1.6 }}>
+                These match your interests. Join one so your feed has content right away.
+              </p>
+            </div>
+
+            {/* Step indicator */}
+            <div style={{ textAlign: 'center', fontSize: 11, color: 'rgba(255,255,255,.2)', marginBottom: 18, fontWeight: 600, letterSpacing: '.06em' }}>
+              STEP 2 OF 2
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 22 }}>
+              {clubsLoading
+                ? [0,1,2].map(i => (
+                    <div key={i} style={{ height: 68, borderRadius: 14, background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.06)', animation: `obIn .4s ${i * .08}s ease both` }} />
+                  ))
+                : suggestedClubs.length === 0
+                ? (
+                  <div style={{ textAlign: 'center', padding: '20px 0', color: 'rgba(255,255,255,.3)', fontSize: 13 }}>
+                    No clubs yet — check back soon or create your own.
+                  </div>
+                )
+                : suggestedClubs.map((club, i) => {
+                    const joined  = joinedIds.has(club.id)
+                    const joining = joiningIds.has(club.id)
+                    const initials = club.name.split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase()
+                    return (
+                      <div key={club.id} style={{
+                        display: 'flex', alignItems: 'center', gap: 13,
+                        padding: '13px 16px', borderRadius: 14,
+                        background: joined ? 'rgba(34,197,94,.06)' : 'rgba(255,255,255,.03)',
+                        border: `1px solid ${joined ? 'rgba(34,197,94,.25)' : 'rgba(255,255,255,.08)'}`,
+                        transition: 'all .2s', animation: `obIn .35s ${i * .07}s ease both`,
+                      }}>
+                        <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(138,21,56,.2)', border: '1px solid rgba(138,21,56,.3)', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: 'var(--accent)' }}>
+                          {club.logo_url
+                            ? <img src={club.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            : initials}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{club.name}</div>
+                          <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,.35)', marginTop: 2 }}>
+                            {club.category ?? 'Club'} · {club.member_count.toLocaleString()} member{club.member_count !== 1 ? 's' : ''}
+                          </div>
+                        </div>
+                        <button
+                          className="ob-join"
+                          onClick={() => joinClub(club)}
+                          disabled={joined || joining}
+                          style={{
+                            padding: '7px 16px', borderRadius: 9999, fontSize: 12, fontWeight: 700,
+                            cursor: joined || joining ? 'default' : 'pointer',
+                            fontFamily: 'inherit', flexShrink: 0, transition: 'all .15s',
+                            background: joined ? 'transparent' : 'linear-gradient(135deg,#8a1538,#c0185c)',
+                            border: joined ? '1px solid rgba(34,197,94,.4)' : '1px solid transparent',
+                            color: joined ? '#4ade80' : '#fff',
+                            boxShadow: joined ? 'none' : '0 3px 14px rgba(138,21,56,.4)',
+                          }}
+                        >
+                          {joining ? '···' : joined ? '✓ Joined' : 'Join'}
+                        </button>
+                      </div>
+                    )
+                  })
+              }
+            </div>
+
+            <button onClick={onDone} style={{
+              width: '100%', padding: '12px', borderRadius: 12, border: 'none',
+              background: joinedIds.size > 0 ? 'linear-gradient(135deg,#8a1538,#c0185c)' : 'rgba(87,65,68,.35)',
+              color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer',
+              fontFamily: 'inherit',
+              boxShadow: joinedIds.size > 0 ? '0 4px 20px rgba(138,21,56,.5)' : 'none',
+              transition: 'all .2s',
+            }}>
+              {joinedIds.size > 0 ? 'Go to my feed →' : 'Skip for now →'}
             </button>
           </div>
         )}

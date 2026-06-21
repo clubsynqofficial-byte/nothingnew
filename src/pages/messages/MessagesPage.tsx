@@ -379,6 +379,7 @@ export default function MessagesPage() {
   const { connectedSet, statusMap } = usePresence()
 
   const [tab, setTab] = useState<MsgTab>('dms')
+  const [dmSubTab, setDmSubTab] = useState<'dms' | 'groups' | 'requests'>('dms')
 
   // Collab state
   const [collabThreads, setCollabThreads] = useState<CollabThread[]>([])
@@ -416,6 +417,7 @@ export default function MessagesPage() {
 
   // New group creation
   const [creatingGroup, setCreatingGroup] = useState(false)
+  const [groupContext, setGroupContext] = useState<'connections' | 'leaders'>('connections')
   const [newGroupName, setNewGroupName] = useState('')
   const [selectedMemberIds, setSelectedMemberIds] = useState<Set<string>>(new Set())
   const [savingGroup, setSavingGroup] = useState(false)
@@ -680,6 +682,8 @@ export default function MessagesPage() {
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'message_requests', filter: `to_user_id=eq.${user.id}` }, () => {
         fetchDms()
+        setTab('dms')
+        setDmSubTab('requests')
       })
       .subscribe()
     return () => { supabase.removeChannel(ch) }
@@ -814,7 +818,21 @@ export default function MessagesPage() {
   }
 
   // ── Create group ──
-  const taggedLeaders = useMemo(() => clubLeaders, [clubLeaders])
+  // Members = anyone you're connected with via DMs, Collabs, or Trades (deduplicated)
+  const taggedLeaders = useMemo(() => {
+    const seen = new Set<string>()
+    const list: { userId: string; profile: { id: string; full_name: string | null; avatar_url: string | null; last_seen_at: string | null }; source: string }[] = []
+    for (const c of dmConvs) {
+      if (!seen.has(c.otherId)) { seen.add(c.otherId); list.push({ userId: c.otherId, profile: { id: c.otherId, full_name: c.otherName, avatar_url: c.otherAvatar, last_seen_at: c.otherLastSeen }, source: 'DM' }) }
+    }
+    for (const t of collabThreads) {
+      if (!seen.has(t.matchUserId)) { seen.add(t.matchUserId); list.push({ userId: t.matchUserId, profile: { id: t.matchUserId, full_name: t.matchProfile.full_name, avatar_url: t.matchProfile.avatar_url, last_seen_at: t.matchProfile.last_seen_at ?? null }, source: 'Collab' }) }
+    }
+    for (const t of tradeThreads) {
+      if (!seen.has(t.otherUserId)) { seen.add(t.otherUserId); list.push({ userId: t.otherUserId, profile: { id: t.otherUserId, full_name: t.otherProfile.full_name, avatar_url: t.otherProfile.avatar_url, last_seen_at: t.otherProfile.last_seen_at ?? null }, source: 'Trade' }) }
+    }
+    return list
+  }, [dmConvs, collabThreads, tradeThreads])
 
   const createGroup = async () => {
     if (!user || !newGroupName.trim() || selectedMemberIds.size === 0 || savingGroup) return
@@ -830,7 +848,10 @@ export default function MessagesPage() {
     setSelectedMemberIds(new Set())
     await fetchGroupChats()
     const { data: newGrp } = await supabase.from('group_chats').select('id, name, created_by, last_message_at').eq('id', grp.id).single()
-    if (newGrp) openGroup({ id: newGrp.id, name: newGrp.name, createdBy: newGrp.created_by, lastMsg: null, lastAt: newGrp.last_message_at, unread: 0, memberProfiles: taggedLeaders.filter(l => selectedMemberIds.has(l.userId)).map(l => l.profile) })
+    const pool = groupContext === 'leaders'
+      ? clubLeaders.map(l => ({ userId: l.userId, profile: l.profile }))
+      : taggedLeaders
+    if (newGrp) openGroup({ id: newGrp.id, name: newGrp.name, createdBy: newGrp.created_by, lastMsg: null, lastAt: newGrp.last_message_at, unread: 0, memberProfiles: pool.filter(l => selectedMemberIds.has(l.userId)).map(l => l.profile) })
   }
 
   useEffect(() => () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }, [])
@@ -885,10 +906,12 @@ export default function MessagesPage() {
   }
 
   // ── Derived ──
-  const totalDmUnread     = dmConvs.reduce((s, c) => s + c.unread, 0) + dmRequests.length
+  const totalDmUnread     = dmConvs.reduce((s, c) => s + c.unread, 0)
+  const totalGroupUnread  = groupChats.reduce((s, g) => s + g.unread, 0)
+  const totalRequestCount = dmRequests.length
   const totalCollabUnread = collabThreads.reduce((s, t) => s + t.unread, 0)
   const totalTradeUnread  = tradeThreads.reduce((s, t) => s + t.unread, 0)
-  const totalLeaderUnread = clubLeaders.reduce((s, l) => s + l.unread, 0) + groupChats.reduce((s, g) => s + g.unread, 0)
+  const totalLeaderUnread = clubLeaders.reduce((s, l) => s + l.unread, 0)
   const q = search.trim().toLowerCase()
   const shownCollabs  = q ? collabThreads.filter(t => (t.matchProfile.full_name ?? '').toLowerCase().includes(q)) : collabThreads
   const shownTrades   = q ? tradeThreads.filter(t => (t.otherProfile.full_name ?? '').toLowerCase().includes(q) || t.listingTitle.toLowerCase().includes(q)) : tradeThreads
@@ -1264,7 +1287,7 @@ export default function MessagesPage() {
           {/* Tabs */}
           <div style={{ display: 'flex', background: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: 3, marginBottom: 12, gap: 3 }}>
             {([
-              { key: 'dms'     as MsgTab, label: 'DMs',     badge: totalDmUnread     },
+              { key: 'dms'     as MsgTab, label: 'DMs',     badge: totalDmUnread + totalGroupUnread + totalRequestCount },
               { key: 'collabs' as MsgTab, label: 'Collabs', badge: totalCollabUnread },
               { key: 'trades'  as MsgTab, label: 'Trades',  badge: totalTradeUnread  },
               { key: 'leaders' as MsgTab, label: 'Leaders', badge: totalLeaderUnread  },
@@ -1292,34 +1315,24 @@ export default function MessagesPage() {
         {/* Thread list */}
         <div className="mp-scroll" style={{ flex: 1, overflowY: 'auto' }}>
           {tab === 'dms' && (
-            loadingDms ? <ShimmerList /> : (
-              <>
-                {/* Pending requests */}
-                {dmRequests.length > 0 && (
-                  <div style={{ padding: '10px 16px 4px' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,.3)', textTransform: 'uppercase', marginBottom: 8 }}>
-                      Message Requests · {dmRequests.length}
-                    </div>
-                    {dmRequests.map(req => (
-                      <div key={req.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,.05)' }}>
-                        <Av url={req.from_profile?.avatar_url} name={req.from_profile?.full_name} size={38} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {req.from_profile?.full_name ?? 'Someone'}
-                          </div>
-                          {req.from_profile?.username && <div style={{ fontSize: 11, color: 'var(--accent)', opacity: 0.7 }}>@{req.from_profile.username}</div>}
-                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Wants to message you · {reltime(req.created_at)}</div>
-                        </div>
-                        <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
-                          <button onClick={() => acceptRequest(req)} style={{ padding: '5px 10px', background: 'rgba(138,21,56,.25)', border: '1px solid rgba(138,21,56,.4)', borderRadius: 8, color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Accept</button>
-                          <button onClick={() => declineRequest(req)} style={{ padding: '5px 8px', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 8, color: 'rgba(255,255,255,.4)', fontSize: 11.5, cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {/* Conversations */}
-                {shownDmConvs.length === 0 && dmRequests.length === 0
+            <>
+              {/* Sub-tabs: DMs / Groups / Requests */}
+              <div style={{ display: 'flex', gap: 2, padding: '0 12px 10px', flexShrink: 0 }}>
+                {([
+                  { key: 'dms' as const, label: 'DMs', badge: totalDmUnread, badgeColor: 'var(--accent)' },
+                  { key: 'groups' as const, label: 'Groups', badge: totalGroupUnread, badgeColor: 'var(--accent)' },
+                  { key: 'requests' as const, label: 'Requests', badge: totalRequestCount, badgeColor: '#22c55e' },
+                ]).map(({ key, label, badge, badgeColor }) => (
+                  <button key={key} onClick={() => setDmSubTab(key)} style={{ flex: 1, padding: '6px 4px', borderRadius: 8, border: 'none', background: dmSubTab === key ? 'rgba(138,21,56,0.2)' : 'transparent', color: dmSubTab === key ? '#fff' : 'var(--text-muted)', fontSize: 11.5, fontWeight: dmSubTab === key ? 700 : 500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, transition: 'all 0.15s', borderBottom: dmSubTab === key ? '2px solid var(--accent)' : '2px solid transparent' }}>
+                    {label}
+                    {badge > 0 && <span style={{ minWidth: 16, height: 16, fontSize: 9, fontWeight: 900, background: badgeColor, color: '#fff', borderRadius: 9999, padding: '0 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{badge}</span>}
+                  </button>
+                ))}
+              </div>
+
+              {/* DMs sub-tab */}
+              {dmSubTab === 'dms' && (
+                loadingDms ? <ShimmerList /> : shownDmConvs.length === 0
                   ? <EmptyList icon={<IcMessageBig size={38} />} title="No direct messages yet" sub="Visit someone's profile and send them a message request." />
                   : shownDmConvs.map((c, i) => (
                     <div key={c.convId} className={`thread-row${activeDm?.convId === c.convId ? ' active' : ''}`} onClick={() => openDm(c)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', animationDelay: `${i * 0.04}s` }}>
@@ -1335,9 +1348,83 @@ export default function MessagesPage() {
                       {c.unread > 0 && <span style={{ minWidth: 18, height: 18, fontSize: 10, fontWeight: 900, background: 'var(--accent)', color: '#fff', borderRadius: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px', flexShrink: 0 }}>{c.unread}</span>}
                     </div>
                   ))
-                }
-              </>
-            )
+              )}
+
+              {/* Groups sub-tab */}
+              {dmSubTab === 'groups' && (
+                <>
+                  <div style={{ padding: '0 12px 8px' }}>
+                    {!creatingGroup ? (
+                      <button onClick={() => { setGroupContext('connections'); setCreatingGroup(true) }} style={{ width: '100%', padding: '9px 14px', borderRadius: 10, border: '1px dashed rgba(138,21,56,0.45)', background: 'rgba(138,21,56,0.06)', color: 'var(--accent)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, transition: 'all 0.15s' }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        New Group Chat
+                      </button>
+                    ) : (
+                      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(138,21,56,0.25)', borderRadius: 12, padding: '14px' }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 10 }}>New Group</div>
+                        <input value={newGroupName} onChange={e => setNewGroupName(e.target.value)} placeholder="Group name…" style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-primary)', fontSize: 12.5, outline: 'none', marginBottom: 10 }} />
+                        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>Select members:</div>
+                        <div style={{ maxHeight: 160, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
+                          {taggedLeaders.length === 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>No connections yet — accept a DM request, collab match, or trade first.</div>}
+                          {taggedLeaders.map(l => (
+                            <label key={l.userId} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '5px 4px', borderRadius: 7, background: selectedMemberIds.has(l.userId) ? 'rgba(138,21,56,0.12)' : 'transparent', transition: 'background 0.12s' }}>
+                              <input type="checkbox" checked={selectedMemberIds.has(l.userId)} onChange={e => { const s = new Set(selectedMemberIds); e.target.checked ? s.add(l.userId) : s.delete(l.userId); setSelectedMemberIds(s) }} style={{ accentColor: 'var(--accent)', flexShrink: 0 }} />
+                              <Av url={l.profile.avatar_url} name={l.profile.full_name} size={24} />
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.profile.full_name ?? 'User'}</div>
+                                <div style={{ fontSize: 10, color: 'var(--text-muted)', opacity: 0.6 }}>{l.source}</div>
+                              </div>
+                            </label>
+                          ))}
+                        </div>
+                        <div style={{ display: 'flex', gap: 7 }}>
+                          <button onClick={createGroup} disabled={!newGroupName.trim() || selectedMemberIds.size === 0 || savingGroup} style={{ flex: 1, padding: '7px', borderRadius: 8, background: 'var(--accent)', border: 'none', color: '#fff', fontSize: 12, fontWeight: 700, cursor: !newGroupName.trim() || selectedMemberIds.size === 0 ? 'default' : 'pointer', opacity: !newGroupName.trim() || selectedMemberIds.size === 0 || savingGroup ? 0.5 : 1 }}>
+                            {savingGroup ? 'Creating…' : `Create (${selectedMemberIds.size + 1})`}
+                          </button>
+                          <button onClick={() => { setCreatingGroup(false); setNewGroupName(''); setSelectedMemberIds(new Set()) }} style={{ padding: '7px 12px', borderRadius: 8, background: 'transparent', border: '1px solid rgba(87,65,68,0.3)', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {loadingGroups ? <ShimmerList /> : shownGroups.length === 0 && !creatingGroup
+                    ? <EmptyList icon={<IcUsers size={38} />} title="No group chats yet" sub="Create a group to chat with multiple people at once." />
+                    : shownGroups.map((g, i) => (
+                      <div key={g.id} className={`thread-row${activeGroup?.id === g.id ? ' active' : ''}`} onClick={() => openGroup(g)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', animationDelay: `${i * 0.04}s` }}>
+                        <GroupAv members={g.memberProfiles} size={44} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}><span style={{ fontSize: 13, fontWeight: g.unread > 0 ? 700 : 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>{g.name}</span><span style={{ fontSize: 10, color: 'var(--text-muted)', opacity: 0.7 }}>{reltime(g.lastAt)}</span></div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>{g.memberProfiles.length + 1} members</div>
+                          <div style={{ fontSize: 12, color: g.unread > 0 ? 'var(--text-secondary)' : 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.lastMsg ?? <span style={{ fontStyle: 'italic', opacity: 0.5 }}>No messages yet</span>}</div>
+                        </div>
+                        {g.unread > 0 && <span style={{ minWidth: 18, height: 18, fontSize: 10, fontWeight: 900, background: 'var(--accent)', color: '#fff', borderRadius: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px', flexShrink: 0 }}>{g.unread}</span>}
+                      </div>
+                    ))
+                  }
+                </>
+              )}
+
+              {/* Requests sub-tab */}
+              {dmSubTab === 'requests' && (
+                loadingDms ? <ShimmerList /> : dmRequests.length === 0
+                  ? <EmptyList icon={<IcMessageBig size={38} />} title="No message requests" sub="When someone wants to DM you, their request will appear here." />
+                  : dmRequests.map(req => (
+                    <div key={req.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,.04)' }}>
+                      <Av url={req.from_profile?.avatar_url} name={req.from_profile?.full_name} size={44} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {req.from_profile?.full_name ?? 'Someone'}
+                        </div>
+                        {req.from_profile?.username && <div style={{ fontSize: 11, color: 'var(--accent)', opacity: 0.7, marginBottom: 2 }}>@{req.from_profile.username}</div>}
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Wants to message you · {reltime(req.created_at)}</div>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flexShrink: 0 }}>
+                        <button onClick={() => acceptRequest(req)} style={{ padding: '6px 12px', background: '#22c55e', border: 'none', borderRadius: 8, color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Accept</button>
+                        <button onClick={() => declineRequest(req)} style={{ padding: '5px 12px', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 8, color: 'rgba(255,255,255,.4)', fontSize: 11.5, cursor: 'pointer', fontFamily: 'inherit' }}>Decline</button>
+                      </div>
+                    </div>
+                  ))
+              )}
+            </>
           )}
 
           {tab === 'collabs' && (
@@ -1377,10 +1464,10 @@ export default function MessagesPage() {
 
           {tab === 'leaders' && (
             <>
-              {/* New Group button */}
+              {/* New Group inline form for leaders */}
               <div style={{ padding: '12px 16px 4px' }}>
-                {!creatingGroup ? (
-                  <button onClick={() => setCreatingGroup(true)} style={{ width: '100%', padding: '9px 14px', borderRadius: 10, border: '1px dashed rgba(138,21,56,0.45)', background: 'rgba(138,21,56,0.06)', color: 'var(--accent)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, transition: 'all 0.15s' }}>
+                {!(creatingGroup && groupContext === 'leaders') ? (
+                  <button onClick={() => { setGroupContext('leaders'); setCreatingGroup(true); setNewGroupName(''); setSelectedMemberIds(new Set()) }} style={{ width: '100%', padding: '9px 14px', borderRadius: 10, border: '1px dashed rgba(138,21,56,0.45)', background: 'rgba(138,21,56,0.06)', color: 'var(--accent)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, transition: 'all 0.15s' }}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     New Group Chat
                   </button>
@@ -1390,13 +1477,13 @@ export default function MessagesPage() {
                     <input value={newGroupName} onChange={e => setNewGroupName(e.target.value)} placeholder="Group name…" style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-primary)', fontSize: 12.5, outline: 'none', marginBottom: 10 }} />
                     <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>Select members:</div>
                     <div style={{ maxHeight: 160, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
-                      {taggedLeaders.length === 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>No club members to add</div>}
-                      {taggedLeaders.map(l => (
+                      {clubLeaders.length === 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>No club members to add</div>}
+                      {clubLeaders.map(l => (
                         <label key={l.userId} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '5px 4px', borderRadius: 7, background: selectedMemberIds.has(l.userId) ? 'rgba(138,21,56,0.12)' : 'transparent', transition: 'background 0.12s' }}>
                           <input type="checkbox" checked={selectedMemberIds.has(l.userId)} onChange={e => { const s = new Set(selectedMemberIds); e.target.checked ? s.add(l.userId) : s.delete(l.userId); setSelectedMemberIds(s) }} style={{ accentColor: 'var(--accent)', flexShrink: 0 }} />
                           <Av url={l.profile.avatar_url} name={l.profile.full_name} size={24} />
                           <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.profile.full_name ?? 'Leader'}</div>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.profile.full_name ?? 'Member'}</div>
                             <div style={{ fontSize: 10, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 3 }}>{l.role === 'president' ? <IcCrown size={9} /> : l.customRole ? <IcStar size={9} /> : null} {l.role === 'president' ? 'President' : l.customRole ?? 'Member'} · {l.clubName}</div>
                           </div>
                         </label>
@@ -1411,28 +1498,11 @@ export default function MessagesPage() {
                   </div>
                 )}
               </div>
-
-              {/* Group chats */}
-              {(loadingGroups ? false : shownGroups.length > 0) && (
-                <div style={{ padding: '12px 16px 4px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Group Chats</div>
-              )}
-              {loadingGroups ? null : shownGroups.map((g, i) => (
-                <div key={g.id} className={`thread-row${activeGroup?.id === g.id ? ' active' : ''}`} onClick={() => openGroup(g)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', animationDelay: `${i * 0.04}s` }}>
-                  <GroupAv members={g.memberProfiles} size={44} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}><span style={{ fontSize: 13, fontWeight: g.unread > 0 ? 700 : 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>{g.name}</span><span style={{ fontSize: 10, color: 'var(--text-muted)', opacity: 0.7 }}>{reltime(g.lastAt)}</span></div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>{g.memberProfiles.length + 1} members</div>
-                    <div style={{ fontSize: 12, color: g.unread > 0 ? 'var(--text-secondary)' : 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.lastMsg ?? <span style={{ fontStyle: 'italic', opacity: 0.5 }}>No messages yet</span>}</div>
-                  </div>
-                  {g.unread > 0 && <span style={{ minWidth: 18, height: 18, fontSize: 10, fontWeight: 900, background: 'var(--accent)', color: '#fff', borderRadius: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px', flexShrink: 0 }}>{g.unread}</span>}
-                </div>
-              ))}
-
               {/* Club leaders */}
               {(loadingLeaders ? false : shownLeaders.length > 0) && (
                 <div style={{ padding: '12px 16px 4px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Club Members</div>
               )}
-              {loadingLeaders ? <ShimmerList /> : shownLeaders.length === 0 && shownGroups.length === 0 && !creatingGroup ? (
+              {loadingLeaders ? <ShimmerList /> : shownLeaders.length === 0 && !(creatingGroup && groupContext === 'leaders') ? (
                 <EmptyList icon={<IcCrown size={38} />} title={q ? 'No results' : 'No members found'} sub={q ? `Nothing for "${search}"` : 'This shows all members of your club once you become a president or officer.'} />
               ) : shownLeaders.map((l, i) => (
                 <div key={l.userId} className={`thread-row${activeLeader?.userId === l.userId ? ' active' : ''}`} onClick={() => openLeader(l)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', animationDelay: `${i * 0.04}s` }}>

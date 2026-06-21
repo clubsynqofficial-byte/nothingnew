@@ -4,6 +4,8 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import type { Club } from '../../types'
 import ClubApplicationModal from '../../components/ClubApplicationModal'
+import TalentPage from '../talent/TalentPage'
+import CollaborationPage from '../collaboration/CollaborationPage'
 
 const CATEGORIES = ['All', 'Technology', 'Arts & Culture', 'Sports', 'Entrepreneurship', 'Engineering', 'Business', 'Law']
 
@@ -42,6 +44,7 @@ export default function DiscoveryPage() {
   const [joiningId, setJoiningId] = useState<string | null>(null)
   const [applyClub, setApplyClub] = useState<ClubWithMeta | null>(null)
   const [pendingClubIds, setPendingClubIds] = useState<Set<string>>(new Set())
+  const [tab, setTab] = useState<'clubs' | 'skill-souq' | 'cofounder'>('clubs')
 
   const fetchClubs = useCallback(async () => {
     setLoading(true)
@@ -220,7 +223,35 @@ export default function DiscoveryPage() {
         }
       `}</style>
 
-      <div className="page-content" style={{ maxWidth: 1320 }}>
+      {/* ── Tab bar ── */}
+      <div style={{ padding: '24px 28px 0', maxWidth: 1320, margin: '0 auto', boxSizing: 'border-box' }}>
+        <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+          {([
+            { id: 'clubs'     as const, label: 'Discover Clubs'   },
+            { id: 'skill-souq' as const, label: 'Skill Souq'      },
+            { id: 'cofounder'  as const, label: 'Co-Founder Match' },
+          ]).map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              style={{
+                padding: '10px 22px', background: 'transparent', border: 'none',
+                borderBottom: `2px solid ${tab === t.id ? 'var(--accent)' : 'transparent'}`,
+                color: tab === t.id ? '#fff' : 'var(--text-muted)',
+                fontSize: 14, fontWeight: tab === t.id ? 700 : 400,
+                cursor: 'pointer', transition: 'all 0.15s', fontFamily: 'inherit',
+                marginBottom: -1, whiteSpace: 'nowrap',
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {tab === 'skill-souq' && <TalentPage />}
+      {tab === 'cofounder'  && <CollaborationPage />}
+      {tab === 'clubs' && <div className="page-content" style={{ maxWidth: 1320 }}>
 
         {/* ── Hero ── */}
         <div style={{ marginBottom: 44, position: 'relative', overflow: 'hidden' }}>
@@ -400,7 +431,7 @@ export default function DiscoveryPage() {
             ))}
           </div>
         )}
-      </div>
+      </div>}
 
       {applyClub && (
         <ClubApplicationModal

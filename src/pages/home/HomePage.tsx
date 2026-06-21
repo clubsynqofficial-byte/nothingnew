@@ -87,6 +87,8 @@ export default function HomePage() {
   const [userClubIds, setUserClubIds] = useState<string[]>([])
   const [loading, setLoading]       = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [sidebarEvents, setSidebarEvents]         = useState<{id:string;title:string;start_time:string;location:string|null;category:string|null;club:{name:string;logo_url:string|null}|null}[]>([])
+  const [suggestedClubs, setSuggestedClubs]       = useState<{id:string;name:string;category:string|null;logo_url:string|null;member_count:number;is_verified:boolean}[]>([])
 
   const [txt, setTxt]               = useState('')
   const [imgs, setImgs]             = useState<File[]>([])
@@ -208,6 +210,22 @@ export default function HomePage() {
         .order('created_at', { ascending: false })
         .limit(30)
       setAnnouncements((annData ?? []) as unknown as AnnouncementRow[])
+
+      // Sidebar: upcoming events + suggested clubs
+      const [{ data: evData }, { data: clubData }] = await Promise.all([
+        supabase.from('events')
+          .select('id,title,start_time,location,category,club:clubs!club_id(name,logo_url)')
+          .gte('start_time', new Date().toISOString())
+          .order('start_time', { ascending: true })
+          .limit(3),
+        supabase.from('clubs')
+          .select('id,name,category,logo_url,member_count,is_verified')
+          .not('id', 'in', clubIds.length ? `(${clubIds.join(',')})` : '(00000000-0000-0000-0000-000000000000)')
+          .order('member_count', { ascending: false })
+          .limit(4),
+      ])
+      setSidebarEvents((evData ?? []) as any)
+      setSuggestedClubs((clubData ?? []) as any)
     }
 
     setLoading(false)
@@ -760,44 +778,27 @@ export default function HomePage() {
 
           {/* Profile card */}
           <div className="card">
-            {/* Banner */}
-            <div style={{
-              height:72, position:'relative', overflow:'hidden',
-              background:'linear-gradient(135deg,#8a1538 0%,#5c0d26 55%,#2a0611 100%)',
-            }}>
+            <div style={{ height:72, position:'relative', overflow:'hidden', background:'linear-gradient(135deg,#8a1538 0%,#5c0d26 55%,#2a0611 100%)' }}>
               <div style={{ position:'absolute',inset:0,background:'radial-gradient(ellipse at 30% 60%,rgba(192,24,92,.45) 0%,transparent 65%)' }}/>
-              {/* dots pattern */}
               <svg style={{ position:'absolute',inset:0,width:'100%',height:'100%',opacity:.15 }}>
-                {Array.from({length:30},(_,i)=>(
-                  <circle key={i} cx={(i%6)*48+24} cy={Math.floor(i/6)*24+12} r="1.5" fill="white"/>
-                ))}
+                {Array.from({length:30},(_,i)=>(<circle key={i} cx={(i%6)*48+24} cy={Math.floor(i/6)*24+12} r="1.5" fill="white"/>))}
               </svg>
             </div>
             <div style={{ padding:'0 18px 18px', position:'relative' }}>
-              {/* Avatar overlapping banner */}
               <div style={{ marginTop:-28, marginBottom:10, display:'inline-block', borderRadius:'50%', border:'3px solid #231518' }}>
                 <Av url={profile?.avatar_url??null} name={profile?.full_name??null} size={54} onClick={()=>nav('/profile')} ring/>
               </div>
               <div style={{ marginBottom:14 }}>
                 <div style={{ fontSize:16, fontWeight:900, color:'var(--text-primary)', marginBottom:1 }}>{profile?.full_name??'Your Name'}</div>
-
                 {profile?.role && (
-                  <div style={{
-                    display:'inline-block', marginTop:6, padding:'2px 9px', borderRadius:9999, fontSize:11, fontWeight:700,
-                    textTransform:'capitalize' as const, letterSpacing:'.03em',
-                    background: profile.role==='admin'?'rgba(251,191,36,.15)':profile.role==='club_leader'?'rgba(138,21,56,.2)':'rgba(255,255,255,.06)',
-                    border:`1px solid ${profile.role==='admin'?'rgba(251,191,36,.3)':profile.role==='club_leader'?'rgba(138,21,56,.3)':'rgba(255,255,255,.1)'}`,
-                    color: profile.role==='admin'?'var(--gold)':profile.role==='club_leader'?'#e57c9a':'var(--text-muted)',
-                  }}>{profile.role.replace('_',' ')}</div>
+                  <div style={{ display:'inline-block', marginTop:6, padding:'2px 9px', borderRadius:9999, fontSize:11, fontWeight:700, textTransform:'capitalize' as const, letterSpacing:'.03em', background:profile.role==='admin'?'rgba(251,191,36,.15)':profile.role==='club_leader'?'rgba(138,21,56,.2)':'rgba(255,255,255,.06)', border:`1px solid ${profile.role==='admin'?'rgba(251,191,36,.3)':profile.role==='club_leader'?'rgba(138,21,56,.3)':'rgba(255,255,255,.1)'}`, color:profile.role==='admin'?'var(--gold)':profile.role==='club_leader'?'#e57c9a':'var(--text-muted)' }}>{profile.role.replace('_',' ')}</div>
                 )}
               </div>
-
-              {/* Stat tiles */}
               <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6, marginBottom:14 }}>
                 {[
-                  { label:'Posts', val: loading?'…':myPosts.length, bg:'rgba(248,113,113,.1)', border:'rgba(248,113,113,.2)', color:'#fca5a5' },
-                  { label:'Likes', val: loading?'…':myLikes, bg:'rgba(229,64,94,.1)', border:'rgba(229,64,94,.2)', color:'#f87171' },
-                  { label:'Points', val: profile?.karak_points??0, bg:'rgba(233,193,118,.1)', border:'rgba(233,193,118,.2)', color:'var(--gold)' },
+                  { label:'Posts', val:loading?'…':myPosts.length, bg:'rgba(248,113,113,.1)', border:'rgba(248,113,113,.2)', color:'#fca5a5' },
+                  { label:'Likes', val:loading?'…':myLikes, bg:'rgba(229,64,94,.1)', border:'rgba(229,64,94,.2)', color:'#f87171' },
+                  { label:'Points', val:profile?.karak_points??0, bg:'rgba(233,193,118,.1)', border:'rgba(233,193,118,.2)', color:'var(--gold)' },
                 ].map(s=>(
                   <div key={s.label} style={{ background:s.bg, border:`1px solid ${s.border}`, borderRadius:12, padding:'10px 6px', textAlign:'center' }}>
                     <div style={{ fontSize:18, fontWeight:900, color:s.color }}>{s.val}</div>
@@ -805,18 +806,79 @@ export default function HomePage() {
                   </div>
                 ))}
               </div>
-
-              <button onClick={()=>nav('/profile')} style={{
-                width:'100%', padding:'9px', borderRadius:12, fontFamily:'inherit',
-                background:'linear-gradient(135deg,rgba(138,21,56,.2),rgba(138,21,56,.08))',
-                border:'1px solid rgba(138,21,56,.4)', color:'#e57c9a',
-                fontSize:13, fontWeight:700, cursor:'pointer', transition:'all .15s',
-              }}
+              <button onClick={()=>nav('/profile')} style={{ width:'100%', padding:'9px', borderRadius:12, fontFamily:'inherit', background:'linear-gradient(135deg,rgba(138,21,56,.2),rgba(138,21,56,.08))', border:'1px solid rgba(138,21,56,.4)', color:'#e57c9a', fontSize:13, fontWeight:700, cursor:'pointer', transition:'all .15s' }}
                 onMouseEnter={e=>e.currentTarget.style.background='rgba(138,21,56,.3)'}
                 onMouseLeave={e=>e.currentTarget.style.background='linear-gradient(135deg,rgba(138,21,56,.2),rgba(138,21,56,.08))'}
               >View full profile →</button>
             </div>
           </div>
+
+          {/* ── Upcoming Events ── */}
+          {sidebarEvents.length > 0 && (
+            <div className="card" style={{ padding:'16px 18px' }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+                <span style={{ fontSize:12, fontWeight:800, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-muted)' }}>Upcoming Events</span>
+                <button onClick={()=>nav('/events')} style={{ background:'none', border:'none', color:'var(--accent)', fontSize:11, fontWeight:700, cursor:'pointer', padding:0 }}>See all →</button>
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                {sidebarEvents.map(ev => {
+                  const d = new Date(ev.start_time)
+                  const month = d.toLocaleString('en', { month:'short' }).toUpperCase()
+                  const day   = d.getDate()
+                  const time  = d.toLocaleString('en', { hour:'numeric', minute:'2-digit' })
+                  return (
+                    <div key={ev.id} onClick={()=>nav('/events')} style={{ display:'flex', gap:10, alignItems:'flex-start', cursor:'pointer', borderRadius:10, padding:'8px 10px', transition:'background .15s' }}
+                      onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,.04)'}
+                      onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                      {/* Date pill */}
+                      <div style={{ flexShrink:0, width:36, background:'rgba(138,21,56,.15)', border:'1px solid rgba(138,21,56,.25)', borderRadius:8, textAlign:'center', padding:'4px 2px' }}>
+                        <div style={{ fontSize:9, fontWeight:800, color:'var(--accent)', letterSpacing:'.05em' }}>{month}</div>
+                        <div style={{ fontSize:16, fontWeight:900, color:'var(--text-primary)', lineHeight:1 }}>{day}</div>
+                      </div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:13, fontWeight:600, color:'var(--text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ev.title}</div>
+                        <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:2 }}>
+                          {time}{ev.location ? ` · ${ev.location.length > 22 ? ev.location.slice(0,22)+'…' : ev.location}` : ''}
+                        </div>
+                        {ev.club && <div style={{ fontSize:10.5, color:'rgba(255,255,255,.3)', marginTop:1 }}>{(ev.club as any).name}</div>}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── Suggested Clubs ── */}
+          {suggestedClubs.length > 0 && (
+            <div className="card" style={{ padding:'16px 18px' }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+                <span style={{ fontSize:12, fontWeight:800, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-muted)' }}>Discover Clubs</span>
+                <button onClick={()=>nav('/discovery')} style={{ background:'none', border:'none', color:'var(--accent)', fontSize:11, fontWeight:700, cursor:'pointer', padding:0 }}>Browse →</button>
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+                {suggestedClubs.map(club => (
+                  <div key={club.id} onClick={()=>nav(`/clubs/${club.id}`)} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', borderRadius:10, cursor:'pointer', transition:'background .15s' }}
+                    onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,.04)'}
+                    onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                    <div style={{ width:36, height:36, borderRadius:9, background:'rgba(138,21,56,.15)', border:'1px solid rgba(255,255,255,.08)', overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:800, color:'var(--accent)', flexShrink:0 }}>
+                      {club.logo_url ? <img src={club.logo_url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }}/> : club.name[0]}
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+                        <span style={{ fontSize:13, fontWeight:600, color:'var(--text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{club.name}</span>
+                        {club.is_verified && <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--accent)"><path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" stroke="var(--accent)" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                      </div>
+                      <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:1 }}>
+                        {club.category ?? 'Club'} · {club.member_count} member{club.member_count !== 1 ? 's' : ''}
+                      </div>
+                    </div>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.2)" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
         </div>
       </div>
@@ -1556,12 +1618,23 @@ function Skeleton() {
 }
 
 function Empty() {
+  const nav = useNavigate()
   return (
-    <div style={{ textAlign:'center', padding:'60px 20px', display:'flex', flexDirection:'column', alignItems:'center', gap:18 }}>
-      <div style={{ width:80,height:80,borderRadius:'50%',background:'linear-gradient(135deg,rgba(138,21,56,.25),rgba(138,21,56,.05))',border:'1px solid rgba(138,21,56,.25)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:34,boxShadow:'0 0 40px rgba(138,21,56,.15)' }}>✨</div>
+    <div style={{ textAlign:'center', padding:'60px 20px', display:'flex', flexDirection:'column', alignItems:'center', gap:20 }}>
+      <div style={{ width:80,height:80,borderRadius:'50%',background:'linear-gradient(135deg,rgba(138,21,56,.25),rgba(138,21,56,.05))',border:'1px solid rgba(138,21,56,.25)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:34,boxShadow:'0 0 40px rgba(138,21,56,.15)' }}>🏛️</div>
       <div>
-        <div style={{ fontSize:18,fontWeight:800,color:'var(--text-primary)',marginBottom:8 }}>Nothing here yet</div>
-        <div style={{ fontSize:13,color:'var(--text-muted)',lineHeight:1.6,maxWidth:260 }}>Be the first to post something for your campus!</div>
+        <div style={{ fontSize:18,fontWeight:800,color:'var(--text-primary)',marginBottom:8 }}>Your feed is quiet</div>
+        <div style={{ fontSize:13,color:'var(--text-muted)',lineHeight:1.65,maxWidth:280 }}>
+          Join clubs to see their announcements and posts here. The more clubs you join, the richer your feed gets.
+        </div>
+      </div>
+      <div style={{ display:'flex', gap:10 }}>
+        <button onClick={() => nav('/discovery')} style={{ padding:'10px 22px', borderRadius:12, background:'linear-gradient(135deg,#8a1538,#c0185c)', border:'none', color:'#fff', fontSize:13, fontWeight:800, cursor:'pointer', fontFamily:'inherit', boxShadow:'0 4px 18px rgba(138,21,56,.4)' }}>
+          Discover Clubs →
+        </button>
+        <button onClick={() => nav('/discovery?tab=skill-souq')} style={{ padding:'10px 22px', borderRadius:12, background:'transparent', border:'1px solid rgba(255,255,255,.1)', color:'rgba(255,255,255,.6)', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>
+          Skill Souq
+        </button>
       </div>
     </div>
   )

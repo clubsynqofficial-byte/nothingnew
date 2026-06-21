@@ -15,7 +15,7 @@ interface Notification {
 }
 
 interface ClubResult    { id: string; name: string; category: string | null; logo_url: string | null }
-interface ProfileResult { id: string; full_name: string | null; avatar_url: string | null; school: string | null }
+interface ProfileResult { id: string; full_name: string | null; avatar_url: string | null; school: string | null; username: string | null }
 interface PostResult    { id: string; content: string | null; created_at: string; profile: { full_name: string | null } | null }
 
 interface Toast {
@@ -58,6 +58,8 @@ export default function TopBar({ onMenuToggle }: Props) {
   // Search state
   const [sq, setSq] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
+  const mobileSearchRef = useRef<HTMLInputElement>(null)
   const [srClubs, setSrClubs]   = useState<ClubResult[]>([])
   const [srPeople, setSrPeople] = useState<ProfileResult[]>([])
   const [srPosts, setSrPosts]   = useState<PostResult[]>([])
@@ -70,7 +72,7 @@ export default function TopBar({ onMenuToggle }: Props) {
     setSrLoading(true)
     const [cRes, pRes, posRes] = await Promise.all([
       supabase.from('clubs').select('id,name,category,logo_url').ilike('name', `%${q.trim()}%`).limit(4),
-      supabase.from('profiles').select('id,full_name,avatar_url,school').ilike('full_name', `%${q.trim()}%`).limit(4),
+      supabase.from('profiles').select('id,full_name,avatar_url,school,username').or(`full_name.ilike.%${q.trim().replace(/^@/, '')}%,username.ilike.%${q.trim().replace(/^@/, '')}%`).limit(4),
       supabase.from('posts').select('id,content,created_at,profile:profiles!user_id(full_name)').ilike('content', `%${q.trim()}%`).order('created_at', { ascending: false }).limit(4),
     ])
     setSrClubs((cRes.data as ClubResult[]) ?? [])
@@ -287,7 +289,7 @@ export default function TopBar({ onMenuToggle }: Props) {
             value={sq}
             onChange={e => setSq(e.target.value)}
             onFocus={() => setSearchFocused(true)}
-            placeholder="Search clubs, people, posts…"
+            placeholder="Search clubs, people, @username, posts…"
             style={{ width: '100%', boxSizing: 'border-box', padding: '8px 32px 8px 32px', background: searchFocused ? 'rgba(255,255,255,.07)' : 'rgba(255,255,255,.04)', border: `1px solid ${searchFocused ? 'rgba(138,21,56,.45)' : 'rgba(255,255,255,.09)'}`, borderRadius: 10, color: 'var(--text-primary)', fontSize: 13, outline: 'none', fontFamily: 'inherit', transition: 'all .15s', caretColor: 'var(--accent)' }}
           />
           {srLoading && <div style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, borderRadius: '50%', border: '2px solid rgba(138,21,56,.3)', borderTopColor: 'var(--accent)', animation: 'tbSpin .7s linear infinite' }} />}
@@ -337,7 +339,10 @@ export default function TopBar({ onMenuToggle }: Props) {
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.full_name ?? 'User'}</div>
-                      {p.school && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{p.school}</div>}
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', gap: 6 }}>
+                        {p.username && <span style={{ color: 'var(--accent)', opacity: 0.8 }}>@{p.username}</span>}
+                        {p.school && <span>{p.school}</span>}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -364,6 +369,16 @@ export default function TopBar({ onMenuToggle }: Props) {
 
       {/* Right side */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10 }}>
+
+        {/* ── Mobile search icon (hidden on desktop) ── */}
+        <button
+          className="tb-mobile-search-btn"
+          onClick={() => { setMobileSearchOpen(o => !o); setTimeout(() => mobileSearchRef.current?.focus(), 80) }}
+          style={{ display: 'none', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, background: mobileSearchOpen ? 'rgba(138,21,56,0.2)' : 'rgba(255,255,255,0.05)', border: `1px solid ${mobileSearchOpen ? 'rgba(138,21,56,0.4)' : 'rgba(255,255,255,0.1)'}`, borderRadius: '50%', color: 'var(--text-primary)', cursor: 'pointer', flexShrink: 0, transition: 'all 0.15s' }}
+          aria-label="Search"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
 
         {/* ── Notification Bell ── */}
         <div ref={panelRef} style={{ position: 'relative' }}>
@@ -640,10 +655,11 @@ export default function TopBar({ onMenuToggle }: Props) {
         }
         @keyframes tbSpin    { to { transform: translateY(-50%) rotate(360deg); } }
         @keyframes tbDropIn  { from { opacity:0; transform:translateY(-8px) scale(.97); } to { opacity:1; transform:none; } }
+        @keyframes tbMobileSearchIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:none; } }
         .notif-panel { animation: notif-panel 0.22s cubic-bezier(0.22,1,0.36,1) both; }
         .notif-toast { animation: notif-toast-in 0.3s cubic-bezier(0.34,1.56,0.64,1) both; }
         .notif-toast.leaving { animation: notif-toast-out 0.25s ease forwards; }
-        @media(max-width:600px) { .tb-search { display:none!important; } }
+        @media(max-width:600px) { .tb-search { display:none!important; } .tb-mobile-search-btn { display:flex!important; } }
         .notif-panel { animation: notif-panel 0.22s cubic-bezier(0.22,1,0.36,1) both; right: 0; }
         @media(max-width:480px) { .notif-panel { right: -16px !important; } .profile-dropdown { right: -8px !important; } }
         @keyframes pd-in { from{opacity:0;transform:translateY(-8px) scale(0.96)} to{opacity:1;transform:none} }
@@ -652,6 +668,81 @@ export default function TopBar({ onMenuToggle }: Props) {
         .pd-signout:hover { background: rgba(255,60,60,0.08) !important; color: rgba(255,100,100,1) !important; }
       `}</style>
 
+      {/* ── Mobile search bar (slides down below topbar) ── */}
+      {mobileSearchOpen && (
+        <div className="tb-mobile-search-bar" style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'rgba(14,8,11,0.98)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.07)', padding: '10px 14px', zIndex: 9997, animation: 'tbMobileSearchIn 0.2s cubic-bezier(0.22,1,0.36,1) both' }}>
+          <div style={{ position: 'relative' }}>
+            <svg style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--accent)', pointerEvents: 'none' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input
+              ref={mobileSearchRef}
+              value={sq}
+              onChange={e => setSq(e.target.value)}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
+              placeholder="Search clubs, people, @username, posts…"
+              style={{ width: '100%', boxSizing: 'border-box', padding: '10px 36px 10px 34px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(138,21,56,0.4)', borderRadius: 10, color: 'var(--text-primary)', fontSize: 14, outline: 'none', fontFamily: 'inherit', caretColor: 'var(--accent)' }}
+            />
+            {sq
+              ? <button onClick={() => { setSq(''); mobileSearchRef.current?.focus() }} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 15, padding: '2px 4px' }}>✕</button>
+              : <button onClick={() => setMobileSearchOpen(false)} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13, padding: '2px 4px', fontFamily: 'inherit' }}>Cancel</button>
+            }
+          </div>
+          {/* Results dropdown */}
+          {searchFocused && sq.trim().length > 0 && (
+            <div style={{ marginTop: 8, background: 'rgba(20,10,14,0.99)', border: '1px solid rgba(87,65,68,.35)', borderRadius: 12, overflow: 'hidden', maxHeight: '60vh', overflowY: 'auto' }}>
+              {!hasResults && !srLoading && (
+                <div style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No results for "<strong style={{ color: 'var(--text-primary)' }}>{sq}</strong>"</div>
+              )}
+              {srClubs.length > 0 && (
+                <div>
+                  <div style={{ padding: '10px 16px 6px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '.1em', textTransform: 'uppercase' }}>Clubs</div>
+                  {srClubs.map(c => (
+                    <div key={c.id} onClick={() => { navigate(`/clubs/${c.id}`); setMobileSearchOpen(false); setSq('') }} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '10px 16px', cursor: 'pointer', borderTop: '1px solid rgba(255,255,255,.04)' }}>
+                      <div style={{ width: 34, height: 34, borderRadius: 9, background: c.logo_url ? 'transparent' : 'rgba(138,21,56,.2)', border: '1px solid rgba(255,255,255,.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: 'var(--accent)', overflow: 'hidden', flexShrink: 0 }}>
+                        {c.logo_url ? <img src={c.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : c.name[0]}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
+                        {c.category && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{c.category}</div>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {srPeople.length > 0 && (
+                <div style={{ borderTop: srClubs.length > 0 ? '1px solid rgba(255,255,255,.06)' : 'none' }}>
+                  <div style={{ padding: '10px 16px 6px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '.1em', textTransform: 'uppercase' }}>People</div>
+                  {srPeople.map(p => (
+                    <div key={p.id} onClick={() => { navigate(`/profile/${p.id}`); setMobileSearchOpen(false); setSq('') }} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '10px 16px', cursor: 'pointer', borderTop: '1px solid rgba(255,255,255,.04)' }}>
+                      <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'linear-gradient(135deg,#c0185c,#8a1538)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: '#fff', overflow: 'hidden', flexShrink: 0 }}>
+                        {p.avatar_url ? <img src={p.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (p.full_name?.[0] ?? '?')}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.full_name ?? 'User'}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', gap: 6 }}>
+                          {p.username && <span style={{ color: 'var(--accent)', opacity: 0.8 }}>@{p.username}</span>}
+                          {p.school && <span>{p.school}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {srPosts.length > 0 && (
+                <div style={{ borderTop: (srClubs.length + srPeople.length) > 0 ? '1px solid rgba(255,255,255,.06)' : 'none' }}>
+                  <div style={{ padding: '10px 16px 6px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '.1em', textTransform: 'uppercase' }}>Posts</div>
+                  {srPosts.map(p => (
+                    <div key={p.id} onClick={() => { navigate('/home'); setMobileSearchOpen(false); setSq('') }} style={{ padding: '10px 16px', cursor: 'pointer', borderTop: '1px solid rgba(255,255,255,.04)' }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 3 }}>{p.profile?.full_name ?? 'User'}</div>
+                      <div style={{ fontSize: 13, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.content}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </header>
     </>
   )

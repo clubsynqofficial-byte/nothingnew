@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { usePresence, type PresenceStatus } from '../../contexts/PresenceContext'
 import { supabase } from '../../lib/supabase'
@@ -80,17 +80,18 @@ const NAV_ICONS: Record<string, React.ReactNode> = {
   ),
 }
 
-const NAV_ITEMS = [
-  { path: '/home', label: 'Home' },
-  { path: '/discovery', label: 'Discovery' },
-  { path: '/events', label: 'Events' },
-  { path: '/positions', label: 'Positions' },
-  { path: '/leadership', label: 'Your Clubs' },
+const NAV_PRIMARY = [
+  { path: '/home',      label: 'Home'     },
+  { path: '/discovery', label: 'Discover' },
+  { path: '/events',    label: 'Events'   },
+  { path: '/messages',  label: 'Messages' },
+]
+
+const NAV_SECONDARY = [
+  { path: '/talent',        label: 'Skill Souq'       },
   { path: '/collaboration', label: 'Co-Founder Match' },
-  { path: '/talent', label: 'Skill Souq' },
-  { path: '/clubs', label: 'Clubs' },
-  { path: '/messages', label: 'Messages' },
-  { path: '/tournaments', label: 'Tournaments' },
+  { path: '/tournaments',   label: 'Tournaments'      },
+  { path: '/positions',     label: 'Open Positions'   },
 ]
 
 interface Props {
@@ -101,7 +102,11 @@ interface Props {
 export default function SideNav({ open = false, onClose }: Props) {
   const { profile, user } = useAuth()
   const navigate = useNavigate()
+  const { pathname } = useLocation()
   const { myStatus, setMyStatus } = usePresence()
+  const [clubsOpen, setClubsOpen] = useState(
+    pathname === '/clubs' || pathname === '/leadership'
+  )
   const [msgUnread, setMsgUnread] = useState(0)
   const [msgRequests, setMsgRequests] = useState(0)
   const [statusOpen, setStatusOpen] = useState(false)
@@ -221,7 +226,8 @@ export default function SideNav({ open = false, onClose }: Props) {
       >
         {/* Nav links */}
         <nav style={{ flex: 1, padding: '16px 8px', overflowY: 'auto' }}>
-          {NAV_ITEMS.map(item => (
+          {/* ── Primary ── */}
+          {NAV_PRIMARY.map(item => (
             <NavLink
               key={item.path}
               to={item.path}
@@ -235,7 +241,7 @@ export default function SideNav({ open = false, onClose }: Props) {
                 borderRadius: 8,
                 textDecoration: 'none',
                 fontSize: 15,
-                fontWeight: isActive ? 500 : 400,
+                fontWeight: isActive ? 600 : 400,
                 color: isActive ? '#fff' : 'var(--text-muted)',
                 background: isActive ? 'rgba(138,21,56,0.2)' : 'transparent',
                 borderLeft: isActive ? '3px solid var(--accent)' : '3px solid transparent',
@@ -278,6 +284,103 @@ export default function SideNav({ open = false, onClose }: Props) {
                   )}
                 </span>
               )}
+            </NavLink>
+          ))}
+
+          {/* ── Clubs accordion ── */}
+          <div style={{ marginBottom: 2 }}>
+            <button
+              onClick={() => setClubsOpen(o => !o)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '11px 16px', borderRadius: 8, width: '100%',
+                background: (pathname === '/clubs' || pathname === '/leadership') ? 'rgba(138,21,56,0.2)' : 'transparent',
+                borderLeft: (pathname === '/clubs' || pathname === '/leadership') ? '3px solid var(--accent)' : '3px solid transparent',
+                color: (pathname === '/clubs' || pathname === '/leadership') ? '#fff' : 'var(--text-muted)',
+                fontSize: 15, fontWeight: (pathname === '/clubs' || pathname === '/leadership') ? 600 : 400,
+                border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                transition: 'color 0.15s, background 0.15s',
+                justifyContent: 'space-between',
+              }}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ opacity: 0.75, display: 'flex', flexShrink: 0 }}>
+                  {NAV_ICONS['/clubs']}
+                </span>
+                Clubs
+              </span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                style={{ transform: clubsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0, opacity: 0.4 }}>
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </button>
+
+            {clubsOpen && (
+              <div style={{ marginLeft: 14, borderLeft: '1px solid rgba(255,255,255,0.07)', paddingLeft: 6, marginBottom: 4 }}>
+                <NavLink to="/clubs" onClick={onClose} style={({ isActive }) => ({
+                  display: 'flex', alignItems: 'center', gap: 9,
+                  padding: '8px 14px', borderRadius: 7, textDecoration: 'none',
+                  fontSize: 13.5, fontWeight: isActive ? 500 : 400,
+                  color: isActive ? '#fff' : 'rgba(255,255,255,0.42)',
+                  background: isActive ? 'rgba(138,21,56,0.16)' : 'transparent',
+                  marginBottom: 1, transition: 'color 0.15s, background 0.15s',
+                })}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.55, flexShrink: 0 }}>
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                  </svg>
+                  My Clubs
+                </NavLink>
+                <NavLink to="/leadership" onClick={onClose} style={({ isActive }) => ({
+                  display: 'flex', alignItems: 'center', gap: 9,
+                  padding: '8px 14px', borderRadius: 7, textDecoration: 'none',
+                  fontSize: 13.5, fontWeight: isActive ? 500 : 400,
+                  color: isActive ? '#fff' : 'rgba(255,255,255,0.42)',
+                  background: isActive ? 'rgba(138,21,56,0.16)' : 'transparent',
+                  marginBottom: 1, transition: 'color 0.15s, background 0.15s',
+                })}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.55, flexShrink: 0 }}>
+                    <path d="M12 2L8.5 8.5 2 9.27l5 4.87L5.82 21 12 17.77 18.18 21l-1.18-6.86L22 9.27l-6.5-.77L12 2z"/>
+                  </svg>
+                  Manage Clubs
+                </NavLink>
+              </div>
+            )}
+          </div>
+
+          {/* ── Divider ── */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 8px 10px' }}>
+            <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase' }}>More</span>
+            <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
+          </div>
+
+          {/* ── Secondary ── */}
+          {NAV_SECONDARY.map(item => (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              onClick={onClose}
+              style={({ isActive }) => ({
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                padding: '8px 16px',
+                borderRadius: 8,
+                textDecoration: 'none',
+                fontSize: 13.5,
+                fontWeight: isActive ? 500 : 400,
+                color: isActive ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.32)',
+                background: isActive ? 'rgba(138,21,56,0.15)' : 'transparent',
+                borderLeft: isActive ? '3px solid rgba(138,21,56,0.6)' : '3px solid transparent',
+                marginBottom: 1,
+                transition: 'color 0.15s, background 0.15s',
+              })}
+            >
+              <span style={{ opacity: 0.55, display: 'flex', flexShrink: 0 }}>
+                {NAV_ICONS[item.path]}
+              </span>
+              {item.label}
             </NavLink>
           ))}
         </nav>
