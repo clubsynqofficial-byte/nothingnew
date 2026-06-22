@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
+import UserQRModal from '../UserQRModal'
 
 interface Notification {
   id: string
@@ -54,6 +55,7 @@ export default function TopBar({ onMenuToggle }: Props) {
   const panelRef = useRef<HTMLDivElement>(null)
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
+  const [qrOpen, setQrOpen] = useState(false)
 
   // Search state
   const [sq, setSq] = useState('')
@@ -602,6 +604,27 @@ export default function TopBar({ onMenuToggle }: Props) {
                   Account Settings
                 </button>
 
+                {/* My QR Code */}
+                <button
+                  className="pd-item"
+                  onClick={() => { setProfileOpen(false); setQrOpen(true) }}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 11,
+                    padding: '10px 16px', background: 'none', border: 'none',
+                    cursor: 'pointer', color: 'rgba(255,255,255,0.8)',
+                    fontSize: 13, fontFamily: 'inherit', textAlign: 'left',
+                    transition: 'background 0.12s, color 0.12s',
+                  }}
+                >
+                  <div style={{ width: 30, height: 30, borderRadius: 9, background: 'rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+                      <path d="M14 14h.01M14 17h.01M17 14h.01M17 17h3v3h-3z"/>
+                    </svg>
+                  </div>
+                  My QR Code
+                </button>
+
                 {/* Divider */}
                 <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '4px 0' }} />
 
@@ -667,6 +690,8 @@ export default function TopBar({ onMenuToggle }: Props) {
         .pd-item:hover { background: rgba(255,255,255,0.05) !important; color: #fff !important; }
         .pd-signout:hover { background: rgba(255,60,60,0.08) !important; color: rgba(255,100,100,1) !important; }
       `}</style>
+
+      {qrOpen && <UserQRModal onClose={() => setQrOpen(false)} />}
 
       {/* ── Mobile search bar (slides down below topbar) ── */}
       {mobileSearchOpen && (

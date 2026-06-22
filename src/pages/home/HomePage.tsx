@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { parseTS } from '../../lib/time'
 import { useAuth } from '../../contexts/AuthContext'
+import UserQRModal from '../../components/UserQRModal'
 
 function linkify(text: string) {
   const re = /https?:\/\/[^\s<>"]+|www\.[^\s<>"]+/g
@@ -82,6 +83,7 @@ export default function HomePage() {
   const { user, profile } = useAuth()
   const nav = useNavigate()
 
+  const [qrOpen, setQrOpen]         = useState(false)
   const [posts, setPosts]           = useState<FeedPost[]>([])
   const [announcements, setAnnouncements] = useState<AnnouncementRow[]>([])
   const [userClubIds, setUserClubIds] = useState<string[]>([])
@@ -498,7 +500,7 @@ export default function HomePage() {
         <div style={{ position:'absolute', top:0, left:0, right:0, height:1, background:'linear-gradient(90deg,transparent,rgba(192,37,90,.6),rgba(255,150,180,.8),rgba(192,37,90,.6),transparent)', animation:'bannerGlow 3s ease-in-out infinite', pointerEvents:'none' }}/>
 
         {/* Logo watermark */}
-        <img src="/clubsynqlogo.png" alt="" style={{ position:'absolute', right:24, top:'50%', transform:'translateY(-50%)', width:72, height:72, borderRadius:18, objectFit:'contain', opacity:0.18, pointerEvents:'none', userSelect:'none' }} />
+        <img src="/clubsynqlogo.png" alt="" style={{ position:'absolute', left:'50%', top:'50%', transform:'translate(-50%,-50%)', width:72, height:72, borderRadius:18, objectFit:'contain', opacity:0.1, pointerEvents:'none', userSelect:'none' }} />
 
         <div style={{ position:'relative', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:16 }}>
           <div>
@@ -508,7 +510,20 @@ export default function HomePage() {
               </div>
             </div>
           </div>
+          <button
+            onClick={() => setQrOpen(true)}
+            title="My QR Code"
+            style={{ width:44, height:44, borderRadius:12, background:'rgba(255,255,255,.1)', border:'1px solid rgba(255,255,255,.2)', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0, transition:'background .15s' }}
+            onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,.18)'}
+            onMouseLeave={e=>e.currentTarget.style.background='rgba(255,255,255,.1)'}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>
+              <rect x="14" y="14" width="3" height="3"/><rect x="18" y="14" width="3" height="3"/><rect x="14" y="18" width="3" height="3"/><rect x="18" y="18" width="3" height="3"/>
+            </svg>
+          </button>
         </div>
+        {qrOpen && <UserQRModal onClose={() => setQrOpen(false)} />}
       </div>
 
       {/* ── Two-column ──────────────────────────────────── */}
@@ -517,25 +532,43 @@ export default function HomePage() {
         {/* ── Feed column ─ */}
         <div style={{ minWidth:0 }}>
 
-          {/* Profile completion — mobile only (sidebar handles desktop) */}
-          {profile && (profile.avatar_url === null || !profile.bio?.trim() || profile.skills.length === 0) && (
-            <div className="mob-nudge" style={{ alignItems:'center', gap:12, padding:'11px 14px', marginBottom:14, background:'rgba(138,21,56,.1)', border:'1px solid rgba(138,21,56,.25)', borderRadius:14 }}>
-              <div style={{ width:34, height:34, borderRadius:'50%', background:'rgba(138,21,56,.22)', border:'1px solid rgba(138,21,56,.35)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#e57c9a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-              </div>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:13, fontWeight:700, color:'#fff', marginBottom:1 }}>Complete your profile</div>
-                <div style={{ fontSize:11.5, color:'rgba(255,255,255,.45)' }}>
-                  {[!profile.avatar_url && 'photo', !profile.bio?.trim() && 'bio', profile.skills.length === 0 && 'skills'].filter(Boolean).join(', ')} missing · required for Skill Souq
+          {/* Mobile nudges — profile completion + start a club */}
+          <div className="mob-nudge" style={{ flexDirection:'column', gap:8, marginBottom:14 }}>
+            {profile && (profile.avatar_url === null || !profile.bio?.trim() || profile.skills.length === 0) && (
+              <div style={{ display:'flex', flexDirection:'row', alignItems:'center', gap:12, padding:'11px 14px', background:'rgba(138,21,56,.1)', border:'1px solid rgba(138,21,56,.25)', borderRadius:14 }}>
+                <div style={{ width:34, height:34, borderRadius:'50%', background:'rgba(138,21,56,.22)', border:'1px solid rgba(138,21,56,.35)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#e57c9a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                 </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:13, fontWeight:700, color:'#fff', marginBottom:1 }}>Complete your profile</div>
+                  <div style={{ fontSize:11.5, color:'rgba(255,255,255,.45)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                    {[!profile.avatar_url && 'photo', !profile.bio?.trim() && 'bio', profile.skills.length === 0 && 'skills'].filter(Boolean).join(', ')} missing · required for Skill Souq
+                  </div>
+                </div>
+                <button onClick={()=>nav('/settings')} style={{ padding:'6px 14px', borderRadius:9999, background:'rgba(138,21,56,.3)', border:'1px solid rgba(138,21,56,.5)', color:'#e57c9a', fontSize:12, fontWeight:700, cursor:'pointer', fontFamily:'inherit', flexShrink:0, whiteSpace:'nowrap', transition:'all .15s' }}
+                  onMouseEnter={e=>e.currentTarget.style.background='rgba(138,21,56,.5)'}
+                  onMouseLeave={e=>e.currentTarget.style.background='rgba(138,21,56,.3)'}>
+                  Set up →
+                </button>
               </div>
-              <button onClick={()=>nav('/settings')} style={{ padding:'6px 14px', borderRadius:9999, background:'rgba(138,21,56,.3)', border:'1px solid rgba(138,21,56,.5)', color:'#e57c9a', fontSize:12, fontWeight:700, cursor:'pointer', fontFamily:'inherit', flexShrink:0, transition:'all .15s' }}
-                onMouseEnter={e=>e.currentTarget.style.background='rgba(138,21,56,.5)'}
-                onMouseLeave={e=>e.currentTarget.style.background='rgba(138,21,56,.3)'}>
-                Set up →
-              </button>
-            </div>
-          )}
+            )}
+            {profile && profile.role !== 'club_leader' && profile.role !== 'admin' && (
+              <div style={{ display:'flex', flexDirection:'row', alignItems:'center', gap:12, padding:'11px 14px', background:'rgba(138,21,56,.1)', border:'1px solid rgba(138,21,56,.25)', borderRadius:14 }}>
+                <div style={{ width:34, height:34, borderRadius:'50%', background:'rgba(138,21,56,.22)', border:'1px solid rgba(138,21,56,.35)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#e57c9a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:13, fontWeight:700, color:'#fff', marginBottom:1 }}>Start a club</div>
+                  <div style={{ fontSize:11.5, color:'rgba(255,255,255,.45)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>Host events · grow your community</div>
+                </div>
+                <button onClick={()=>nav('/leadership')} style={{ padding:'6px 14px', borderRadius:9999, background:'rgba(138,21,56,.3)', border:'1px solid rgba(138,21,56,.5)', color:'#e57c9a', fontSize:12, fontWeight:700, cursor:'pointer', fontFamily:'inherit', flexShrink:0, whiteSpace:'nowrap', transition:'all .15s' }}
+                  onMouseEnter={e=>e.currentTarget.style.background='rgba(138,21,56,.5)'}
+                  onMouseLeave={e=>e.currentTarget.style.background='rgba(138,21,56,.3)'}>
+                  Create →
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Compose card */}
           <div className="card" style={{
@@ -897,6 +930,26 @@ export default function HomePage() {
               </div>
             )
           })()}
+
+          {/* ── Start a club nudge (desktop sidebar) ── */}
+          {profile && profile.role !== 'club_leader' && profile.role !== 'admin' && (
+            <div className="card" style={{ padding:'16px 18px' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:12 }}>
+                <div style={{ width:34, height:34, borderRadius:'50%', background:'rgba(138,21,56,.22)', border:'1px solid rgba(138,21,56,.35)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#e57c9a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                </div>
+                <span style={{ fontSize:12, fontWeight:800, letterSpacing:'.06em', textTransform:'uppercase' as const, color:'var(--text-muted)' }}>Start a Club</span>
+              </div>
+              <div style={{ fontSize:12, color:'rgba(255,255,255,.4)', marginBottom:12, lineHeight:1.5 }}>
+                Build your community, host events &amp; earn karak points together.
+              </div>
+              <button onClick={()=>nav('/leadership')} style={{ width:'100%', padding:'8px', borderRadius:10, background:'linear-gradient(135deg,rgba(138,21,56,.22),rgba(138,21,56,.08))', border:'1px solid rgba(138,21,56,.32)', color:'#e57c9a', fontSize:12.5, fontWeight:700, cursor:'pointer', fontFamily:'inherit', transition:'background .15s' }}
+                onMouseEnter={e=>e.currentTarget.style.background='rgba(138,21,56,.32)'}
+                onMouseLeave={e=>e.currentTarget.style.background='linear-gradient(135deg,rgba(138,21,56,.22),rgba(138,21,56,.08))'}>
+                Create a Club →
+              </button>
+            </div>
+          )}
 
           {/* ── Upcoming Events ── */}
           {sidebarEvents.length > 0 && (

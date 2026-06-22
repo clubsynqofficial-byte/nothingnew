@@ -96,11 +96,14 @@ const NAV_PRIMARY = [
 ]
 
 const NAV_SECONDARY = [
-  { path: '/talent',        label: 'Skill Souq'       },
   { path: '/marketplace',   label: 'Campus Market'    },
-  { path: '/collaboration', label: 'Co-Founder Match' },
-  { path: '/tournaments',   label: 'Tournaments'      },
   { path: '/positions',     label: 'Open Positions'   },
+  { path: '/tournaments',   label: 'Tournaments'      },
+]
+
+const NAV_CONNECT = [
+  { path: '/talent',        label: 'Skill Souq'       },
+  { path: '/collaboration', label: 'Co-Founder Match' },
 ]
 
 interface Props {
@@ -115,6 +118,9 @@ export default function SideNav({ open = false, onClose }: Props) {
   const { myStatus, setMyStatus } = usePresence()
   const [clubsOpen, setClubsOpen] = useState(
     pathname === '/clubs' || pathname === '/leadership'
+  )
+  const [connectOpen, setConnectOpen] = useState(
+    pathname === '/talent' || pathname === '/collaboration'
   )
   const [msgUnread, setMsgUnread] = useState(0)
   const [msgRequests, setMsgRequests] = useState(0)
@@ -358,11 +364,56 @@ export default function SideNav({ open = false, onClose }: Props) {
             )}
           </div>
 
-          {/* ── Divider ── */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 8px 10px' }}>
-            <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
-            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.1em', color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase' }}>More</span>
-            <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
+          {/* ── Connect accordion ── */}
+          <div style={{ marginBottom: 2 }}>
+            <button
+              onClick={() => setConnectOpen(o => !o)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '11px 16px', borderRadius: 8, width: '100%',
+                background: (pathname === '/talent' || pathname === '/collaboration') ? 'rgba(138,21,56,0.2)' : 'transparent',
+                borderLeft: (pathname === '/talent' || pathname === '/collaboration') ? '3px solid var(--accent)' : '3px solid transparent',
+                color: (pathname === '/talent' || pathname === '/collaboration') ? '#fff' : 'var(--text-muted)',
+                fontSize: 15, fontWeight: (pathname === '/talent' || pathname === '/collaboration') ? 600 : 400,
+                border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                transition: 'color 0.15s, background 0.15s',
+                justifyContent: 'space-between',
+              }}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ opacity: 0.75, display: 'flex', flexShrink: 0 }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                  </svg>
+                </span>
+                Connect
+              </span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                style={{ transform: connectOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0, opacity: 0.4 }}>
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </button>
+
+            {connectOpen && (
+              <div style={{ marginLeft: 14, borderLeft: '1px solid rgba(255,255,255,0.07)', paddingLeft: 6, marginBottom: 4 }}>
+                {NAV_CONNECT.map(item => (
+                  <NavLink key={item.path} to={item.path} onClick={onClose} style={({ isActive }) => ({
+                    display: 'flex', alignItems: 'center', gap: 9,
+                    padding: '8px 14px', borderRadius: 7, textDecoration: 'none',
+                    fontSize: 13.5, fontWeight: isActive ? 500 : 400,
+                    color: isActive ? '#fff' : 'rgba(255,255,255,0.42)',
+                    background: isActive ? 'rgba(138,21,56,0.16)' : 'transparent',
+                    marginBottom: 1, transition: 'color 0.15s, background 0.15s',
+                  })}>
+                    <span style={{ opacity: 0.55, display: 'flex', flexShrink: 0 }}>
+                      {NAV_ICONS[item.path]}
+                    </span>
+                    {item.label}
+                  </NavLink>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* ── Secondary ── */}
@@ -375,19 +426,19 @@ export default function SideNav({ open = false, onClose }: Props) {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 12,
-                padding: '8px 16px',
+                padding: '11px 16px',
                 borderRadius: 8,
                 textDecoration: 'none',
-                fontSize: 13.5,
-                fontWeight: isActive ? 500 : 400,
-                color: isActive ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.32)',
-                background: isActive ? 'rgba(138,21,56,0.15)' : 'transparent',
-                borderLeft: isActive ? '3px solid rgba(138,21,56,0.6)' : '3px solid transparent',
-                marginBottom: 1,
+                fontSize: 15,
+                fontWeight: isActive ? 600 : 400,
+                color: isActive ? '#fff' : 'var(--text-muted)',
+                background: isActive ? 'rgba(138,21,56,0.2)' : 'transparent',
+                borderLeft: isActive ? '3px solid var(--accent)' : '3px solid transparent',
+                marginBottom: 2,
                 transition: 'color 0.15s, background 0.15s',
               })}
             >
-              <span style={{ opacity: 0.55, display: 'flex', flexShrink: 0 }}>
+              <span style={{ opacity: 0.75, display: 'flex', flexShrink: 0 }}>
                 {NAV_ICONS[item.path]}
               </span>
               {item.label}

@@ -153,6 +153,10 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
   const [certEvent, setCertEvent] = useState<Event | null>(null)
   // QR state
   const [qrEvent, setQrEvent] = useState<Event | null>(null)
+  // Attendee list state
+  const [expandedAttendeeEventId, setExpandedAttendeeEventId] = useState<string | null>(null)
+  const [eventAttendees, setEventAttendees] = useState<Record<string, Array<{ id: string; full_name: string | null; avatar_url: string | null }>>>({})
+  const [loadingAttendees, setLoadingAttendees] = useState<string | null>(null)
 
   // Announcement state
   const [annContent, setAnnContent] = useState('')
@@ -633,6 +637,20 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
     setUploadingBanner(false)
   }
 
+  async function toggleAttendees(eventId: string) {
+    if (expandedAttendeeEventId === eventId) { setExpandedAttendeeEventId(null); return }
+    setExpandedAttendeeEventId(eventId)
+    if (eventAttendees[eventId]) return
+    setLoadingAttendees(eventId)
+    const { data } = await supabase
+      .from('event_attendees')
+      .select('profile:profiles(id, full_name, avatar_url)')
+      .eq('event_id', eventId)
+    const profiles = (data ?? []).map((r: any) => r.profile).filter(Boolean)
+    setEventAttendees(prev => ({ ...prev, [eventId]: profiles }))
+    setLoadingAttendees(null)
+  }
+
   async function fetchEventAnnouncements(eventId: string) {
     const { data } = await supabase
       .from('event_announcements')
@@ -1039,30 +1057,13 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
         {/* Sidebar nav */}
         <div className="cc-sidebar" style={{ width:192, flexShrink:0, position:'sticky', top:24 }}>
           <nav style={{ background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:6, display:'flex', flexDirection:'column', gap:1 }}>
-            {TABS.map(t => (
+            {[...TABS, ...TABS_UTILITY].map(t => (
               <button key={t.key} className="cc-nav-item" onClick={() => setActiveTab(t.key)} style={{
                 display:'flex', alignItems:'center', justifyContent:'space-between',
                 padding:'9px 12px', borderRadius:9, width:'100%', cursor:'pointer', fontFamily:'inherit',
                 background: activeTab === t.key ? 'rgba(138,21,56,0.2)' : 'transparent',
-                color: activeTab === t.key ? '#fff' : 'rgba(255,255,255,0.55)',
+                color: activeTab === t.key ? '#fff' : 'rgba(255,255,255,0.5)',
                 fontSize:13.5, fontWeight: activeTab === t.key ? 600 : 400,
-              }}>
-                <span style={{ borderLeft: activeTab === t.key ? '2px solid var(--accent)' : '2px solid transparent', paddingLeft:8, lineHeight:1.2 }}>{t.label}</span>
-                {t.badge !== null && t.badge > 0 && (
-                  <span style={{ fontSize:10, fontWeight:800, padding:'2px 7px', borderRadius:99, background: t.badgeColor ? `${t.badgeColor}20` : 'rgba(255,255,255,0.07)', color: t.badgeColor ?? 'rgba(255,255,255,0.35)', border: t.badgeColor ? `1px solid ${t.badgeColor}40` : 'none', flexShrink:0 }}>{t.badge}</span>
-                )}
-              </button>
-            ))}
-
-            <div style={{ height:1, background:'rgba(255,255,255,0.06)', margin:'4px 8px' }} />
-
-            {TABS_UTILITY.map(t => (
-              <button key={t.key} className="cc-nav-item" onClick={() => setActiveTab(t.key)} style={{
-                display:'flex', alignItems:'center', justifyContent:'space-between',
-                padding:'8px 12px', borderRadius:9, width:'100%', cursor:'pointer', fontFamily:'inherit',
-                background: activeTab === t.key ? 'rgba(138,21,56,0.2)' : 'transparent',
-                color: activeTab === t.key ? '#fff' : 'rgba(255,255,255,0.38)',
-                fontSize:13, fontWeight: activeTab === t.key ? 600 : 400,
               }}>
                 <span style={{ borderLeft: activeTab === t.key ? '2px solid var(--accent)' : '2px solid transparent', paddingLeft:8, lineHeight:1.2 }}>{t.label}</span>
                 {t.badge !== null && t.badge > 0 && (
@@ -1117,29 +1118,54 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
                 {events.map(ev => {
                   const isCompleted = !ev.is_live && !!ev.start_time && new Date(ev.start_time) < new Date()
                   return (
-                    <div key={ev.id} style={{ background:'rgba(255,255,255,0.03)', border:`1px solid ${isCompleted?'rgba(138,21,56,0.2)':'rgba(255,255,255,0.06)'}`, borderRadius:10, padding:'12px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:4 }}>
-                          <div style={{ fontSize:14, fontWeight:600, color:'var(--text-primary)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{ev.title}</div>
-                          {isCompleted && <span style={{ fontSize:9, fontWeight:700, letterSpacing:'0.08em', padding:'2px 7px', borderRadius:9999, flexShrink:0, background:'rgba(34,197,94,0.1)', border:'1px solid rgba(34,197,94,0.25)', color:'#4ade80' }}>COMPLETED</span>}
+                    <div key={ev.id} style={{ background:'rgba(255,255,255,0.03)', border:`1px solid ${isCompleted?'rgba(138,21,56,0.2)':'rgba(255,255,255,0.06)'}`, borderRadius:10, overflow:'hidden' }}>
+                      <div style={{ padding:'12px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:4 }}>
+                            <div style={{ fontSize:14, fontWeight:600, color:'var(--text-primary)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{ev.title}</div>
+                            {isCompleted && <span style={{ fontSize:9, fontWeight:700, letterSpacing:'0.08em', padding:'2px 7px', borderRadius:9999, flexShrink:0, background:'rgba(34,197,94,0.1)', border:'1px solid rgba(34,197,94,0.25)', color:'#4ade80' }}>COMPLETED</span>}
+                          </div>
+                          <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                            <span style={{ fontSize:11, color:'var(--text-muted)' }}>{ev.location ?? 'No location'} · {ev.karak_points_reward} pts</span>
+                            <button onClick={() => toggleAttendees(ev.id)} style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:9999, background:'rgba(14,165,233,0.1)', border:'1px solid rgba(14,165,233,0.25)', color:'#38bdf8', cursor:'pointer', fontFamily:'inherit' }}>
+                              👥 {ev.attendee_count} checked in
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ transform: expandedAttendeeEventId === ev.id ? 'rotate(180deg)' : 'none', transition:'transform 0.2s', flexShrink:0 }}><polyline points="6 9 12 15 18 9"/></svg>
+                            </button>
+                          </div>
                         </div>
-                        <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-                          <span style={{ fontSize:11, color:'var(--text-muted)' }}>{ev.location ?? 'No location'} · {ev.karak_points_reward} pts</span>
-                          <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:9999, background:'rgba(14,165,233,0.1)', border:'1px solid rgba(14,165,233,0.25)', color:'#38bdf8' }}>
-                            👥 {ev.attendee_count} checked in
-                          </span>
+                        <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
+                          <button onClick={() => setQrEvent(ev)} style={{ padding:'4px 11px', borderRadius:9999, border:'1px solid rgba(14,165,233,0.35)', background:'rgba(14,165,233,0.08)', color:'#38bdf8', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>QR</button>
+                          {isCompleted && <button onClick={() => setCertEvent(ev)} style={{ padding:'4px 11px', borderRadius:9999, border:'1px solid rgba(233,193,118,0.35)', background:'rgba(233,193,118,0.08)', color:'var(--gold)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>🎓 Send Certs</button>}
+                          {ev.is_live && <button onClick={() => handleOpenEventAnn(ev)} style={{ padding:'4px 11px', borderRadius:9999, border:'1px solid rgba(255,180,171,0.35)', background:'rgba(255,180,171,0.08)', color:'var(--live-red)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>📢 Announce</button>}
+                          {(!isCompleted || ev.is_live) && (
+                            <button onClick={() => toggleLive(ev)} style={{ padding:'4px 12px', borderRadius:9999, border:ev.is_live?'1px solid rgba(255,180,171,0.4)':'1px solid rgba(87,65,68,0.3)', background:ev.is_live?'rgba(255,180,171,0.1)':'transparent', color:ev.is_live?'var(--live-red)':'var(--text-muted)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
+                              {ev.is_live ? '● LIVE' : 'Go Live'}
+                            </button>
+                          )}
                         </div>
                       </div>
-                      <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
-                        <button onClick={() => setQrEvent(ev)} style={{ padding:'4px 11px', borderRadius:9999, border:'1px solid rgba(14,165,233,0.35)', background:'rgba(14,165,233,0.08)', color:'#38bdf8', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>QR</button>
-                        {isCompleted && <button onClick={() => setCertEvent(ev)} style={{ padding:'4px 11px', borderRadius:9999, border:'1px solid rgba(233,193,118,0.35)', background:'rgba(233,193,118,0.08)', color:'var(--gold)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>🎓 Send Certs</button>}
-                        {ev.is_live && <button onClick={() => handleOpenEventAnn(ev)} style={{ padding:'4px 11px', borderRadius:9999, border:'1px solid rgba(255,180,171,0.35)', background:'rgba(255,180,171,0.08)', color:'var(--live-red)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>📢 Announce</button>}
-                        {(!isCompleted || ev.is_live) && (
-                          <button onClick={() => toggleLive(ev)} style={{ padding:'4px 12px', borderRadius:9999, border:ev.is_live?'1px solid rgba(255,180,171,0.4)':'1px solid rgba(87,65,68,0.3)', background:ev.is_live?'rgba(255,180,171,0.1)':'transparent', color:ev.is_live?'var(--live-red)':'var(--text-muted)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
-                            {ev.is_live ? '● LIVE' : 'Go Live'}
-                          </button>
-                        )}
-                      </div>
+
+                      {/* Attendees expanded list */}
+                      {expandedAttendeeEventId === ev.id && (
+                        <div style={{ borderTop:'1px solid rgba(255,255,255,0.06)', padding:'12px 16px', background:'rgba(0,0,0,0.15)' }}>
+                          {loadingAttendees === ev.id ? (
+                            <div style={{ fontSize:12, color:'var(--text-muted)' }}>Loading…</div>
+                          ) : (eventAttendees[ev.id] ?? []).length === 0 ? (
+                            <div style={{ fontSize:12, color:'var(--text-muted)' }}>No one checked in yet.</div>
+                          ) : (
+                            <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+                              {(eventAttendees[ev.id] ?? []).map(p => (
+                                <div key={p.id} style={{ display:'flex', alignItems:'center', gap:7, background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:9999, padding:'4px 10px 4px 4px' }}>
+                                  <div style={{ width:22, height:22, borderRadius:'50%', background:'var(--accent)', flexShrink:0, overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, fontWeight:700, color:'#fff' }}>
+                                    {p.avatar_url ? <img src={p.avatar_url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }}/> : (p.full_name?.[0]?.toUpperCase() ?? '?')}
+                                  </div>
+                                  <span style={{ fontSize:12, color:'var(--text-primary)', fontWeight:500, whiteSpace:'nowrap' }}>{p.full_name ?? 'Unknown'}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )
                 })}

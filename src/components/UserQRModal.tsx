@@ -22,7 +22,7 @@ export default function UserQRModal({ onClose }: Props) {
         position: 'fixed', inset: 0, zIndex: 9999,
         background: 'rgba(0,0,0,0.88)', backdropFilter: 'blur(10px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 24,
+        padding: 24, paddingTop: 'calc(64px + 24px)',
       }}
       onClick={onClose}
     >
