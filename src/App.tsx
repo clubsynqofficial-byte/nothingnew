@@ -32,6 +32,7 @@ import MyTeamsPage from './pages/teams/MyTeamsPage'
 import MatchCenterPage from './pages/matches/MatchCenterPage'
 import MarketplacePage from './pages/marketplace/MarketplacePage'
 import ScanPage from './pages/scan/ScanPage'
+import QRPage from './pages/qr/QRPage'
 
 function RootRoute() {
   const { session, loading } = useAuth()
@@ -189,6 +190,7 @@ function AppRoutes() {
       <Route path="/matches/:matchId" element={<ProtectedRoute><MatchCenterPage /></ProtectedRoute>} />
       <Route path="/marketplace" element={<ProtectedRoute><MarketplacePage /></ProtectedRoute>} />
       <Route path="/scan" element={<ProtectedRoute><ScanPage /></ProtectedRoute>} />
+      <Route path="/qr" element={<ProtectedRoute><QRPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/home" replace />} />
     </Routes>
   )

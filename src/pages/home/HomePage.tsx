@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { parseTS } from '../../lib/time'
 import { useAuth } from '../../contexts/AuthContext'
-import UserQRModal from '../../components/UserQRModal'
 
 function linkify(text: string) {
   const re = /https?:\/\/[^\s<>"]+|www\.[^\s<>"]+/g
@@ -83,7 +82,6 @@ export default function HomePage() {
   const { user, profile } = useAuth()
   const nav = useNavigate()
 
-  const [qrOpen, setQrOpen]         = useState(false)
   const [posts, setPosts]           = useState<FeedPost[]>([])
   const [announcements, setAnnouncements] = useState<AnnouncementRow[]>([])
   const [userClubIds, setUserClubIds] = useState<string[]>([])
@@ -125,6 +123,9 @@ export default function HomePage() {
 
   // Poll data per post: postId → { options with vote counts, userVote }
   const [pollData, setPollData] = useState<Record<string, PollData>>({})
+
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { const t = setTimeout(() => setMounted(true), 30); return () => clearTimeout(t) }, [])
 
   // Notification helper
   async function sendNotif(userId: string, type: string, title: string, body: string, link?: string) {
@@ -433,6 +434,15 @@ export default function HomePage() {
       @keyframes ai-dot-3 { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-5px)} }
       @keyframes ai-shimmer { from{background-position:-400px 0} to{background-position:400px 0} }
       @keyframes ai-result-in { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+      @keyframes heroGreet  { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:none} }
+      @keyframes heroQr     { from{opacity:0;transform:scale(.7) rotate(-12deg)} to{opacity:1;transform:scale(1) rotate(0deg)} }
+      @keyframes sideIn     { from{opacity:0;transform:translateX(28px)} to{opacity:1;transform:none} }
+      @keyframes nudgeIn    { from{opacity:0;transform:translateX(-18px)} to{opacity:1;transform:none} }
+      @keyframes composeIn  { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:none} }
+      @keyframes tabsIn     { from{opacity:0;transform:translateY(10px) scale(.97)} to{opacity:1;transform:none} }
+      @keyframes statIn     { from{opacity:0;transform:scale(.7) translateY(10px)} to{opacity:1;transform:none} }
+      @keyframes progressFill { from{width:0} }
+      @keyframes sidebarOrb { 0%,100%{transform:scale(1);opacity:.3} 50%{transform:scale(1.25);opacity:.55} }
       .ai-chip { display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:9999px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s;white-space:nowrap }
       .ai-chip:hover { transform:translateY(-1px); }
       .ai-send:hover:not(:disabled) { opacity:0.85!important; transform:scale(1.05); }
@@ -503,7 +513,7 @@ export default function HomePage() {
         <img src="/clubsynqlogo.png" alt="" style={{ position:'absolute', left:'50%', top:'50%', transform:'translate(-50%,-50%)', width:72, height:72, borderRadius:18, objectFit:'contain', opacity:0.1, pointerEvents:'none', userSelect:'none' }} />
 
         <div style={{ position:'relative', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:16 }}>
-          <div>
+          <div style={{ animation: mounted ? 'heroGreet 0.55s cubic-bezier(.22,1,.36,1) .05s both' : 'none' }}>
             <div style={{ marginBottom:6 }}>
               <div className="hero-title" style={{ fontSize:28, fontWeight:900, color:'#fff', letterSpacing:'-0.7px' }}>
                 {greeting}, {firstName}! 👋
@@ -511,9 +521,9 @@ export default function HomePage() {
             </div>
           </div>
           <button
-            onClick={() => setQrOpen(true)}
+            onClick={() => nav('/qr')}
             title="My QR Code"
-            style={{ width:44, height:44, borderRadius:12, background:'rgba(255,255,255,.1)', border:'1px solid rgba(255,255,255,.2)', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0, transition:'background .15s' }}
+            style={{ width:44, height:44, borderRadius:12, background:'rgba(255,255,255,.1)', border:'1px solid rgba(255,255,255,.2)', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0, transition:'background .15s', animation: mounted ? 'heroQr 0.5s cubic-bezier(.22,1,.36,1) .18s both' : 'none' }}
             onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,.18)'}
             onMouseLeave={e=>e.currentTarget.style.background='rgba(255,255,255,.1)'}
           >
@@ -523,7 +533,6 @@ export default function HomePage() {
             </svg>
           </button>
         </div>
-        {qrOpen && <UserQRModal onClose={() => setQrOpen(false)} />}
       </div>
 
       {/* ── Two-column ──────────────────────────────────── */}
@@ -535,7 +544,7 @@ export default function HomePage() {
           {/* Mobile nudges — profile completion + start a club */}
           <div className="mob-nudge" style={{ flexDirection:'column', gap:8, marginBottom:14 }}>
             {profile && (profile.avatar_url === null || !profile.bio?.trim() || profile.skills.length === 0) && (
-              <div style={{ display:'flex', flexDirection:'row', alignItems:'center', gap:12, padding:'11px 14px', background:'rgba(138,21,56,.1)', border:'1px solid rgba(138,21,56,.25)', borderRadius:14 }}>
+              <div style={{ display:'flex', flexDirection:'row', alignItems:'center', gap:12, padding:'11px 14px', background:'rgba(138,21,56,.1)', border:'1px solid rgba(138,21,56,.25)', borderRadius:14, animation: mounted ? 'nudgeIn 0.42s cubic-bezier(.22,1,.36,1) .1s both' : 'none' }}>
                 <div style={{ width:34, height:34, borderRadius:'50%', background:'rgba(138,21,56,.22)', border:'1px solid rgba(138,21,56,.35)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#e57c9a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                 </div>
@@ -553,7 +562,7 @@ export default function HomePage() {
               </div>
             )}
             {profile && profile.role !== 'club_leader' && profile.role !== 'admin' && (
-              <div style={{ display:'flex', flexDirection:'row', alignItems:'center', gap:12, padding:'11px 14px', background:'rgba(138,21,56,.1)', border:'1px solid rgba(138,21,56,.25)', borderRadius:14 }}>
+              <div style={{ display:'flex', flexDirection:'row', alignItems:'center', gap:12, padding:'11px 14px', background:'rgba(138,21,56,.1)', border:'1px solid rgba(138,21,56,.25)', borderRadius:14, animation: mounted ? 'nudgeIn 0.42s cubic-bezier(.22,1,.36,1) .2s both' : 'none' }}>
                 <div style={{ width:34, height:34, borderRadius:'50%', background:'rgba(138,21,56,.22)', border:'1px solid rgba(138,21,56,.35)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#e57c9a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                 </div>
@@ -577,6 +586,7 @@ export default function HomePage() {
             boxShadow: focused ? '0 0 0 3px rgba(138,21,56,.12),0 8px 32px rgba(0,0,0,.45)' : '0 2px 16px rgba(0,0,0,.3)',
             transition:'border-color .2s, box-shadow .2s',
             overflow:'visible',
+            animation: mounted ? 'composeIn 0.45s cubic-bezier(.22,1,.36,1) .18s both' : 'none',
           }}>
             {/* Main input area */}
             <div style={{ padding:'16px 18px' }}>
@@ -733,7 +743,7 @@ export default function HomePage() {
           </div>
 
           {/* Feed tabs */}
-          <div style={{ display:'flex', gap:2, marginBottom:14, background:'rgba(255,255,255,.04)', borderRadius:12, padding:4, border:'1px solid rgba(255,255,255,.07)' }}>
+          <div style={{ display:'flex', gap:2, marginBottom:14, background:'rgba(255,255,255,.04)', borderRadius:12, padding:4, border:'1px solid rgba(255,255,255,.07)', animation: mounted ? 'tabsIn 0.4s cubic-bezier(.22,1,.36,1) .3s both' : 'none' }}>
             {(['for-you', 'clubs'] as const).map(tab => {
               const labels: Record<string, string> = { 'for-you': 'For You', 'clubs': 'My Clubs' }
               const active = feedTab === tab
@@ -802,9 +812,11 @@ export default function HomePage() {
         <div className="sidebar" style={{ display:'flex', flexDirection:'column', gap:14, position:'sticky', top:80 }}>
 
           {/* Profile card */}
-          <div className="card">
+          <div className="card" style={{ animation: mounted ? 'sideIn 0.5s cubic-bezier(.22,1,.36,1) .08s both' : 'none' }}>
             <div style={{ height:72, position:'relative', overflow:'hidden', background:'linear-gradient(135deg,#8a1538 0%,#5c0d26 55%,#2a0611 100%)' }}>
               <div style={{ position:'absolute',inset:0,background:'radial-gradient(ellipse at 30% 60%,rgba(192,24,92,.45) 0%,transparent 65%)' }}/>
+              {/* Animated orb in header */}
+              <div style={{ position:'absolute', top:'-20%', right:'10%', width:90, height:90, borderRadius:'50%', background:'radial-gradient(circle,rgba(192,37,90,.5) 0%,transparent 70%)', animation:'sidebarOrb 5s ease-in-out infinite', pointerEvents:'none' }}/>
               <svg style={{ position:'absolute',inset:0,width:'100%',height:'100%',opacity:.15 }}>
                 {Array.from({length:30},(_,i)=>(<circle key={i} cx={(i%6)*48+24} cy={Math.floor(i/6)*24+12} r="1.5" fill="white"/>))}
               </svg>
@@ -824,8 +836,8 @@ export default function HomePage() {
                   { label:'Posts', val:loading?'…':myPosts.length, bg:'rgba(248,113,113,.1)', border:'rgba(248,113,113,.2)', color:'#fca5a5' },
                   { label:'Likes', val:loading?'…':myLikes, bg:'rgba(229,64,94,.1)', border:'rgba(229,64,94,.2)', color:'#f87171' },
                   { label:'Points', val:profile?.karak_points??0, bg:'rgba(233,193,118,.1)', border:'rgba(233,193,118,.2)', color:'var(--gold)' },
-                ].map(s=>(
-                  <div key={s.label} style={{ background:s.bg, border:`1px solid ${s.border}`, borderRadius:12, padding:'10px 6px', textAlign:'center' }}>
+                ].map((s, si)=>(
+                  <div key={s.label} style={{ background:s.bg, border:`1px solid ${s.border}`, borderRadius:12, padding:'10px 6px', textAlign:'center', animation: mounted ? `statIn 0.45s cubic-bezier(.22,1,.36,1) ${.25 + si * 0.08}s both` : 'none' }}>
                     <div style={{ fontSize:18, fontWeight:900, color:s.color }}>{s.val}</div>
                     <div style={{ fontSize:10, color:'var(--text-muted)', fontWeight:600, marginTop:1 }}>{s.label}</div>
                   </div>
@@ -849,7 +861,7 @@ export default function HomePage() {
             if (doneCount === steps.length) return null
             const pct = Math.round(doneCount / steps.length * 100)
             return (
-              <div className="card" style={{ padding:'16px 18px' }}>
+              <div className="card" style={{ padding:'16px 18px', animation: mounted ? 'sideIn 0.5s cubic-bezier(.22,1,.36,1) .2s both' : 'none' }}>
                 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
                   <span style={{ fontSize:12, fontWeight:800, letterSpacing:'.06em', textTransform:'uppercase' as const, color:'var(--text-muted)' }}>Complete Profile</span>
                   <span style={{ fontSize:11, fontWeight:700, color:'var(--accent)' }}>{doneCount}/{steps.length}</span>
@@ -883,7 +895,7 @@ export default function HomePage() {
 
           {/* ── Start a club nudge (desktop sidebar) ── */}
           {profile && profile.role !== 'club_leader' && profile.role !== 'admin' && (
-            <div className="card" style={{ padding:'16px 18px' }}>
+            <div className="card" style={{ padding:'16px 18px', animation: mounted ? 'sideIn 0.5s cubic-bezier(.22,1,.36,1) .32s both' : 'none' }}>
               <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:12 }}>
                 <div style={{ width:34, height:34, borderRadius:'50%', background:'rgba(138,21,56,.22)', border:'1px solid rgba(138,21,56,.35)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#e57c9a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -903,7 +915,7 @@ export default function HomePage() {
 
           {/* ── Upcoming Events ── */}
           {sidebarEvents.length > 0 && (
-            <div className="card" style={{ padding:'16px 18px' }}>
+            <div className="card" style={{ padding:'16px 18px', animation: mounted ? 'sideIn 0.5s cubic-bezier(.22,1,.36,1) .42s both' : 'none' }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
                 <span style={{ fontSize:12, fontWeight:800, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-muted)' }}>Upcoming Events</span>
                 <button onClick={()=>nav('/events')} style={{ background:'none', border:'none', color:'var(--accent)', fontSize:11, fontWeight:700, cursor:'pointer', padding:0 }}>See all →</button>
@@ -939,7 +951,7 @@ export default function HomePage() {
 
           {/* ── Suggested Clubs ── */}
           {suggestedClubs.length > 0 && (
-            <div className="card" style={{ padding:'16px 18px' }}>
+            <div className="card" style={{ padding:'16px 18px', animation: mounted ? 'sideIn 0.5s cubic-bezier(.22,1,.36,1) .52s both' : 'none' }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
                 <span style={{ fontSize:12, fontWeight:800, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-muted)' }}>Discover Clubs</span>
                 <button onClick={()=>nav('/discovery')} style={{ background:'none', border:'none', color:'var(--accent)', fontSize:11, fontWeight:700, cursor:'pointer', padding:0 }}>Browse →</button>

@@ -3,7 +3,6 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { usePresence, type PresenceStatus } from '../../contexts/PresenceContext'
 import { supabase } from '../../lib/supabase'
-import UserQRModal from '../UserQRModal'
 
 const STATUS_OPTIONS: { value: PresenceStatus; label: string; color: string }[] = [
   { value: 'online',  label: 'Online',  color: '#22c55e' },
@@ -125,7 +124,6 @@ export default function SideNav({ open = false, onClose }: Props) {
   const [msgUnread, setMsgUnread] = useState(0)
   const [msgRequests, setMsgRequests] = useState(0)
   const [statusOpen, setStatusOpen] = useState(false)
-  const [qrOpen, setQrOpen] = useState(false)
   const statusRef = useRef<HTMLDivElement>(null)
 
   // Close status dropdown on outside click
@@ -484,7 +482,7 @@ export default function SideNav({ open = false, onClose }: Props) {
 
               {/* QR code button */}
               <button
-                onClick={() => setQrOpen(true)}
+                onClick={() => navigate('/qr')}
                 title="My QR Code"
                 style={{
                   width: 32, height: 32, borderRadius: 8, flexShrink: 0,
@@ -571,7 +569,6 @@ export default function SideNav({ open = false, onClose }: Props) {
         `}</style>
       </aside>
 
-      {qrOpen && <UserQRModal onClose={() => setQrOpen(false)} />}
     </>
   )
 }

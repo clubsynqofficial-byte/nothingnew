@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
-import UserQRModal from '../UserQRModal'
 
 interface Notification {
   id: string
@@ -55,7 +54,6 @@ export default function TopBar({ onMenuToggle }: Props) {
   const panelRef = useRef<HTMLDivElement>(null)
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
-  const [qrOpen, setQrOpen] = useState(false)
 
   // Search state
   const [sq, setSq] = useState('')
@@ -607,7 +605,7 @@ export default function TopBar({ onMenuToggle }: Props) {
                 {/* My QR Code */}
                 <button
                   className="pd-item"
-                  onClick={() => { setProfileOpen(false); setQrOpen(true) }}
+                  onClick={() => { setProfileOpen(false); navigate('/qr') }}
                   style={{
                     width: '100%', display: 'flex', alignItems: 'center', gap: 11,
                     padding: '10px 16px', background: 'none', border: 'none',
@@ -690,8 +688,6 @@ export default function TopBar({ onMenuToggle }: Props) {
         .pd-item:hover { background: rgba(255,255,255,0.05) !important; color: #fff !important; }
         .pd-signout:hover { background: rgba(255,60,60,0.08) !important; color: rgba(255,100,100,1) !important; }
       `}</style>
-
-      {qrOpen && <UserQRModal onClose={() => setQrOpen(false)} />}
 
       {/* ── Mobile search bar (slides down below topbar) ── */}
       {mobileSearchOpen && (
