@@ -573,14 +573,15 @@ export default function HomePage() {
           {/* Compose card */}
           <div className="card" style={{
             marginBottom:16,
-            boxShadow: focused ? '0 0 0 2px rgba(138,21,56,.5),0 4px 24px rgba(0,0,0,.5)' : '0 4px 24px rgba(0,0,0,.35)',
-            transition:'box-shadow .2s',
+            border: focused ? '1px solid rgba(138,21,56,.45)' : '1px solid rgba(255,255,255,.08)',
+            boxShadow: focused ? '0 0 0 3px rgba(138,21,56,.12),0 8px 32px rgba(0,0,0,.45)' : '0 2px 16px rgba(0,0,0,.3)',
+            transition:'border-color .2s, box-shadow .2s',
+            overflow:'visible',
           }}>
-            {/* gradient top strip */}
-            <div style={{ height:3, background:'linear-gradient(90deg,#8a1538,#c0185c,#e57c9a,#c0185c,#8a1538)', backgroundSize:'200% 100%' }}/>
-            <div style={{ padding:'16px 18px 0' }}>
-              <div style={{ display:'flex', gap:13, alignItems:'flex-start' }}>
-                <Av url={profile?.avatar_url??null} name={profile?.full_name??null} size={44}
+            {/* Main input area */}
+            <div style={{ padding:'16px 18px' }}>
+              <div style={{ display:'flex', gap:12, alignItems:'flex-start' }}>
+                <Av url={profile?.avatar_url??null} name={profile?.full_name??null} size={40}
                   onClick={() => nav('/profile')} ring />
                 <div style={{ flex:1, minWidth:0 }}>
                   {!showPoll && (
@@ -591,9 +592,9 @@ export default function HomePage() {
                       maxLength={500}
                       style={{
                         width:'100%', background:'transparent', border:'none', outline:'none',
-                        resize:'none', fontSize:15.5, color:'var(--text-primary)',
-                        fontFamily:'inherit', lineHeight:1.72, overflow:'hidden',
-                        minHeight: focused ? 72 : 46, paddingTop:4,
+                        resize:'none', fontSize:15, color:'var(--text-primary)',
+                        fontFamily:'inherit', lineHeight:1.65, overflow:'hidden',
+                        minHeight: focused ? 76 : 42, paddingTop:2,
                         transition:'min-height .2s', caretColor:'var(--accent)',
                       }}/>
                   )}
@@ -602,181 +603,130 @@ export default function HomePage() {
                       {previews.map((src, i) => (
                         <div key={i} style={{ position:'relative', borderRadius:12, overflow:'hidden', border:'1px solid rgba(255,255,255,.08)', lineHeight:0, aspectRatio: previews.length === 1 ? 'auto' : '1/1' }}>
                           <img src={src} alt="" style={{ width:'100%', height:'100%', objectFit:'cover', display:'block', maxHeight: previews.length === 1 ? 300 : 180 }}/>
-                          <button onClick={() => removeImg(i)} style={{
-                            position:'absolute', top:6, right:6, width:24, height:24, borderRadius:'50%',
-                            background:'rgba(0,0,0,.8)', border:'1px solid rgba(255,255,255,.2)',
-                            color:'#fff', fontSize:11, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center',
-                          }}>✕</button>
+                          <button onClick={() => removeImg(i)} style={{ position:'absolute', top:6, right:6, width:24, height:24, borderRadius:'50%', background:'rgba(0,0,0,.75)', border:'1px solid rgba(255,255,255,.15)', color:'#fff', fontSize:11, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>✕</button>
                         </div>
                       ))}
                     </div>
                   )}
-                  {compErr && <div style={{ fontSize:12, color:'#f87171', marginTop:8, padding:'5px 10px', borderRadius:8, background:'rgba(248,113,113,.08)' }}>{compErr}</div>}
+                  {compErr && <div style={{ fontSize:12, color:'#f87171', marginTop:8, padding:'6px 10px', borderRadius:8, background:'rgba(248,113,113,.08)', border:'1px solid rgba(248,113,113,.15)' }}>{compErr}</div>}
                 </div>
               </div>
             </div>
+
             {/* Poll builder */}
             {showPoll && (
-              <div style={{ padding: '0 18px 14px 74px' }}>
-                <div style={{ background: 'rgba(138,21,56,.06)', border: '1px solid rgba(138,21,56,.22)', borderRadius: 14, padding: '14px 16px' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10 }}>Poll</div>
-                  <input value={pollQuestion} onChange={e => setPollQuestion(e.target.value)} placeholder="Ask a question…" style={{ width: '100%', background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 9, padding: '8px 12px', color: 'var(--text-primary)', fontSize: 13, outline: 'none', fontFamily: 'inherit', marginBottom: 10, boxSizing: 'border-box' }} />
+              <div style={{ padding:'0 18px 14px' }}>
+                <div style={{ background:'rgba(138,21,56,.05)', border:'1px solid rgba(138,21,56,.18)', borderRadius:12, padding:'14px 16px' }}>
+                  <div style={{ fontSize:10.5, fontWeight:700, color:'var(--accent)', letterSpacing:'.08em', textTransform:'uppercase', marginBottom:10 }}>Poll</div>
+                  <input value={pollQuestion} onChange={e => setPollQuestion(e.target.value)} placeholder="Ask a question…" style={{ width:'100%', background:'rgba(255,255,255,.05)', border:'1px solid rgba(255,255,255,.09)', borderRadius:9, padding:'8px 12px', color:'var(--text-primary)', fontSize:13, outline:'none', fontFamily:'inherit', marginBottom:8, boxSizing:'border-box' }} />
                   {pollOptions.map((opt, i) => (
-                    <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 7 }}>
-                      <input value={opt} onChange={e => setPollOptions(prev => prev.map((o, j) => j === i ? e.target.value : o))} placeholder={`Option ${i + 1}`} style={{ flex: 1, background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.09)', borderRadius: 8, padding: '7px 11px', color: 'var(--text-primary)', fontSize: 13, outline: 'none', fontFamily: 'inherit' }} />
-                      {pollOptions.length > 2 && <button onClick={() => setPollOptions(prev => prev.filter((_, j) => j !== i))} style={{ background: 'transparent', border: 'none', color: 'rgba(248,113,113,.6)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>✕</button>}
+                    <div key={i} style={{ display:'flex', gap:6, marginBottom:6 }}>
+                      <input value={opt} onChange={e => setPollOptions(prev => prev.map((o, j) => j === i ? e.target.value : o))} placeholder={`Option ${i + 1}`} style={{ flex:1, background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.08)', borderRadius:8, padding:'7px 11px', color:'var(--text-primary)', fontSize:13, outline:'none', fontFamily:'inherit' }} />
+                      {pollOptions.length > 2 && <button onClick={() => setPollOptions(prev => prev.filter((_, j) => j !== i))} style={{ background:'transparent', border:'none', color:'rgba(248,113,113,.5)', cursor:'pointer', fontSize:16, padding:'0 4px' }}>✕</button>}
                     </div>
                   ))}
-                  {pollOptions.length < 4 && <button onClick={() => setPollOptions(prev => [...prev, ''])} style={{ fontSize: 12, color: 'var(--accent)', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit', fontWeight: 600 }}>+ Add option</button>}
+                  {pollOptions.length < 4 && <button onClick={() => setPollOptions(prev => [...prev, ''])} style={{ fontSize:12, color:'var(--accent)', background:'transparent', border:'none', cursor:'pointer', padding:0, fontFamily:'inherit', fontWeight:600 }}>+ Add option</button>}
                 </div>
               </div>
             )}
+
             {/* AI Writing Assistant */}
             {showAI && (
-              <div style={{ padding: '0 18px 16px', animation: 'ai-in .18s ease both' }}>
-                <div style={{ borderRadius: 14, border: '1px solid rgba(168,85,247,.22)', background: 'rgba(168,85,247,.04)', overflow: 'hidden' }}>
-
-                  {/* Header */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px 10px 16px', borderBottom: '1px solid rgba(168,85,247,.1)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                      <span style={{ fontSize: 15 }}>✨</span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: '#c084fc' }}>Write with AI</span>
+              <div style={{ padding:'0 18px 14px', animation:'ai-in .18s ease both' }}>
+                <div style={{ borderRadius:12, border:'1px solid rgba(168,85,247,.2)', background:'rgba(168,85,247,.04)', overflow:'hidden' }}>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 14px 9px 14px', borderBottom:'1px solid rgba(168,85,247,.1)' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                      <span style={{ fontSize:13 }}>✨</span>
+                      <span style={{ fontSize:12.5, fontWeight:700, color:'#c084fc' }}>Write with AI</span>
                     </div>
-                    <button onClick={() => { setShowAI(false); setAiResult(''); setAiPrompt('') }}
-                      style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '2px 4px', borderRadius: 6, transition: 'color .12s' }}
-                      onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-primary)' }}
-                      onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)' }}>✕</button>
+                    <button onClick={() => { setShowAI(false); setAiResult(''); setAiPrompt('') }} style={{ background:'none', border:'none', color:'var(--text-muted)', cursor:'pointer', fontSize:15, lineHeight:1, padding:'2px 4px', borderRadius:6, transition:'color .12s' }} onMouseEnter={e => { e.currentTarget.style.color='var(--text-primary)' }} onMouseLeave={e => { e.currentTarget.style.color='var(--text-muted)' }}>✕</button>
                   </div>
-
-                  <div style={{ padding: '12px 14px' }}>
-
-                    {/* Result card — shown above input when we have a result */}
+                  <div style={{ padding:'12px 14px' }}>
                     {aiResult && !aiLoading && (
-                      <div style={{ animation: 'ai-result-in .2s ease both', marginBottom: 12, background: 'rgba(255,255,255,.05)', border: '1px solid rgba(168,85,247,.18)', borderRadius: 10, padding: '12px 14px' }}>
-                        <p style={{ fontSize: 13.5, color: 'var(--text-primary)', lineHeight: 1.7, margin: '0 0 10px', whiteSpace: 'pre-wrap' }}>{aiResult}</p>
-                        <div style={{ display: 'flex', gap: 7 }}>
-                          <button className="ai-use" onClick={useAIResult}
-                            style={{ flex: 1, padding: '7px 0', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s' }}>
-                            Use this
-                          </button>
-                          <button className="ai-use" onClick={() => generateAI(txt.trim() ? 'improve' : undefined)}
-                            style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid rgba(168,85,247,.3)', background: 'transparent', color: '#a855f7', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s' }}>
-                            Retry
-                          </button>
+                      <div style={{ animation:'ai-result-in .2s ease both', marginBottom:12, background:'rgba(255,255,255,.04)', border:'1px solid rgba(168,85,247,.15)', borderRadius:10, padding:'12px 14px' }}>
+                        <p style={{ fontSize:13.5, color:'var(--text-primary)', lineHeight:1.7, margin:'0 0 10px', whiteSpace:'pre-wrap' }}>{aiResult}</p>
+                        <div style={{ display:'flex', gap:7 }}>
+                          <button className="ai-use" onClick={useAIResult} style={{ flex:1, padding:'7px 0', borderRadius:8, border:'none', background:'linear-gradient(135deg,#7c3aed,#a855f7)', color:'#fff', fontSize:12, fontWeight:700, cursor:'pointer', fontFamily:'inherit', transition:'all .15s' }}>Use this</button>
+                          <button className="ai-use" onClick={() => generateAI(txt.trim() ? 'improve' : undefined)} style={{ padding:'7px 14px', borderRadius:8, border:'1px solid rgba(168,85,247,.3)', background:'transparent', color:'#a855f7', fontSize:12, fontWeight:700, cursor:'pointer', fontFamily:'inherit', transition:'all .15s' }}>Retry</button>
                         </div>
                       </div>
                     )}
-
-                    {/* Loading */}
                     {aiLoading && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 0', marginBottom: 10 }}>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          {(['ai-dot-1 1.2s ease infinite', 'ai-dot-2 1.2s ease .18s infinite', 'ai-dot-3 1.2s ease .36s infinite'] as const).map((anim, i) => (
-                            <span key={i} style={{ width: 5, height: 5, borderRadius: '50%', background: '#a855f7', display: 'block', animation: anim }} />
+                      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 0', marginBottom:10 }}>
+                        <div style={{ display:'flex', gap:4 }}>
+                          {(['ai-dot-1 1.2s ease infinite','ai-dot-2 1.2s ease .18s infinite','ai-dot-3 1.2s ease .36s infinite'] as const).map((anim, i) => (
+                            <span key={i} style={{ width:5, height:5, borderRadius:'50%', background:'#a855f7', display:'block', animation:anim }} />
                           ))}
                         </div>
-                        <span style={{ fontSize: 12.5, color: '#c084fc', fontWeight: 600 }}>Writing…</span>
+                        <span style={{ fontSize:12, color:'#c084fc', fontWeight:600 }}>Writing…</span>
                       </div>
                     )}
-
-                    {/* Quick chips — hide while loading or after result */}
                     {!aiLoading && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-                        {txt.trim() && (
-                          <>
-                            <button className="ai-chip" onClick={() => generateAI('improve', 'Polish the writing and fix any grammar')} disabled={aiLoading}
-                              style={{ background: 'rgba(168,85,247,.1)', border: '1px solid rgba(168,85,247,.2)', color: '#c084fc' }}>✨ Polish</button>
-                            <button className="ai-chip" onClick={() => generateAI('improve', 'Make this shorter and punchier')} disabled={aiLoading}
-                              style={{ background: 'rgba(168,85,247,.1)', border: '1px solid rgba(168,85,247,.2)', color: '#c084fc' }}>Shorter</button>
-                            <button className="ai-chip" onClick={() => generateAI('improve', 'Make this more engaging and exciting')} disabled={aiLoading}
-                              style={{ background: 'rgba(168,85,247,.1)', border: '1px solid rgba(168,85,247,.2)', color: '#c084fc' }}>More engaging</button>
-                            <button className="ai-chip" onClick={() => generateAI('improve', 'Fix grammar and improve clarity')} disabled={aiLoading}
-                              style={{ background: 'rgba(168,85,247,.1)', border: '1px solid rgba(168,85,247,.2)', color: '#c084fc' }}>Fix grammar</button>
-                          </>
-                        )}
+                      <div style={{ display:'flex', flexWrap:'wrap', gap:5, marginBottom:10 }}>
+                        {txt.trim() && (<>
+                          <button className="ai-chip" onClick={() => generateAI('improve','Polish the writing and fix any grammar')} disabled={aiLoading} style={{ background:'rgba(168,85,247,.1)', border:'1px solid rgba(168,85,247,.2)', color:'#c084fc' }}>✨ Polish</button>
+                          <button className="ai-chip" onClick={() => generateAI('improve','Make this shorter and punchier')} disabled={aiLoading} style={{ background:'rgba(168,85,247,.1)', border:'1px solid rgba(168,85,247,.2)', color:'#c084fc' }}>Shorter</button>
+                          <button className="ai-chip" onClick={() => generateAI('improve','Make this more engaging and exciting')} disabled={aiLoading} style={{ background:'rgba(168,85,247,.1)', border:'1px solid rgba(168,85,247,.2)', color:'#c084fc' }}>More engaging</button>
+                          <button className="ai-chip" onClick={() => generateAI('improve','Fix grammar and improve clarity')} disabled={aiLoading} style={{ background:'rgba(168,85,247,.1)', border:'1px solid rgba(168,85,247,.2)', color:'#c084fc' }}>Fix grammar</button>
+                        </>)}
                       </div>
                     )}
-
-                    {/* Input with inline send */}
-                    <div style={{ position: 'relative' }}>
-                      <input
-                        value={aiPrompt}
-                        onChange={e => setAiPrompt(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter' && !aiLoading && (aiPrompt.trim() || txt.trim())) generateAI(txt.trim() ? 'improve' : undefined) }}
-                        placeholder={txt.trim() ? 'Any specific instructions? (optional)' : 'What do you want to write about?'}
-                        style={{ width: '100%', background: 'rgba(255,255,255,.06)', border: '1px solid rgba(168,85,247,.2)', borderRadius: 10, padding: '9px 44px 9px 13px', color: 'var(--text-primary)', fontSize: 13, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', caretColor: '#a855f7', transition: 'border-color .15s' }}
-                        onFocus={e => { e.currentTarget.style.borderColor = 'rgba(168,85,247,.5)' }}
-                        onBlur={e => { e.currentTarget.style.borderColor = 'rgba(168,85,247,.2)' }}
-                      />
-                      <button className="ai-send" onClick={() => generateAI(txt.trim() ? 'improve' : undefined)}
-                        disabled={aiLoading || (!aiPrompt.trim() && !txt.trim())}
-                        style={{ position: 'absolute', right: 7, top: '50%', transform: 'translateY(-50%)', width: 28, height: 28, borderRadius: '50%', border: 'none', background: (aiLoading || (!aiPrompt.trim() && !txt.trim())) ? 'rgba(168,85,247,.2)' : 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', cursor: (aiLoading || (!aiPrompt.trim() && !txt.trim())) ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all .15s', fontSize: 12, fontWeight: 700 }}>
-                        ↑
-                      </button>
+                    <div style={{ position:'relative' }}>
+                      <input value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} onKeyDown={e => { if (e.key==='Enter'&&!aiLoading&&(aiPrompt.trim()||txt.trim())) generateAI(txt.trim()?'improve':undefined) }} placeholder={txt.trim() ? 'Any specific instructions? (optional)' : 'What do you want to write about?'} style={{ width:'100%', background:'rgba(255,255,255,.05)', border:'1px solid rgba(168,85,247,.2)', borderRadius:9, padding:'9px 44px 9px 12px', color:'var(--text-primary)', fontSize:13, outline:'none', fontFamily:'inherit', boxSizing:'border-box', caretColor:'#a855f7', transition:'border-color .15s' }} onFocus={e => { e.currentTarget.style.borderColor='rgba(168,85,247,.5)' }} onBlur={e => { e.currentTarget.style.borderColor='rgba(168,85,247,.2)' }} />
+                      <button className="ai-send" onClick={() => generateAI(txt.trim()?'improve':undefined)} disabled={aiLoading||(!aiPrompt.trim()&&!txt.trim())} style={{ position:'absolute', right:7, top:'50%', transform:'translateY(-50%)', width:28, height:28, borderRadius:'50%', border:'none', background:(aiLoading||(!aiPrompt.trim()&&!txt.trim()))?'rgba(168,85,247,.2)':'linear-gradient(135deg,#7c3aed,#a855f7)', color:'#fff', cursor:(aiLoading||(!aiPrompt.trim()&&!txt.trim()))?'default':'pointer', display:'flex', alignItems:'center', justifyContent:'center', transition:'all .15s', fontSize:12, fontWeight:700 }}>↑</button>
                     </div>
-
                   </div>
                 </div>
               </div>
             )}
 
-            {/* toolbar */}
-            <div className="compose-toolbar" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 18px 14px 74px', borderTop:'1px solid rgba(255,255,255,.05)', marginTop:10 }}>
-              <div style={{ display: 'flex', gap: 4 }}>
+            {/* Toolbar */}
+            <div className="compose-toolbar" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 18px 14px', borderTop:'1px solid rgba(255,255,255,.06)' }}>
+              {/* Left: action buttons */}
+              <div style={{ display:'flex', alignItems:'center', gap:2 }}>
                 <input ref={imgRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple style={{ display:'none' }} onChange={onImgSel}/>
-                <button onClick={() => imgs.length < 4 && imgRef.current?.click()} disabled={imgs.length >= 4} style={{
-                  display:'inline-flex', alignItems:'center', gap:6, padding:'6px 12px', borderRadius:9999,
-                  border:'1px solid transparent', cursor: imgs.length >= 4 ? 'default' : 'pointer', fontFamily:'inherit', fontSize:13, fontWeight:600,
-                  background: imgs.length > 0 ? 'rgba(138,21,56,.18)' : 'transparent',
-                  color: imgs.length > 0 ? 'var(--accent)' : imgs.length >= 4 ? 'rgba(255,255,255,.2)' : 'var(--text-muted)', transition:'all .15s',
-                  opacity: imgs.length >= 4 ? .4 : 1,
-                }}
-                  onMouseEnter={e => { if (imgs.length < 4) { e.currentTarget.style.background='rgba(138,21,56,.12)'; e.currentTarget.style.color='var(--accent)' } }}
-                  onMouseLeave={e => { e.currentTarget.style.background=imgs.length>0?'rgba(138,21,56,.18)':'transparent'; e.currentTarget.style.color=imgs.length>0?'var(--accent)':'var(--text-muted)' }}
-                >
-                  <Img/>{imgs.length > 0 ? <span style={{ fontSize:11 }}>{imgs.length}/4</span> : <span>Photo</span>}
+                {/* Photo */}
+                <button title="Add photo" onClick={() => imgs.length < 4 && imgRef.current?.click()} disabled={imgs.length >= 4} style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', gap:5, width:34, height:34, borderRadius:9, border:'none', cursor:imgs.length>=4?'default':'pointer', fontFamily:'inherit', background:imgs.length>0?'rgba(138,21,56,.18)':'transparent', color:imgs.length>0?'var(--accent)':imgs.length>=4?'rgba(255,255,255,.2)':'var(--text-muted)', transition:'all .15s', opacity:imgs.length>=4?.35:1, position:'relative' }}
+                  onMouseEnter={e => { if(imgs.length<4){e.currentTarget.style.background='rgba(138,21,56,.12)';e.currentTarget.style.color='var(--accent)'} }}
+                  onMouseLeave={e => { e.currentTarget.style.background=imgs.length>0?'rgba(138,21,56,.18)':'transparent';e.currentTarget.style.color=imgs.length>0?'var(--accent)':'var(--text-muted)' }}>
+                  <Img/>
+                  {imgs.length > 0 && <span style={{ position:'absolute', top:3, right:3, width:14, height:14, borderRadius:'50%', background:'var(--accent)', color:'#fff', fontSize:8, fontWeight:800, display:'flex', alignItems:'center', justifyContent:'center' }}>{imgs.length}</span>}
                 </button>
-                {/* Poll toggle */}
-                <button onClick={() => setShowPoll(v => !v)} style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'6px 12px', borderRadius:9999, border:'1px solid transparent', cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:600, background: showPoll ? 'rgba(138,21,56,.2)' : 'transparent', color: showPoll ? 'var(--accent)' : 'var(--text-muted)', transition:'all .15s' }}
-                  onMouseEnter={e => { e.currentTarget.style.background='rgba(138,21,56,.14)'; e.currentTarget.style.color='var(--accent)' }}
-                  onMouseLeave={e => { e.currentTarget.style.background=showPoll?'rgba(138,21,56,.2)':'transparent'; e.currentTarget.style.color=showPoll?'var(--accent)':'var(--text-muted)' }}>
+                {/* Poll */}
+                <button title="Create poll" onClick={() => setShowPoll(v => !v)} style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:34, height:34, borderRadius:9, border:'none', cursor:'pointer', fontFamily:'inherit', background:showPoll?'rgba(138,21,56,.18)':'transparent', color:showPoll?'var(--accent)':'var(--text-muted)', transition:'all .15s' }}
+                  onMouseEnter={e => { e.currentTarget.style.background='rgba(138,21,56,.12)';e.currentTarget.style.color='var(--accent)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background=showPoll?'rgba(138,21,56,.18)':'transparent';e.currentTarget.style.color=showPoll?'var(--accent)':'var(--text-muted)' }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                  <span>Poll</span>
                 </button>
-                {/* Anonymous toggle */}
-                <button onClick={() => setAnon(v => !v)} style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'6px 12px', borderRadius:9999, border:'1px solid transparent', cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:600, background: anon ? 'rgba(138,21,56,.2)' : 'transparent', color: anon ? 'var(--accent)' : 'var(--text-muted)', transition:'all .15s' }}
-                  onMouseEnter={e => { e.currentTarget.style.background='rgba(138,21,56,.14)'; e.currentTarget.style.color='var(--accent)' }}
-                  onMouseLeave={e => { e.currentTarget.style.background=anon?'rgba(138,21,56,.2)':'transparent'; e.currentTarget.style.color=anon?'var(--accent)':'var(--text-muted)' }}>
+                {/* Anonymous */}
+                <button title="Post anonymously" onClick={() => setAnon(v => !v)} style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:34, height:34, borderRadius:9, border:'none', cursor:'pointer', fontFamily:'inherit', background:anon?'rgba(138,21,56,.18)':'transparent', color:anon?'var(--accent)':'var(--text-muted)', transition:'all .15s' }}
+                  onMouseEnter={e => { e.currentTarget.style.background='rgba(138,21,56,.12)';e.currentTarget.style.color='var(--accent)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background=anon?'rgba(138,21,56,.18)':'transparent';e.currentTarget.style.color=anon?'var(--accent)':'var(--text-muted)' }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                  <span>Anon</span>
                 </button>
-                {/* AI button */}
-                <button onClick={() => { setShowAI(v => !v); setAiResult(''); }}
-                  style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'6px 14px', borderRadius:9999, cursor:'pointer', fontFamily:'inherit', fontSize:13, fontWeight:700, transition:'all .15s',
-                    background: showAI ? 'rgba(168,85,247,.2)' : 'rgba(168,85,247,.08)',
-                    border: `1px solid ${showAI ? 'rgba(168,85,247,.5)' : 'rgba(168,85,247,.25)'}`,
-                    color: showAI ? '#a855f7' : 'rgba(168,85,247,.8)',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background='rgba(168,85,247,.18)'; e.currentTarget.style.borderColor='rgba(168,85,247,.5)'; e.currentTarget.style.color='#a855f7' }}
-                  onMouseLeave={e => { e.currentTarget.style.background=showAI?'rgba(168,85,247,.2)':'rgba(168,85,247,.08)'; e.currentTarget.style.borderColor=showAI?'rgba(168,85,247,.5)':'rgba(168,85,247,.25)'; e.currentTarget.style.color=showAI?'#a855f7':'rgba(168,85,247,.8)' }}>
-                  <span style={{ fontSize: 13 }}>✨</span>
-                  <span>AI</span>
+                {/* AI */}
+                <button title="Write with AI" onClick={() => { setShowAI(v => !v); setAiResult('') }} style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'0 10px', height:34, borderRadius:9, cursor:'pointer', fontFamily:'inherit', fontSize:12, fontWeight:700, transition:'all .15s', background:showAI?'rgba(168,85,247,.2)':'rgba(168,85,247,.08)', border:`1px solid ${showAI?'rgba(168,85,247,.45)':'rgba(168,85,247,.2)'}`, color:showAI?'#a855f7':'rgba(168,85,247,.75)' }}
+                  onMouseEnter={e => { e.currentTarget.style.background='rgba(168,85,247,.18)';e.currentTarget.style.borderColor='rgba(168,85,247,.45)';e.currentTarget.style.color='#a855f7' }}
+                  onMouseLeave={e => { e.currentTarget.style.background=showAI?'rgba(168,85,247,.2)':'rgba(168,85,247,.08)';e.currentTarget.style.borderColor=showAI?'rgba(168,85,247,.45)':'rgba(168,85,247,.2)';e.currentTarget.style.color=showAI?'#a855f7':'rgba(168,85,247,.75)' }}>
+                  <span style={{ fontSize:12 }}>✨</span> AI
                 </button>
               </div>
+
+              {/* Right: char count + post */}
               <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                 {txt.length > 350 && (
-                  <span style={{ fontSize:12, fontWeight:700, color: txt.length>480?'#f87171':'var(--text-muted)' }}>{500-txt.length}</span>
+                  <span style={{ fontSize:11.5, fontWeight:700, color:txt.length>480?'#f87171':'rgba(255,255,255,.3)' }}>{500-txt.length}</span>
                 )}
                 <button onClick={doPost} disabled={!canPost} style={{
-                  padding:'8px 22px', borderRadius:9999, border:'none', fontFamily:'inherit',
-                  background: canPost ? 'linear-gradient(135deg,#8a1538,#c0185c)' : 'rgba(87,65,68,.25)',
-                  color: canPost ? '#fff' : 'rgba(255,255,255,.2)',
-                  fontSize:14, fontWeight:800, letterSpacing:'.02em',
-                  cursor: canPost ? 'pointer' : 'default', opacity: posting ? .7 : 1,
-                  boxShadow: canPost ? '0 4px 20px rgba(138,21,56,.5)' : 'none',
+                  padding:'8px 20px', borderRadius:9999, border:'none', fontFamily:'inherit',
+                  background:canPost?'linear-gradient(135deg,#8a1538,#c0185c)':'rgba(87,65,68,.2)',
+                  color:canPost?'#fff':'rgba(255,255,255,.2)',
+                  fontSize:13.5, fontWeight:700, letterSpacing:'.02em',
+                  cursor:canPost?'pointer':'default', opacity:posting?.7:1,
+                  boxShadow:canPost?'0 4px 16px rgba(138,21,56,.45)':'none',
                   transition:'all .18s',
                 }}>
-                  {posting ? 'Posting…' : 'Post →'}
+                  {posting ? 'Posting…' : 'Post'}
                 </button>
               </div>
             </div>
