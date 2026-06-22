@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -275,7 +275,7 @@ function FootballAdminPage({ tournamentId }: { tournamentId: string }) {
   const [teams, setTeams] = useState<Record<string, Team>>({})
   const [cfg, setCfg] = useState<Config>(DEFAULT_CONFIG)
   const [tab, setTab] = useState<'ctrl' | 'match' | 'setup'>('ctrl')
-  const [isAdmin, setIsAdmin] = useState(false)
+
   const [clockRunning, setClockRunning] = useState(false)
   const [updatingTeam, setUpdatingTeam] = useState<string | null>(null)
   const [shareToast, setShareToast] = useState(false)
@@ -307,7 +307,7 @@ function FootballAdminPage({ tournamentId }: { tournamentId: string }) {
             .single()
           if (mem?.role === 'admin' || mem?.role === 'owner') flag = true
         }
-        setIsAdmin(flag)
+        void flag // isAdmin check reserved for future use
       }
 
       const { data: ms } = await supabase
