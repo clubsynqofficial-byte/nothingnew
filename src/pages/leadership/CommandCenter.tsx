@@ -380,7 +380,13 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
 
   async function deleteEvent(id: string) {
     setDeletingEventId(id)
-    await supabase.from('events').delete().eq('id', id)
+    const { error } = await supabase.from('events').delete().eq('id', id)
+    if (error) {
+      console.error('deleteEvent error:', error)
+      alert(`Could not delete event: ${error.message}`)
+      setDeletingEventId(null)
+      return
+    }
     setEvents(prev => prev.filter(e => e.id !== id))
     setDeleteEventConfirmId(null)
     setDeletingEventId(null)
