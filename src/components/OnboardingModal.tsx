@@ -64,11 +64,18 @@ export default function OnboardingModal({ onDone }: Props) {
   async function handleFinish() {
     if (!user) return
     setSaving(true)
+    // Write to DB but do NOT call refreshProfile() here — that would set
+    // profile.onboarded = true in memory, which unmounts this modal before
+    // the clubs step renders. refreshProfile() is called in handleDone() instead.
     await supabase.from('profiles').update({ interests: [...selected], onboarded: true }).eq('id', user.id)
-    await refreshProfile()
     setSaving(false)
     await fetchSuggestedClubs()
     setStep('clubs')
+  }
+
+  async function handleDone() {
+    await refreshProfile()
+    onDone()
   }
 
   async function fetchSuggestedClubs() {
@@ -264,7 +271,7 @@ export default function OnboardingModal({ onDone }: Props) {
               }
             </div>
 
-            <button onClick={onDone} style={{
+            <button onClick={handleDone} style={{
               width: '100%', padding: '12px', borderRadius: 12, border: 'none',
               background: joinedIds.size > 0 ? 'linear-gradient(135deg,#8a1538,#c0185c)' : 'rgba(87,65,68,.35)',
               color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer',

@@ -26,9 +26,12 @@ import TournamentsPage from './pages/tournaments/TournamentsPage'
 import TournamentDetailPage from './pages/tournaments/TournamentDetailPage'
 import TournamentScoreboardPage from './pages/tournaments/TournamentScoreboardPage'
 import BasketballScoreboardPage from './pages/tournaments/BasketballScoreboardPage'
+import FootballScoreboardPage from './pages/tournaments/FootballScoreboardPage'
 import MatchCommandCenterPage from './pages/tournaments/MatchCommandCenterPage'
 import MyTeamsPage from './pages/teams/MyTeamsPage'
 import MatchCenterPage from './pages/matches/MatchCenterPage'
+import MarketplacePage from './pages/marketplace/MarketplacePage'
+import ScanPage from './pages/scan/ScanPage'
 
 function RootRoute() {
   const { session, loading } = useAuth()
@@ -108,6 +111,12 @@ function BasketballScoreboardRoute() {
   return <ProtectedRoute><BasketballScoreboardPage /></ProtectedRoute>
 }
 
+function FootballScoreboardRoute() {
+  const [searchParams] = useSearchParams()
+  if (searchParams.get('view') === 'public') return <FootballScoreboardPage />
+  return <ProtectedRoute><FootballScoreboardPage /></ProtectedRoute>
+}
+
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
   if (loading) return <LoadingScreen />
@@ -174,9 +183,12 @@ function AppRoutes() {
       <Route path="/tournaments/:tournamentId" element={<ProtectedRoute><TournamentDetailPage /></ProtectedRoute>} />
       <Route path="/tournaments/:tournamentId/scoreboard" element={<TournamentScoreboardPage />} />
       <Route path="/tournaments/:tournamentId/scoreboard/basketball" element={<BasketballScoreboardRoute />} />
+      <Route path="/tournaments/:tournamentId/scoreboard/football" element={<FootballScoreboardRoute />} />
       <Route path="/tournaments/:tournamentId/control" element={<MatchCommandCenterPage />} />
       <Route path="/teams" element={<ProtectedRoute><MyTeamsPage /></ProtectedRoute>} />
       <Route path="/matches/:matchId" element={<ProtectedRoute><MatchCenterPage /></ProtectedRoute>} />
+      <Route path="/marketplace" element={<ProtectedRoute><MarketplacePage /></ProtectedRoute>} />
+      <Route path="/scan" element={<ProtectedRoute><ScanPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/home" replace />} />
     </Routes>
   )

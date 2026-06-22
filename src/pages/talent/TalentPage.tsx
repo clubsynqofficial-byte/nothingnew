@@ -458,6 +458,21 @@ export default function TalentPage() {
       {/* ── BROWSE ── */}
       {tab === 'browse' && (
         <div className="tp-panel">
+          {/* Skills nudge — shown when profile has no skills yet */}
+          {profile && profile.skills.length === 0 && (
+            <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px', marginBottom:20, background:'rgba(138,21,56,.08)', border:'1px solid rgba(138,21,56,.22)', borderRadius:14 }}>
+              <div style={{ fontSize:20, flexShrink:0 }}>🎯</div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:2 }}>Add skills to your profile</div>
+                <div style={{ fontSize:12, color:'var(--text-muted)', lineHeight:1.5 }}>Required to create listings and appear in skill match searches</div>
+              </div>
+              <button onClick={() => navigate('/settings')} style={{ padding:'7px 14px', borderRadius:9999, background:'rgba(138,21,56,.25)', border:'1px solid rgba(138,21,56,.45)', color:'#e57c9a', fontSize:12, fontWeight:700, cursor:'pointer', fontFamily:'inherit', flexShrink:0, transition:'all .15s' }}
+                onMouseEnter={e=>e.currentTarget.style.background='rgba(138,21,56,.45)'}
+                onMouseLeave={e=>e.currentTarget.style.background='rgba(138,21,56,.25)'}>
+                Add Skills →
+              </button>
+            </div>
+          )}
           {/* Search + filters */}
           <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: '14px 16px', marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ position: 'relative' }}>

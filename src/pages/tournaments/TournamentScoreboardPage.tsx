@@ -82,7 +82,7 @@ function BracketGrid({ matches, rounds, maxRound, teamMap }: { matches: Match[];
               {round === maxRound ? 'Final' : round === maxRound - 1 && rounds.length > 2 ? 'Semi-finals' : `Round ${round}`}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {matches.filter(m => m.round === round).map(match => {
+              {matches.filter(m => m.round === round && (m.team1_id || m.team2_id)).map(match => {
                 const t1 = match.team1_id ? teamMap[match.team1_id] : null
                 const t2 = match.team2_id ? teamMap[match.team2_id] : null
                 const isLive = match.status === 'live'
@@ -101,7 +101,7 @@ function BracketGrid({ matches, rounds, maxRound, teamMap }: { matches: Match[];
                       <div key={ri} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 11px', background: row.wins ? 'rgba(74,222,128,0.05)' : 'transparent', borderBottom: ri === 0 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
                         <Logo team={row.team} size={22} />
                         <span style={{ flex: 1, fontSize: 12.5, fontWeight: row.wins ? 700 : 400, color: row.loses ? 'rgba(255,255,255,0.22)' : row.wins ? '#fff' : 'rgba(255,255,255,0.7)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {row.team?.team_name ?? (!((ri === 0 ? t2 : t1)) ? 'Bye' : 'TBD')}
+                          {row.team?.team_name ?? 'TBD'}
                         </span>
                         {row.wins && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
                         <span style={{ fontSize: 18, fontWeight: 900, minWidth: 24, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: row.wins ? '#4ade80' : row.loses ? 'rgba(255,255,255,0.15)' : isLive ? '#f97316' : 'rgba(255,255,255,0.3)' }}>
@@ -480,11 +480,11 @@ export default function TournamentScoreboardPage() {
         )}
 
         {/* ── Results ── */}
-        {(hasSections ? completedMatches.filter(m => matchSection(m) === activeSec) : completedMatches).length > 0 && (
+        {(hasSections ? completedMatches.filter(m => matchSection(m) === activeSec && (m.team1_id && m.team2_id)) : completedMatches.filter(m => m.team1_id && m.team2_id)).length > 0 && (
           <div style={{ marginBottom: 52, animation: 'sb-in 0.55s ease both' }}>
             <SectionLabel>Results</SectionLabel>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {[...(hasSections ? completedMatches.filter(m => matchSection(m) === activeSec) : completedMatches)].reverse().slice(0, 12).map((match, i) => {
+              {[...(hasSections ? completedMatches.filter(m => matchSection(m) === activeSec && (m.team1_id && m.team2_id)) : completedMatches.filter(m => m.team1_id && m.team2_id))].reverse().slice(0, 12).map((match, i) => {
                 const t1 = match.team1_id ? teamMap[match.team1_id] : null
                 const t2 = match.team2_id ? teamMap[match.team2_id] : null
                 const t1w = match.winner_id === match.team1_id

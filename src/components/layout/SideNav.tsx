@@ -3,6 +3,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { usePresence, type PresenceStatus } from '../../contexts/PresenceContext'
 import { supabase } from '../../lib/supabase'
+import UserQRModal from '../UserQRModal'
 
 const STATUS_OPTIONS: { value: PresenceStatus; label: string; color: string }[] = [
   { value: 'online',  label: 'Online',  color: '#22c55e' },
@@ -78,6 +79,13 @@ const NAV_ICONS: Record<string, React.ReactNode> = {
       <path d="M18 2H6v7a6 6 0 0 0 12 0V2z"/>
     </svg>
   ),
+  '/marketplace': (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
+      <line x1="3" y1="6" x2="21" y2="6"/>
+      <path d="M16 10a4 4 0 0 1-8 0"/>
+    </svg>
+  ),
 }
 
 const NAV_PRIMARY = [
@@ -89,6 +97,7 @@ const NAV_PRIMARY = [
 
 const NAV_SECONDARY = [
   { path: '/talent',        label: 'Skill Souq'       },
+  { path: '/marketplace',   label: 'Campus Market'    },
   { path: '/collaboration', label: 'Co-Founder Match' },
   { path: '/tournaments',   label: 'Tournaments'      },
   { path: '/positions',     label: 'Open Positions'   },
@@ -110,6 +119,7 @@ export default function SideNav({ open = false, onClose }: Props) {
   const [msgUnread, setMsgUnread] = useState(0)
   const [msgRequests, setMsgRequests] = useState(0)
   const [statusOpen, setStatusOpen] = useState(false)
+  const [qrOpen, setQrOpen] = useState(false)
   const statusRef = useRef<HTMLDivElement>(null)
 
   // Close status dropdown on outside click
@@ -421,6 +431,27 @@ export default function SideNav({ open = false, onClose }: Props) {
                 <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{profile.karak_points} pts</div>
               </div>
 
+              {/* QR code button */}
+              <button
+                onClick={() => setQrOpen(true)}
+                title="My QR Code"
+                style={{
+                  width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.09)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer', color: 'var(--text-muted)',
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>
+                  <rect x="14" y="14" width="3" height="3" rx="0.5"/><rect x="18" y="14" width="3" height="3" rx="0.5"/><rect x="14" y="18" width="3" height="3" rx="0.5"/><rect x="18" y="18" width="3" height="3" rx="0.5"/>
+                </svg>
+              </button>
+
               {/* Status picker */}
               <div ref={statusRef} style={{ position: 'relative', flexShrink: 0 }}>
                 <button
@@ -488,6 +519,8 @@ export default function SideNav({ open = false, onClose }: Props) {
           }
         `}</style>
       </aside>
+
+      {qrOpen && <UserQRModal onClose={() => setQrOpen(false)} />}
     </>
   )
 }

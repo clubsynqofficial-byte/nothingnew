@@ -176,6 +176,7 @@ export default function TournamentDetailPage() {
   const [generatingBracket, setGeneratingBracket] = useState(false)
   const [assigningSlot, setAssigningSlot] = useState<{ matchId: string; slot: 'team1_id' | 'team2_id' } | null>(null)
   const [scoreboardFlow, setScoreboardFlow] = useState<null | 'sport' | 'template'>(null)
+  const [scoreboardSport, setScoreboardSport] = useState<string>('basketball')
   const [bracketActiveSection, setBracketActiveSection] = useState('')
   const [standingsPaused, setStandingsPaused] = useState(false)
   const standingsPausedRef = useRef(false)
@@ -655,6 +656,11 @@ export default function TournamentDetailPage() {
     await fetchAll()
     setGeneratingBracket(false)
     setTab('bracket')
+    if (scoreboardTemplate === 'Basketball Scoreboard Template') {
+      navigate(`/tournaments/${tournament.id}/scoreboard/basketball`)
+    } else if (scoreboardTemplate === 'Football Scoreboard Template') {
+      navigate(`/tournaments/${tournament.id}/scoreboard/football`)
+    }
   }
 
   async function generateRoundRobinSchedule() {
@@ -811,6 +817,8 @@ export default function TournamentDetailPage() {
           onClick={() => {
             const url = tournament.sport === 'Basketball'
               ? `/tournaments/${tournament.id}/scoreboard/basketball?view=public`
+              : tournament.sport === 'Football'
+              ? `/tournaments/${tournament.id}/scoreboard/football?view=public`
               : `/tournaments/${tournament.id}/control?view=public`
             navigate(url)
           }}
@@ -1271,17 +1279,15 @@ export default function TournamentDetailPage() {
               scoreboardFlow === 'sport' ? (
                 <ScoreboardSportPicker
                   onBack={() => setScoreboardFlow(null)}
-                  onSelect={() => setScoreboardFlow('template')}
+                  onSelect={(sport: string) => { setScoreboardSport(sport); setScoreboardFlow('template') }}
                 />
               ) : scoreboardFlow === 'template' ? (
                 <ScoreboardTemplatePicker
+                  sport={scoreboardSport}
                   onBack={() => setScoreboardFlow('sport')}
                   onSelect={t => {
                     setScoreboardTemplate(t)
                     setScoreboardFlow(null)
-                    if (t === 'Basketball Scoreboard Template') {
-                      navigate(`/tournaments/${tournament.id}/scoreboard/basketball`)
-                    }
                   }}
                 />
               ) : scoreboardTemplate ? (
@@ -1291,12 +1297,12 @@ export default function TournamentDetailPage() {
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <div style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(138,21,56,0.18)', border: '1px solid rgba(138,21,56,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
-                        {scoreboardTemplate === 'Round Robin Standings' ? '🏆' : '🏀'}
+                        {scoreboardTemplate === 'Round Robin Standings' ? '🏆' : scoreboardTemplate === 'Football Scoreboard Template' ? '⚽' : '🏀'}
                       </div>
                       <div>
                         <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)' }}>{scoreboardTemplate}</div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                          {scoreboardTemplate === 'Round Robin Standings' ? 'Round Robin · Selected template' : 'Basketball · Selected template'}
+                          {scoreboardTemplate === 'Round Robin Standings' ? 'Round Robin · Selected template' : scoreboardTemplate === 'Football Scoreboard Template' ? 'Football · Selected template' : 'Basketball · Selected template'}
                         </div>
                       </div>
                     </div>
@@ -1306,6 +1312,8 @@ export default function TournamentDetailPage() {
                   <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
                     {scoreboardTemplate === 'Round Robin Standings'
                       ? 'Every team plays every other team once. Add teams, then generate the full schedule.'
+                      : scoreboardTemplate === 'Basketball Scoreboard Template' || scoreboardTemplate === 'Football Scoreboard Template'
+                      ? 'Add the teams below, then hit Generate — you\'ll be taken straight to the live scoreboard.'
                       : 'Add all participating teams, then generate the scoreboard to create matchups.'}
                   </div>
 
@@ -1361,6 +1369,11 @@ export default function TournamentDetailPage() {
                       {matches.length > 0 && scoreboardTemplate === 'Basketball Scoreboard Template' && (
                         <button onClick={() => navigate(`/tournaments/${tournament.id}/scoreboard/basketball`)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '11px 20px', background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 12, color: '#4ade80', cursor: 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit' }}>
                           🏀 Launch Scoreboard
+                        </button>
+                      )}
+                      {matches.length > 0 && scoreboardTemplate === 'Football Scoreboard Template' && (
+                        <button onClick={() => navigate(`/tournaments/${tournament.id}/scoreboard/football`)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '11px 20px', background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 12, color: '#4ade80', cursor: 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit' }}>
+                          ⚽ Launch Scoreboard
                         </button>
                       )}
                     </div>
@@ -1533,7 +1546,7 @@ export default function TournamentDetailPage() {
                                         {round === secMax ? '🏆 Final' : round === secMax - 1 && secRounds.length > 2 ? 'Semi-finals' : `Round ${round}`}
                                       </div>
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                                        {secMatches.filter(m => m.round === round).map(match => (
+                                        {secMatches.filter(m => m.round === round && (m.team1_id || m.team2_id)).map(match => (
                                           <MatchCard
                                             key={match.id} match={match} teamMap={teamMap} isAdmin={isAdmin}
                                             isEditing={editMatch === match.id} editScore1={editScore1} editScore2={editScore2} savingMatch={savingMatch}
@@ -1573,7 +1586,7 @@ export default function TournamentDetailPage() {
                                 {round === Math.max(...rounds) ? '🏆 Final' : round === Math.max(...rounds) - 1 && rounds.length > 2 ? 'Semi-finals' : `Round ${round}`}
                               </div>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                                {matches.filter(m => m.round === round).map(match => (
+                                {matches.filter(m => m.round === round && (m.team1_id || m.team2_id)).map(match => (
                                   <MatchCard
                                     key={match.id} match={match} teamMap={teamMap} isAdmin={isAdmin}
                                     isEditing={editMatch === match.id} editScore1={editScore1} editScore2={editScore2} savingMatch={savingMatch}
@@ -1623,7 +1636,7 @@ export default function TournamentDetailPage() {
                               </div>
                             ) : (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                                {secMatches.map(match => (
+                                {(() => { const maxR = Math.max(...matches.map(m => m.round)); return secMatches.filter(m => m.team1_id || m.team2_id || m.round === maxR) })().map(match => (
                                   <MatchCard
                                     key={match.id} match={match} teamMap={teamMap} isAdmin={isAdmin}
                                     isEditing={editMatch === match.id} editScore1={editScore1} editScore2={editScore2} savingMatch={savingMatch}
@@ -1652,10 +1665,7 @@ export default function TournamentDetailPage() {
                         <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        {[...matches].sort((a, b) => {
-                          const order = { live: 0, scheduled: 1, completed: 2 }
-                          return (order[a.status] ?? 1) - (order[b.status] ?? 1)
-                        }).map(match => (
+                        {(() => { const maxR = Math.max(...matches.map(m => m.round)); return [...matches].filter(m => m.team1_id || m.team2_id || m.round === maxR).sort((a, b) => { const order = { live: 0, scheduled: 1, completed: 2 }; return (order[a.status] ?? 1) - (order[b.status] ?? 1) }) })().map(match => (
                           <MatchCard
                             key={match.id} match={match} teamMap={teamMap} isAdmin={isAdmin}
                             isEditing={editMatch === match.id} editScore1={editScore1} editScore2={editScore2} savingMatch={savingMatch}
@@ -2641,7 +2651,7 @@ function ScoreboardCreateCTA({ onStart }: { onStart: () => void }) {
 // ─── Scoreboard Sport Picker ──────────────────────────────────────────────────
 const SPORTS_LIST = [
   { key: 'universal', label: 'Universal', emoji: '🏆', locked: true },
-  { key: 'football', label: 'Football', emoji: '⚽', locked: true },
+  { key: 'football', label: 'Football', emoji: '⚽', locked: false },
   { key: 'baseball', label: 'Baseball', emoji: '⚾', locked: true },
   { key: 'basketball', label: 'Basketball', emoji: '🏀', locked: false },
   { key: 'badminton', label: 'Badminton', emoji: '🏸', locked: true },
@@ -2650,7 +2660,7 @@ const SPORTS_LIST = [
   { key: 'timer', label: 'Timer', emoji: '⏱️', locked: true },
 ] as const
 
-function ScoreboardSportPicker({ onBack, onSelect }: { onBack: () => void; onSelect: () => void }) {
+function ScoreboardSportPicker({ onBack, onSelect }: { onBack: () => void; onSelect: (sport: string) => void }) {
   return (
     <div style={{ animation: 'td-in 0.25s ease both' }}>
       <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0, fontSize: 13, fontFamily: 'inherit', marginBottom: 24 }}>
@@ -2665,7 +2675,7 @@ function ScoreboardSportPicker({ onBack, onSelect }: { onBack: () => void; onSel
         {SPORTS_LIST.map(sport => (
           <button
             key={sport.key}
-            onClick={() => !sport.locked && onSelect()}
+            onClick={() => !sport.locked && onSelect(sport.key)}
             disabled={sport.locked}
             style={{
               position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -2869,7 +2879,41 @@ const BASKETBALL_TEMPLATES = [
   },
 ]
 
-function ScoreboardTemplatePicker({ onBack, onSelect }: { onBack: () => void; onSelect: (t: string) => void }) {
+const FOOTBALL_TEMPLATES = [
+  {
+    key: 'Football Scoreboard Template',
+    preview: (
+      <div style={{ width: '100%', padding: '10px 12px', fontFamily: 'inherit' }}>
+        <div style={{ background: '#0a1628', borderRadius: 8, padding: '8px 12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 7, color: 'rgba(255,255,255,0.5)', marginBottom: 2 }}>HOME</div>
+              <div style={{ fontSize: 24, fontWeight: 900, color: '#16a34a', lineHeight: 1 }}>2</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 7, color: '#ef4444', fontWeight: 700 }}>1ST</div>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', fontVariantNumeric: 'tabular-nums' }}>38:00</div>
+              <div style={{ display: 'flex', gap: 4, marginTop: 2, justifyContent: 'center' }}>
+                <div style={{ width: 5, height: 7, background: '#facc15', borderRadius: 1 }} />
+                <div style={{ width: 5, height: 7, background: '#ef4444', borderRadius: 1 }} />
+              </div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 7, color: 'rgba(255,255,255,0.5)', marginBottom: 2 }}>AWAY</div>
+              <div style={{ fontSize: 24, fontWeight: 900, color: '#dc2626', lineHeight: 1 }}>1</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    ),
+  },
+]
+
+function ScoreboardTemplatePicker({ sport, onBack, onSelect }: { sport: string; onBack: () => void; onSelect: (t: string) => void }) {
+  const isFootball = sport === 'football'
+  const templates = isFootball ? FOOTBALL_TEMPLATES : BASKETBALL_TEMPLATES
+  const emoji = isFootball ? '⚽' : '🏀'
+  const sportLabel = isFootball ? 'Football' : 'Basketball'
   return (
     <div style={{ animation: 'td-in 0.25s ease both' }}>
       <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0, fontSize: 13, fontFamily: 'inherit', marginBottom: 24 }}>
@@ -2878,13 +2922,13 @@ function ScoreboardTemplatePicker({ onBack, onSelect }: { onBack: () => void; on
       </button>
       <div style={{ marginBottom: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          <span style={{ fontSize: 18 }}>🏀</span>
-          <h2 style={{ fontSize: 20, fontWeight: 900, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>Choose a Template</h2>
+          <span style={{ fontSize: 18 }}>{emoji}</span>
+          <h2 style={{ fontSize: 20, fontWeight: 900, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>{sportLabel} — Choose a Template</h2>
         </div>
         <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>Pick the scoreboard layout that fits your game</p>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14 }}>
-        {BASKETBALL_TEMPLATES.map(t => (
+        {templates.map(t => (
           <button
             key={t.key}
             onClick={() => onSelect(t.key)}

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { QRCodeCanvas } from 'qrcode.react'
+import { Html5Qrcode } from 'html5-qrcode'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import type { Club, Event } from '../../types'
@@ -101,6 +102,15 @@ interface ProfileSearchRow {
   full_name: string | null
   school: string | null
   email: string | null
+}
+
+interface ScanResultItem {
+  userId: string
+  name: string
+  avatar: string | null
+  status: 'success' | 'already' | 'not_found'
+  points: number
+  ts: number
 }
 
 interface Props {
@@ -243,6 +253,19 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
   const [tourLogoPreview, setTourLogoPreview] = useState<string | null>(null)
   const tourLogoRef = useRef<HTMLInputElement>(null)
 
+  // Scanner state
+  const [scanEvent, setScanEvent] = useState<Event | null>(null)
+  const [scanPhase, setScanPhase] = useState<'select' | 'active'>('select')
+  const [scanLastResult, setScanLastResult] = useState<ScanResultItem | null>(null)
+  const [scanHistory, setScanHistory] = useState<ScanResultItem[]>([])
+  const [scanProcessing, setScanProcessing] = useState(false)
+  const [scanCameraError, setScanCameraError] = useState<string | null>(null)
+  const scannerRef = useRef<Html5Qrcode | null>(null)
+  const scanLastScannedRef = useRef<{ id: string; time: number }>({ id: '', time: 0 })
+  const scanProcessingRef = useRef(false)
+  const scanEventRef = useRef<Event | null>(null)
+
+  useEffect(() => { scanEventRef.current = scanEvent }, [scanEvent])
 
   useEffect(() => { fetchAll() }, [club.id])
 
@@ -809,7 +832,61 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
     if (activeTab === 'analytics') fetchAnalytics()
     if (activeTab === 'applications') fetchApplications()
     if (activeTab === 'tournaments') fetchTournaments()
+    if (activeTab !== 'scan') {
+      if (scannerRef.current) { scannerRef.current.stop().catch(() => {}); scannerRef.current = null }
+      setScanPhase('select'); setScanEvent(null); setScanLastResult(null); setScanHistory([])
+    }
   }, [activeTab, club.id])
+
+  const startScanCamera = useCallback(async () => {
+    setScanCameraError(null)
+    await new Promise(r => setTimeout(r, 120))
+    try {
+      const scanner = new Html5Qrcode('cc-qr-reader')
+      scannerRef.current = scanner
+      await scanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 240, height: 240 } },
+        async (text: string) => {
+          if (scanProcessingRef.current) return
+          const now = Date.now()
+          if (scanLastScannedRef.current.id === text && now - scanLastScannedRef.current.time < 4000) return
+          scanLastScannedRef.current = { id: text, time: now }
+          scanProcessingRef.current = true
+          setScanProcessing(true)
+          const result = await processScan(text)
+          setScanLastResult(result)
+          setScanHistory(h => [result, ...h].slice(0, 50))
+          setScanProcessing(false)
+          scanProcessingRef.current = false
+        },
+        () => {},
+      )
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setScanCameraError(msg.toLowerCase().includes('permission') ? 'Camera permission denied.' : 'Could not access camera.')
+    }
+  }, [])
+
+  async function processScan(scannedUserId: string): Promise<ScanResultItem> {
+    const base = { userId: scannedUserId, ts: Date.now() }
+    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!uuidRe.test(scannedUserId)) return { ...base, name: 'Unknown QR', avatar: null, status: 'not_found', points: 0 }
+
+    const { data: p } = await supabase.from('profiles').select('id, full_name, avatar_url').eq('id', scannedUserId).maybeSingle()
+    if (!p) return { ...base, name: 'User not found', avatar: null, status: 'not_found', points: 0 }
+
+    const ev = scanEventRef.current
+    if (!ev) return { ...base, name: p.full_name ?? 'Student', avatar: p.avatar_url ?? null, status: 'not_found', points: 0 }
+
+    const { data: existing } = await supabase.from('event_attendees').select('event_id').eq('event_id', ev.id).eq('user_id', scannedUserId).maybeSingle()
+    if (existing) return { ...base, name: p.full_name ?? 'Student', avatar: p.avatar_url ?? null, status: 'already', points: 0 }
+
+    await supabase.from('event_attendees').insert({ event_id: ev.id, user_id: scannedUserId })
+    const pts = ev.karak_points_reward ?? 0
+    if (pts > 0) await supabase.from('karak_transactions').insert({ user_id: scannedUserId, points: pts, reason: `Attended: ${ev.title}`, event_id: ev.id })
+    return { ...base, name: p.full_name ?? 'Student', avatar: p.avatar_url ?? null, status: 'success', points: pts }
+  }
 
   const avgAttendees = stats.eventCount > 0 ? (stats.totalAttendees / stats.eventCount).toFixed(1) : '—'
   const liveCount = events.filter(e => e.is_live).length
@@ -836,31 +913,34 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
     </div>
   )
 
-  const TABS = [
-    { key: 'events',        label: 'Events',        badge: events.length,        visible: isPresident || canDo('manage_events') },
-    { key: 'tournaments',   label: 'Tournaments',   badge: tournaments.reduce((s, t) => s + t._pending, 0) || null, badgeColor: tournaments.some(t => t._pending > 0) ? '#f87171' : undefined, visible: isPresident || canDo('manage_events') },
-    { key: 'team',          label: 'Team',           badge: teamMembers.length,   visible: isPresident || canDo('remove_members') || canDo('accept_members') },
-    { key: 'applications',  label: 'Applications',   badge: applications.length,  visible: isPresident || canDo('accept_members'), badgeColor: applications.length > 0 ? '#f87171' : undefined },
-    { key: 'announcements', label: 'Announcements',  badge: announcements.length, visible: isPresident || canDo('post_announcements') },
-    { key: 'positions',     label: 'Positions',      badge: null,                 visible: isPresident },
-    { key: 'analytics',     label: 'Analytics',      badge: null,                 visible: isPresident },
-    { key: 'notes',         label: 'Notes',          badge: null,                 visible: isPresident || canDo('post_announcements') || canDo('manage_notes') },
-    { key: 'budget',        label: 'Budget',         badge: null,                 visible: isPresident || canDo('manage_budget') },
-    { key: 'settings',      label: 'Settings',       badge: null,                 visible: isPresident || canDo('edit_appearance') },
+  const ALL_TABS = [
+    { key: 'events',        label: 'Events',          badge: events.length,        badgeColor: undefined as string|undefined,                                                        tier: 1, visible: isPresident || canDo('manage_events') },
+    { key: 'team',          label: 'Team',             badge: teamMembers.length,   badgeColor: undefined as string|undefined,                                                        tier: 1, visible: isPresident || canDo('remove_members') || canDo('accept_members') },
+    { key: 'applications',  label: 'Applications',     badge: applications.length,  badgeColor: applications.length > 0 ? '#f87171' : undefined,                                     tier: 1, visible: isPresident || canDo('accept_members') },
+    { key: 'announcements', label: 'Announcements',    badge: announcements.length, badgeColor: undefined as string|undefined,                                                        tier: 1, visible: isPresident || canDo('post_announcements') },
+    { key: 'scan',          label: 'Scan Attendance',  badge: null,                 badgeColor: undefined as string|undefined,                                                        tier: 1, visible: isPresident || canDo('manage_events') },
+    { key: 'tournaments',   label: 'Tournaments',      badge: tournaments.reduce((s, t) => s + t._pending, 0) || null, badgeColor: tournaments.some(t => t._pending > 0) ? '#f87171' : undefined, tier: 2, visible: isPresident || canDo('manage_events') },
+    { key: 'analytics',     label: 'Analytics',        badge: null,                 badgeColor: undefined as string|undefined,                                                        tier: 2, visible: isPresident },
+    { key: 'notes',         label: 'Notes',            badge: null,                 badgeColor: undefined as string|undefined,                                                        tier: 2, visible: isPresident || canDo('post_announcements') || canDo('manage_notes') },
+    { key: 'budget',        label: 'Budget',           badge: null,                 badgeColor: undefined as string|undefined,                                                        tier: 2, visible: isPresident || canDo('manage_budget') },
+    { key: 'positions',     label: 'Positions',        badge: null,                 badgeColor: undefined as string|undefined,                                                        tier: 2, visible: isPresident },
+    { key: 'settings',      label: 'Settings',         badge: null,                 badgeColor: undefined as string|undefined,                                                        tier: 2, visible: isPresident || canDo('edit_appearance') },
   ].filter(t => t.visible)
+
+  const TABS         = ALL_TABS.filter(t => t.tier === 1)
+  const TABS_UTILITY = ALL_TABS.filter(t => t.tier === 2)
 
   return (
     <div className="page-content" style={{ maxWidth: 1100 }}>
       <style>{`
         @keyframes cc-pop { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
         .cc-panel { animation: cc-pop 0.25s cubic-bezier(0.22,1,0.36,1) both; }
-        .cc-tab { font-family:inherit; cursor:pointer; transition:all 0.18s; border:none; }
-        .cc-tab:hover { color:var(--text-primary) !important; }
-        .cc-tabs { display:flex; gap:3px; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.07); border-radius:14px; padding:4px; margin-bottom:20px; }
-        @media(max-width:640px) {
-          .cc-tabs { overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; border-radius:12px; }
-          .cc-tabs::-webkit-scrollbar { display:none; }
-          .cc-tab { flex:0 0 auto !important; padding:9px 14px !important; font-size:12px !important; white-space:nowrap; }
+        .cc-tab { font-family:inherit; cursor:pointer; transition:color 0.15s, background 0.15s; border:none; text-align:left; }
+        .cc-nav-item:hover { background:rgba(255,255,255,0.05) !important; color:var(--text-primary) !important; }
+        @media(max-width:700px) {
+          .cc-sidebar { display:none !important; }
+          .cc-mobile-tabs { display:flex !important; }
+          .cc-content { margin-left:0 !important; }
         }
         @keyframes cc-toast { from{opacity:0;transform:translateY(12px) scale(.97)} to{opacity:1;transform:none} }
       `}</style>
@@ -934,33 +1014,67 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
         </div>
       )}
 
-      {/* ── Tab bar ── */}
-      <div className="cc-tabs">
-        {TABS.map(t => (
-          <button key={t.key} className="cc-tab" onClick={() => setActiveTab(t.key)} style={{
-            flex:1, padding:'9px 10px', borderRadius:11, fontSize:13,
+      {/* ── Mobile tab bar (hidden on desktop) ── */}
+      <div className="cc-mobile-tabs" style={{ display:'none', overflowX:'auto', gap:2, marginBottom:20, scrollbarWidth:'none', WebkitOverflowScrolling:'touch' } as React.CSSProperties}>
+        {[...TABS, ...TABS_UTILITY].map(t => (
+          <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+            flexShrink:0, padding:'8px 14px', borderRadius:9, fontFamily:'inherit', fontSize:12, cursor:'pointer',
             fontWeight: activeTab === t.key ? 700 : 500,
             color: activeTab === t.key ? '#fff' : 'var(--text-muted)',
-            background: activeTab === t.key ? 'rgba(138,21,56,0.22)' : 'transparent',
-            border: activeTab === t.key ? '1px solid rgba(138,21,56,0.32)' : '1px solid transparent',
-            display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-            position: 'relative',
+            background: activeTab === t.key ? 'rgba(138,21,56,0.25)' : 'rgba(255,255,255,0.04)',
+            border: `1px solid ${activeTab === t.key ? 'rgba(138,21,56,0.4)' : 'rgba(255,255,255,0.07)'}`,
+            whiteSpace:'nowrap', display:'flex', alignItems:'center', gap:5,
           }}>
             {t.label}
             {t.badge !== null && t.badge > 0 && (
-              <span style={{
-                fontSize:11, fontWeight:700, padding:'1px 7px', borderRadius:99, minWidth:18,
-                background: (t as any).badgeColor
-                  ? `${(t as any).badgeColor}22`
-                  : activeTab === t.key ? 'rgba(138,21,56,0.35)' : 'rgba(255,255,255,0.07)',
-                color: (t as any).badgeColor ?? (activeTab === t.key ? '#f08' : 'var(--text-muted)'),
-                border: (t as any).badgeColor && activeTab !== t.key ? `1px solid ${(t as any).badgeColor}44` : 'none',
-                transition:'all 0.18s',
-              }}>{t.badge}</span>
+              <span style={{ fontSize:10, fontWeight:800, padding:'0 5px', borderRadius:99, background: t.badgeColor ? `${t.badgeColor}22` : 'rgba(255,255,255,0.1)', color: t.badgeColor ?? 'rgba(255,255,255,0.5)', border: t.badgeColor ? `1px solid ${t.badgeColor}44` : 'none' }}>{t.badge}</span>
             )}
           </button>
         ))}
       </div>
+
+      {/* ── Main layout: sidebar + content ── */}
+      <div style={{ display:'flex', gap:6, alignItems:'flex-start' }}>
+
+        {/* Sidebar nav */}
+        <div className="cc-sidebar" style={{ width:192, flexShrink:0, position:'sticky', top:24 }}>
+          <nav style={{ background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:6, display:'flex', flexDirection:'column', gap:1 }}>
+            {TABS.map(t => (
+              <button key={t.key} className="cc-nav-item" onClick={() => setActiveTab(t.key)} style={{
+                display:'flex', alignItems:'center', justifyContent:'space-between',
+                padding:'9px 12px', borderRadius:9, width:'100%', cursor:'pointer', fontFamily:'inherit',
+                background: activeTab === t.key ? 'rgba(138,21,56,0.2)' : 'transparent',
+                color: activeTab === t.key ? '#fff' : 'rgba(255,255,255,0.55)',
+                fontSize:13.5, fontWeight: activeTab === t.key ? 600 : 400,
+              }}>
+                <span style={{ borderLeft: activeTab === t.key ? '2px solid var(--accent)' : '2px solid transparent', paddingLeft:8, lineHeight:1.2 }}>{t.label}</span>
+                {t.badge !== null && t.badge > 0 && (
+                  <span style={{ fontSize:10, fontWeight:800, padding:'2px 7px', borderRadius:99, background: t.badgeColor ? `${t.badgeColor}20` : 'rgba(255,255,255,0.07)', color: t.badgeColor ?? 'rgba(255,255,255,0.35)', border: t.badgeColor ? `1px solid ${t.badgeColor}40` : 'none', flexShrink:0 }}>{t.badge}</span>
+                )}
+              </button>
+            ))}
+
+            <div style={{ height:1, background:'rgba(255,255,255,0.06)', margin:'4px 8px' }} />
+
+            {TABS_UTILITY.map(t => (
+              <button key={t.key} className="cc-nav-item" onClick={() => setActiveTab(t.key)} style={{
+                display:'flex', alignItems:'center', justifyContent:'space-between',
+                padding:'8px 12px', borderRadius:9, width:'100%', cursor:'pointer', fontFamily:'inherit',
+                background: activeTab === t.key ? 'rgba(138,21,56,0.2)' : 'transparent',
+                color: activeTab === t.key ? '#fff' : 'rgba(255,255,255,0.38)',
+                fontSize:13, fontWeight: activeTab === t.key ? 600 : 400,
+              }}>
+                <span style={{ borderLeft: activeTab === t.key ? '2px solid var(--accent)' : '2px solid transparent', paddingLeft:8, lineHeight:1.2 }}>{t.label}</span>
+                {t.badge !== null && t.badge > 0 && (
+                  <span style={{ fontSize:10, fontWeight:800, padding:'2px 7px', borderRadius:99, background: t.badgeColor ? `${t.badgeColor}20` : 'rgba(255,255,255,0.07)', color: t.badgeColor ?? 'rgba(255,255,255,0.35)', border: t.badgeColor ? `1px solid ${t.badgeColor}40` : 'none', flexShrink:0 }}>{t.badge}</span>
+                )}
+              </button>
+            ))}
+          </nav>
+        </div>
+
+        {/* Tab content */}
+        <div className="cc-content" style={{ flex:1, minWidth:0 }}>
 
       {/* ── Events tab ── */}
       {activeTab === 'events' && (
@@ -2592,6 +2706,117 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
           </div>
         )
       })()}
+
+      {/* ── Scan Attendance tab ── */}
+      {activeTab === 'scan' && (
+        <div key="scan" className="cc-panel">
+          <style>{`#cc-qr-reader{border-radius:14px;overflow:hidden} #cc-qr-reader video{border-radius:14px} @keyframes scanFlash{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}`}</style>
+
+          {scanPhase === 'select' && (
+            <>
+              <div style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', marginBottom:12 }}>Choose an event to scan members into</div>
+              {events.length === 0 ? (
+                <div style={{ fontSize:14, color:'var(--text-muted)', padding:'24px', textAlign:'center', background:'rgba(255,255,255,0.02)', borderRadius:14, border:'1px solid rgba(255,255,255,0.06)' }}>
+                  No events yet — create one first.
+                </div>
+              ) : (
+                <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:20 }}>
+                  {events.map(ev => (
+                    <button key={ev.id} onClick={() => setScanEvent(scanEvent?.id === ev.id ? null : ev)} style={{
+                      display:'flex', alignItems:'center', justifyContent:'space-between',
+                      padding:'13px 16px', borderRadius:12, cursor:'pointer',
+                      background: scanEvent?.id === ev.id ? 'rgba(138,21,56,0.18)' : 'rgba(255,255,255,0.03)',
+                      border:`1px solid ${scanEvent?.id === ev.id ? 'rgba(138,21,56,0.45)' : 'rgba(255,255,255,0.07)'}`,
+                      textAlign:'left', transition:'border-color 0.15s, background 0.15s', fontFamily:'inherit',
+                    }}>
+                      <div>
+                        <div style={{ fontSize:14, fontWeight:600, color:'var(--text-primary)', marginBottom:3 }}>{ev.title}</div>
+                        {ev.start_time && <div style={{ fontSize:11, color:'var(--text-muted)' }}>{new Date(ev.start_time).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>}
+                      </div>
+                      {ev.karak_points_reward > 0 && (
+                        <div style={{ fontSize:12, fontWeight:700, color:'var(--gold)', background:'rgba(233,193,118,0.1)', border:'1px solid rgba(233,193,118,0.2)', borderRadius:9999, padding:'3px 10px', flexShrink:0 }}>+{ev.karak_points_reward} pts</div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button disabled={!scanEvent} onClick={() => { setScanPhase('active'); startScanCamera() }} style={{
+                width:'100%', padding:'12px', borderRadius:12, border:'none', fontFamily:'inherit',
+                background: scanEvent ? 'var(--accent)' : 'rgba(138,21,56,0.25)',
+                color: scanEvent ? '#fff' : 'rgba(255,255,255,0.3)',
+                fontSize:14, fontWeight:700, cursor: scanEvent ? 'pointer' : 'not-allowed',
+              }}>
+                Start Camera
+              </button>
+            </>
+          )}
+
+          {scanPhase === 'active' && scanEvent && (
+            <>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', background:'rgba(138,21,56,0.12)', border:'1px solid rgba(138,21,56,0.3)', borderRadius:12, padding:'10px 14px', marginBottom:16 }}>
+                <div>
+                  <div style={{ fontSize:11, color:'var(--accent)', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:2 }}>Scanning for</div>
+                  <div style={{ fontSize:14, fontWeight:600, color:'var(--text-primary)' }}>{scanEvent.title}</div>
+                </div>
+                <button onClick={async () => { if (scannerRef.current) { await scannerRef.current.stop().catch(()=>{}); scannerRef.current = null } setScanPhase('select') }} style={{ background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.12)', borderRadius:8, padding:'6px 12px', color:'var(--text-muted)', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>
+                  Change
+                </button>
+              </div>
+
+              {scanLastResult && (
+                <div key={scanLastResult.ts} style={{
+                  display:'flex', alignItems:'center', gap:12,
+                  background:'var(--bg-card)', border:`1px solid ${scanLastResult.status==='success'?'rgba(34,197,94,0.3)':scanLastResult.status==='already'?'rgba(245,158,11,0.3)':'rgba(239,68,68,0.3)'}`,
+                  borderRadius:14, padding:'13px 16px', marginBottom:14,
+                  animation:'scanFlash 0.2s ease',
+                }}>
+                  <div style={{ width:40, height:40, borderRadius:'50%', flexShrink:0, background:'rgba(255,255,255,0.08)', overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center', fontSize:15, fontWeight:700, color:'#fff' }}>
+                    {scanLastResult.avatar ? <img src={scanLastResult.avatar} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }}/> : scanLastResult.name[0]?.toUpperCase()}
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:14, fontWeight:700, color:'var(--text-primary)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{scanLastResult.name}</div>
+                    <div style={{ fontSize:12, fontWeight:600, marginTop:2, color: scanLastResult.status==='success'?'#4ade80':scanLastResult.status==='already'?'#fbbf24':'#f87171' }}>
+                      {scanLastResult.status==='success'?'Checked In':scanLastResult.status==='already'?'Already Checked In':'Not Found'}
+                      {scanLastResult.status==='success' && scanLastResult.points>0 && ` · +${scanLastResult.points} pts`}
+                    </div>
+                  </div>
+                  <div style={{ fontSize:20 }}>{scanLastResult.status==='success'?'✓':scanLastResult.status==='already'?'⚠':'✗'}</div>
+                </div>
+              )}
+
+              {scanProcessing && <div style={{ textAlign:'center', fontSize:13, color:'var(--text-muted)', marginBottom:10 }}>Processing…</div>}
+
+              {scanCameraError ? (
+                <div style={{ background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.25)', borderRadius:14, padding:'24px', textAlign:'center', fontSize:13, color:'#f87171' }}>{scanCameraError}</div>
+              ) : (
+                <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:16, overflow:'hidden' }}>
+                  <div id="cc-qr-reader" />
+                </div>
+              )}
+
+              {scanHistory.length > 0 && (
+                <div style={{ marginTop:20 }}>
+                  <div style={{ fontSize:11, fontWeight:700, letterSpacing:'0.08em', color:'rgba(255,255,255,0.25)', textTransform:'uppercase', marginBottom:10 }}>Recent Scans ({scanHistory.length})</div>
+                  <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                    {scanHistory.slice(0,10).map((r,i) => (
+                      <div key={i} style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 14px', borderRadius:10, background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.05)' }}>
+                        <div style={{ width:7, height:7, borderRadius:'50%', flexShrink:0, background: r.status==='success'?'#4ade80':r.status==='already'?'#fbbf24':'#f87171' }}/>
+                        <div style={{ fontSize:13, color:'var(--text-primary)', flex:1 }}>{r.name}</div>
+                        <div style={{ fontSize:11, fontWeight:600, color: r.status==='success'?'#4ade80':r.status==='already'?'#fbbf24':'#f87171' }}>
+                          {r.status==='success'?'Checked In':r.status==='already'?'Already In':'Not Found'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+        </div>{/* end cc-content */}
+      </div>{/* end sidebar+content flex */}
 
       {/* ── Modals (always rendered) ── */}
       {showDeleteConfirm && createPortal(

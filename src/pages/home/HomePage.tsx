@@ -108,6 +108,7 @@ export default function HomePage() {
   const [openPostId, setOpenPostId] = useState<string | null>(null)
 
   const [anon, setAnon]             = useState(false)
+  const [feedTab, setFeedTab]       = useState<'for-you' | 'clubs'>('for-you')
 
   // Poll compose state
   const [showPoll, setShowPoll]     = useState(false)
@@ -135,9 +136,13 @@ export default function HomePage() {
 
   useEffect(() => { fetchFeed() }, [user])
   useEffect(() => {
-    const interval = setInterval(fetchFeed, 60000)
-    return () => clearInterval(interval)
-  }, [])
+    const channel = supabase
+      .channel('home-feed')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts' }, () => fetchFeed())
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'club_announcements' }, () => fetchFeed())
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [user])
   useEffect(() => {
     if (!menuId) return
     const h = () => setMenuId(null)
@@ -431,7 +436,8 @@ export default function HomePage() {
       .ai-send:hover:not(:disabled) { opacity:0.85!important; transform:scale(1.05); }
       .ai-use:hover { opacity:0.9!important; transform:translateY(-1px); }
       .hgrid { display:grid; grid-template-columns:1fr 300px; gap:22px; align-items:start }
-      @media(max-width:860px){ .hgrid{grid-template-columns:1fr} .sidebar{display:none!important} }
+      .mob-nudge { display:none }
+      @media(max-width:860px){ .hgrid{grid-template-columns:1fr} .sidebar{display:none!important} .mob-nudge{display:flex!important} }
       .card { background:#231518; border:1px solid rgba(255,255,255,0.08); border-radius:18px; overflow:hidden }
       .pcard { background:linear-gradient(145deg,#231518,#1e1214); border:1px solid rgba(255,255,255,0.07); border-radius:18px; overflow:hidden; transition:border-color .2s,box-shadow .2s,transform .18s }
       .pcard:hover { border-color:rgba(255,255,255,0.14); box-shadow:0 8px 36px rgba(0,0,0,.6); transform:translateY(-2px) }
@@ -510,6 +516,26 @@ export default function HomePage() {
 
         {/* ── Feed column ─ */}
         <div style={{ minWidth:0 }}>
+
+          {/* Profile completion — mobile only (sidebar handles desktop) */}
+          {profile && (profile.avatar_url === null || !profile.bio?.trim() || profile.skills.length === 0) && (
+            <div className="mob-nudge" style={{ alignItems:'center', gap:12, padding:'11px 14px', marginBottom:14, background:'rgba(138,21,56,.1)', border:'1px solid rgba(138,21,56,.25)', borderRadius:14 }}>
+              <div style={{ width:34, height:34, borderRadius:'50%', background:'rgba(138,21,56,.22)', border:'1px solid rgba(138,21,56,.35)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#e57c9a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              </div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:13, fontWeight:700, color:'#fff', marginBottom:1 }}>Complete your profile</div>
+                <div style={{ fontSize:11.5, color:'rgba(255,255,255,.45)' }}>
+                  {[!profile.avatar_url && 'photo', !profile.bio?.trim() && 'bio', profile.skills.length === 0 && 'skills'].filter(Boolean).join(', ')} missing · required for Skill Souq
+                </div>
+              </div>
+              <button onClick={()=>nav('/settings')} style={{ padding:'6px 14px', borderRadius:9999, background:'rgba(138,21,56,.3)', border:'1px solid rgba(138,21,56,.5)', color:'#e57c9a', fontSize:12, fontWeight:700, cursor:'pointer', fontFamily:'inherit', flexShrink:0, transition:'all .15s' }}
+                onMouseEnter={e=>e.currentTarget.style.background='rgba(138,21,56,.5)'}
+                onMouseLeave={e=>e.currentTarget.style.background='rgba(138,21,56,.3)'}>
+                Set up →
+              </button>
+            </div>
+          )}
 
           {/* Compose card */}
           <div className="card" style={{
@@ -723,24 +749,40 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Feed label */}
-          <div className="feed-label" style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12, paddingLeft:2 }}>
-            <div style={{ fontSize:13, fontWeight:800, color:'var(--text-muted)', letterSpacing:'.06em', textTransform:'uppercase' }}>
-              Campus Feed
-            </div>
+          {/* Feed tabs */}
+          <div style={{ display:'flex', gap:2, marginBottom:14, background:'rgba(255,255,255,.04)', borderRadius:12, padding:4, border:'1px solid rgba(255,255,255,.07)' }}>
+            {(['for-you', 'clubs'] as const).map(tab => {
+              const labels: Record<string, string> = { 'for-you': 'For You', 'clubs': 'My Clubs' }
+              const active = feedTab === tab
+              return (
+                <button key={tab} onClick={() => setFeedTab(tab)} style={{
+                  flex:1, padding:'8px 0', borderRadius:9, border:'none',
+                  background: active ? 'linear-gradient(135deg,rgba(138,21,56,.4),rgba(138,21,56,.22))' : 'transparent',
+                  color: active ? '#fff' : 'rgba(255,255,255,.4)',
+                  fontSize:13, fontWeight: active ? 700 : 500, cursor:'pointer',
+                  fontFamily:'inherit', transition:'all .15s',
+                  boxShadow: active ? '0 1px 8px rgba(0,0,0,.4)' : 'none',
+                }}>{labels[tab]}</button>
+              )
+            })}
           </div>
 
           {/* Posts + Announcements merged feed */}
-          {loading ? <Skeleton/> : (posts.length === 0 && announcements.length === 0) ? <Empty/> : (() => {
+          {loading ? <Skeleton/> : (() => {
             type FeedItem = { kind: 'post'; post: FeedPost } | { kind: 'ann'; ann: AnnouncementRow }
-            const items: FeedItem[] = [
+            const allItems: FeedItem[] = [
               ...posts.map(p => ({ kind: 'post' as const, post: p })),
               ...announcements.map(a => ({ kind: 'ann' as const, ann: a })),
-            ].sort((a, b) => {
+            ]
+            const items = (feedTab === 'clubs'
+              ? allItems.filter(item => item.kind === 'ann' && userClubIds.includes(item.ann.club_id))
+              : allItems
+            ).sort((a, b) => {
               const ta = a.kind === 'post' ? a.post.created_at : a.ann.created_at
               const tb = b.kind === 'post' ? b.post.created_at : b.ann.created_at
               return new Date(tb).getTime() - new Date(ta).getTime()
             })
+            if (items.length === 0) return <Empty tab={feedTab} />
             return (
               <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
                 {items.map((item, i) =>
@@ -812,6 +854,49 @@ export default function HomePage() {
               >View full profile →</button>
             </div>
           </div>
+
+          {/* ── Profile completion ── */}
+          {profile && (() => {
+            const steps = [
+              { key:'photo',  label:'Add a profile photo', done: !!profile.avatar_url },
+              { key:'bio',    label:'Write a short bio',   done: !!(profile.bio?.trim()) },
+              { key:'skills', label:'Add your skills',     done: profile.skills.length > 0 },
+            ]
+            const doneCount = steps.filter(s => s.done).length
+            if (doneCount === steps.length) return null
+            const pct = Math.round(doneCount / steps.length * 100)
+            return (
+              <div className="card" style={{ padding:'16px 18px' }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+                  <span style={{ fontSize:12, fontWeight:800, letterSpacing:'.06em', textTransform:'uppercase' as const, color:'var(--text-muted)' }}>Complete Profile</span>
+                  <span style={{ fontSize:11, fontWeight:700, color:'var(--accent)' }}>{doneCount}/{steps.length}</span>
+                </div>
+                <div style={{ height:3, background:'rgba(255,255,255,.06)', borderRadius:99, marginBottom:14, overflow:'hidden' }}>
+                  <div style={{ height:'100%', width:`${pct}%`, background:'linear-gradient(90deg,#8a1538,#c0185c)', borderRadius:99, transition:'width .4s ease' }}/>
+                </div>
+                <div style={{ display:'flex', flexDirection:'column', gap:9, marginBottom:14 }}>
+                  {steps.map(step => (
+                    <div key={step.key} style={{ display:'flex', alignItems:'center', gap:10 }}>
+                      <div style={{ width:20, height:20, borderRadius:'50%', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', background: step.done ? 'rgba(34,197,94,.12)' : 'rgba(255,255,255,.05)', border:`1px solid ${step.done ? 'rgba(34,197,94,.28)' : 'rgba(255,255,255,.1)'}` }}>
+                        {step.done
+                          ? <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                          : <div style={{ width:5, height:5, borderRadius:'50%', background:'rgba(255,255,255,.22)' }}/>}
+                      </div>
+                      <span style={{ fontSize:12.5, flex:1, color: step.done ? 'rgba(255,255,255,.25)' : 'rgba(255,255,255,.75)', fontWeight: step.done ? 400 : 600, textDecoration: step.done ? 'line-through' : 'none' }}>{step.label}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ fontSize:11, color:'rgba(255,255,255,.28)', marginBottom:12, lineHeight:1.5 }}>
+                  Skills &amp; bio required for Skill Souq and Co-Founder Match
+                </div>
+                <button onClick={()=>nav('/settings')} style={{ width:'100%', padding:'8px', borderRadius:10, background:'linear-gradient(135deg,rgba(138,21,56,.22),rgba(138,21,56,.08))', border:'1px solid rgba(138,21,56,.32)', color:'#e57c9a', fontSize:12.5, fontWeight:700, cursor:'pointer', fontFamily:'inherit', transition:'background .15s' }}
+                  onMouseEnter={e=>e.currentTarget.style.background='rgba(138,21,56,.32)'}
+                  onMouseLeave={e=>e.currentTarget.style.background='linear-gradient(135deg,rgba(138,21,56,.22),rgba(138,21,56,.08))'}>
+                  Complete Profile →
+                </button>
+              </div>
+            )
+          })()}
 
           {/* ── Upcoming Events ── */}
           {sidebarEvents.length > 0 && (
@@ -1617,15 +1702,20 @@ function Skeleton() {
   )
 }
 
-function Empty() {
+function Empty({ tab }: { tab: 'for-you' | 'clubs' }) {
   const nav = useNavigate()
+  const isClubs = tab === 'clubs'
   return (
     <div style={{ textAlign:'center', padding:'60px 20px', display:'flex', flexDirection:'column', alignItems:'center', gap:20 }}>
       <div style={{ width:80,height:80,borderRadius:'50%',background:'linear-gradient(135deg,rgba(138,21,56,.25),rgba(138,21,56,.05))',border:'1px solid rgba(138,21,56,.25)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:34,boxShadow:'0 0 40px rgba(138,21,56,.15)' }}>🏛️</div>
       <div>
-        <div style={{ fontSize:18,fontWeight:800,color:'var(--text-primary)',marginBottom:8 }}>Your feed is quiet</div>
+        <div style={{ fontSize:18,fontWeight:800,color:'var(--text-primary)',marginBottom:8 }}>
+          {isClubs ? 'No club announcements yet' : 'Your feed is quiet'}
+        </div>
         <div style={{ fontSize:13,color:'var(--text-muted)',lineHeight:1.65,maxWidth:280 }}>
-          Join clubs to see their announcements and posts here. The more clubs you join, the richer your feed gets.
+          {isClubs
+            ? 'Join clubs to see their announcements here. The more clubs you join, the richer this tab gets.'
+            : 'Join clubs to see their announcements and posts here. The more clubs you join, the richer your feed gets.'}
         </div>
       </div>
       <div style={{ display:'flex', gap:10 }}>
