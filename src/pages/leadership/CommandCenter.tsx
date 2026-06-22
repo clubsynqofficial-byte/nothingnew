@@ -234,6 +234,8 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
   const [showTournamentForm, setShowTournamentForm] = useState(false)
   const [deleteTournamentConfirmId, setDeleteTournamentConfirmId] = useState<string | null>(null)
   const [deletingTournamentId, setDeletingTournamentId] = useState<string | null>(null)
+  const [deleteEventConfirmId, setDeleteEventConfirmId] = useState<string | null>(null)
+  const [deletingEventId, setDeletingEventId] = useState<string | null>(null)
   const tourType = 'bracket' as const
   const [tourName, setTourName] = useState('')
   const [tourSport, setTourSport] = useState('Basketball')
@@ -374,6 +376,14 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
     setTournaments(prev => prev.filter(t => t.id !== id))
     setDeleteTournamentConfirmId(null)
     setDeletingTournamentId(null)
+  }
+
+  async function deleteEvent(id: string) {
+    setDeletingEventId(id)
+    await supabase.from('events').delete().eq('id', id)
+    setEvents(prev => prev.filter(e => e.id !== id))
+    setDeleteEventConfirmId(null)
+    setDeletingEventId(null)
   }
 
   async function createTournament() {
@@ -1140,6 +1150,29 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
                           {(!isCompleted || ev.is_live) && (
                             <button onClick={() => toggleLive(ev)} style={{ padding:'4px 12px', borderRadius:9999, border:ev.is_live?'1px solid rgba(255,180,171,0.4)':'1px solid rgba(87,65,68,0.3)', background:ev.is_live?'rgba(255,180,171,0.1)':'transparent', color:ev.is_live?'var(--live-red)':'var(--text-muted)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
                               {ev.is_live ? '● LIVE' : 'Go Live'}
+                            </button>
+                          )}
+                          {/* Delete */}
+                          {deleteEventConfirmId === ev.id ? (
+                            <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                              <button
+                                onClick={() => deleteEvent(ev.id)}
+                                disabled={deletingEventId === ev.id}
+                                style={{ padding:'4px 10px', borderRadius:9999, border:'1px solid rgba(239,68,68,0.5)', background:'rgba(239,68,68,0.15)', color:'#f87171', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}
+                              >
+                                {deletingEventId === ev.id ? '…' : 'Confirm'}
+                              </button>
+                              <button onClick={() => setDeleteEventConfirmId(null)} style={{ padding:'4px 8px', borderRadius:9999, border:'1px solid rgba(255,255,255,0.1)', background:'transparent', color:'var(--text-muted)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setDeleteEventConfirmId(ev.id)}
+                              title="Delete event"
+                              style={{ width:28, height:28, borderRadius:9999, border:'1px solid rgba(239,68,68,0.25)', background:'rgba(239,68,68,0.06)', color:'rgba(248,113,113,0.6)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
                             </button>
                           )}
                         </div>
