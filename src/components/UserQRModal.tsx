@@ -177,11 +177,16 @@ export default function UserQRModal({ onClose, successEvent }: Props) {
                     <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {ev.title}
                     </div>
-                    {ev.start_time && (
-                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 1 }}>
-                        {new Date(ev.start_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                      </div>
-                    )}
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>
+                      {ev.start_time && (
+                        <span>{new Date(ev.start_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · </span>
+                      )}
+                      {ev.checked_in_at && (
+                        <span style={{ color: 'rgba(74,222,128,0.6)' }}>
+                          Checked in {new Date(ev.checked_in_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   {ev.karak_points_reward > 0 && (
                     <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold)', flexShrink: 0 }}>
