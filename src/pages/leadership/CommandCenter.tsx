@@ -157,6 +157,12 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
   const [expandedAttendeeEventId, setExpandedAttendeeEventId] = useState<string | null>(null)
   const [eventAttendees, setEventAttendees] = useState<Record<string, Array<{ id: string; full_name: string | null; avatar_url: string | null }>>>({})
   const [loadingAttendees, setLoadingAttendees] = useState<string | null>(null)
+  // Registered (pre-registered) list state
+  const [expandedRegisteredEventId, setExpandedRegisteredEventId] = useState<string | null>(null)
+  const [eventRegistered, setEventRegistered] = useState<Record<string, Array<{ id: string; full_name: string | null; avatar_url: string | null }>>>({})
+  const [loadingRegistered, setLoadingRegistered] = useState<string | null>(null)
+  const [registeredCountByEvent, setRegisteredCountByEvent] = useState<Record<string, number>>({})
+  const [checkedInCountByEvent, setCheckedInCountByEvent] = useState<Record<string, number>>({})
 
   // Announcement state
   const [annContent, setAnnContent] = useState('')
@@ -318,10 +324,19 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
     const evList = eventsRes.data ?? []
     const eventIds = evList.map(e => e.id)
 
-    // Count real check-ins from event_attendees (not the stale attendee_count column)
+    // Count registrations and check-ins separately
     const { data: attendeeRows } = eventIds.length > 0
-      ? await supabase.from('event_attendees').select('event_id').in('event_id', eventIds)
-      : { data: [] as { event_id: string }[] }
+      ? await supabase.from('event_attendees').select('event_id, registered_at, checked_in_at').in('event_id', eventIds)
+      : { data: [] as { event_id: string; registered_at: string | null; checked_in_at: string | null }[] }
+
+    const regMap: Record<string, number> = {}
+    const cinMap: Record<string, number> = {}
+    for (const r of attendeeRows ?? []) {
+      if (r.checked_in_at) cinMap[r.event_id] = (cinMap[r.event_id] ?? 0) + 1
+      else regMap[r.event_id] = (regMap[r.event_id] ?? 0) + 1
+    }
+    setRegisteredCountByEvent(regMap)
+    setCheckedInCountByEvent(cinMap)
 
     const countByEvent = (attendeeRows ?? []).reduce<Record<string, number>>((acc, r) => {
       acc[r.event_id] = (acc[r.event_id] ?? 0) + 1
@@ -656,15 +671,34 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
   async function toggleAttendees(eventId: string) {
     if (expandedAttendeeEventId === eventId) { setExpandedAttendeeEventId(null); return }
     setExpandedAttendeeEventId(eventId)
+    setExpandedRegisteredEventId(null)
     if (eventAttendees[eventId]) return
     setLoadingAttendees(eventId)
     const { data } = await supabase
       .from('event_attendees')
       .select('profile:profiles(id, full_name, avatar_url)')
       .eq('event_id', eventId)
-    const profiles = (data ?? []).map((r: any) => r.profile).filter(Boolean)
+      .not('checked_in_at', 'is', null)
+    const profiles = (data ?? []).map((r: any) => Array.isArray(r.profile) ? r.profile[0] : r.profile).filter(Boolean)
     setEventAttendees(prev => ({ ...prev, [eventId]: profiles }))
     setLoadingAttendees(null)
+  }
+
+  async function toggleRegistered(eventId: string) {
+    if (expandedRegisteredEventId === eventId) { setExpandedRegisteredEventId(null); return }
+    setExpandedRegisteredEventId(eventId)
+    setExpandedAttendeeEventId(null)
+    if (eventRegistered[eventId]) return
+    setLoadingRegistered(eventId)
+    const { data } = await supabase
+      .from('event_attendees')
+      .select('profile:profiles(id, full_name, avatar_url)')
+      .eq('event_id', eventId)
+      .not('registered_at', 'is', null)
+      .is('checked_in_at', null)
+    const profiles = (data ?? []).map((r: any) => Array.isArray(r.profile) ? r.profile[0] : r.profile).filter(Boolean)
+    setEventRegistered(prev => ({ ...prev, [eventId]: profiles }))
+    setLoadingRegistered(null)
   }
 
   async function fetchEventAnnouncements(eventId: string) {
@@ -913,12 +947,25 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
     const ev = scanEventRef.current
     if (!ev) return { ...base, name: p.full_name ?? 'Student', avatar: p.avatar_url ?? null, status: 'not_found', points: 0 }
 
-    const { data: existing } = await supabase.from('event_attendees').select('event_id').eq('event_id', ev.id).eq('user_id', scannedUserId).maybeSingle()
-    if (existing) return { ...base, name: p.full_name ?? 'Student', avatar: p.avatar_url ?? null, status: 'already', points: 0 }
+    const { data: existing } = await supabase.from('event_attendees').select('event_id, checked_in_at').eq('event_id', ev.id).eq('user_id', scannedUserId).maybeSingle()
+    // Already physically checked in
+    if (existing?.checked_in_at) return { ...base, name: p.full_name ?? 'Student', avatar: p.avatar_url ?? null, status: 'already', points: 0 }
 
-    await supabase.from('event_attendees').insert({ event_id: ev.id, user_id: scannedUserId })
+    const now = new Date().toISOString()
     const pts = ev.karak_points_reward ?? 0
+    if (existing) {
+      // Pre-registered — update to mark as checked in
+      await supabase.from('event_attendees').update({ checked_in_at: now }).eq('event_id', ev.id).eq('user_id', scannedUserId)
+    } else {
+      await supabase.from('event_attendees').insert({ event_id: ev.id, user_id: scannedUserId, checked_in_at: now })
+    }
     if (pts > 0) await supabase.from('karak_transactions').insert({ user_id: scannedUserId, points: pts, reason: `Attended: ${ev.title}`, event_id: ev.id })
+    // Bust the local caches so the dropdowns refetch fresh data
+    setEventAttendees(prev => { const n = { ...prev }; delete n[ev.id]; return n })
+    setEventRegistered(prev => { const n = { ...prev }; delete n[ev.id]; return n })
+    // Update live counts
+    setCheckedInCountByEvent(prev => ({ ...prev, [ev.id]: (prev[ev.id] ?? 0) + 1 }))
+    if (existing) setRegisteredCountByEvent(prev => ({ ...prev, [ev.id]: Math.max((prev[ev.id] ?? 1) - 1, 0) }))
     return { ...base, name: p.full_name ?? 'Student', avatar: p.avatar_url ?? null, status: 'success', points: pts }
   }
 
@@ -1143,8 +1190,12 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
                           </div>
                           <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
                             <span style={{ fontSize:11, color:'var(--text-muted)' }}>{ev.location ?? 'No location'} · {ev.karak_points_reward} pts</span>
+                            <button onClick={() => toggleRegistered(ev.id)} style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:9999, background:'rgba(168,85,247,0.1)', border:'1px solid rgba(168,85,247,0.25)', color:'#c084fc', cursor:'pointer', fontFamily:'inherit' }}>
+                              📋 {registeredCountByEvent[ev.id] ?? 0} registered
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ transform: expandedRegisteredEventId === ev.id ? 'rotate(180deg)' : 'none', transition:'transform 0.2s', flexShrink:0 }}><polyline points="6 9 12 15 18 9"/></svg>
+                            </button>
                             <button onClick={() => toggleAttendees(ev.id)} style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:9999, background:'rgba(14,165,233,0.1)', border:'1px solid rgba(14,165,233,0.25)', color:'#38bdf8', cursor:'pointer', fontFamily:'inherit' }}>
-                              👥 {ev.attendee_count} checked in
+                              👥 {checkedInCountByEvent[ev.id] ?? 0} checked in
                               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ transform: expandedAttendeeEventId === ev.id ? 'rotate(180deg)' : 'none', transition:'transform 0.2s', flexShrink:0 }}><polyline points="6 9 12 15 18 9"/></svg>
                             </button>
                           </div>
@@ -1184,9 +1235,33 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
                         </div>
                       </div>
 
-                      {/* Attendees expanded list */}
+                      {/* Registered expanded list */}
+                      {expandedRegisteredEventId === ev.id && (
+                        <div style={{ borderTop:'1px solid rgba(168,85,247,0.15)', padding:'12px 16px', background:'rgba(168,85,247,0.04)' }}>
+                          <div style={{ fontSize:10.5, fontWeight:700, color:'#c084fc', textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:8 }}>Registered</div>
+                          {loadingRegistered === ev.id ? (
+                            <div style={{ fontSize:12, color:'var(--text-muted)' }}>Loading…</div>
+                          ) : (eventRegistered[ev.id] ?? []).length === 0 ? (
+                            <div style={{ fontSize:12, color:'var(--text-muted)' }}>No registrations yet.</div>
+                          ) : (
+                            <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+                              {(eventRegistered[ev.id] ?? []).map(p => (
+                                <div key={p.id} style={{ display:'flex', alignItems:'center', gap:7, background:'rgba(168,85,247,0.08)', border:'1px solid rgba(168,85,247,0.2)', borderRadius:9999, padding:'4px 10px 4px 4px' }}>
+                                  <div style={{ width:22, height:22, borderRadius:'50%', background:'rgba(168,85,247,0.35)', flexShrink:0, overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, fontWeight:700, color:'#fff' }}>
+                                    {p.avatar_url ? <img src={p.avatar_url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }}/> : (p.full_name?.[0]?.toUpperCase() ?? '?')}
+                                  </div>
+                                  <span style={{ fontSize:12, color:'#e9d5ff', fontWeight:500, whiteSpace:'nowrap' }}>{p.full_name ?? 'Unknown'}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Checked-in expanded list */}
                       {expandedAttendeeEventId === ev.id && (
-                        <div style={{ borderTop:'1px solid rgba(255,255,255,0.06)', padding:'12px 16px', background:'rgba(0,0,0,0.15)' }}>
+                        <div style={{ borderTop:'1px solid rgba(14,165,233,0.15)', padding:'12px 16px', background:'rgba(14,165,233,0.04)' }}>
+                          <div style={{ fontSize:10.5, fontWeight:700, color:'#38bdf8', textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:8 }}>Checked In</div>
                           {loadingAttendees === ev.id ? (
                             <div style={{ fontSize:12, color:'var(--text-muted)' }}>Loading…</div>
                           ) : (eventAttendees[ev.id] ?? []).length === 0 ? (
@@ -1194,11 +1269,11 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
                           ) : (
                             <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
                               {(eventAttendees[ev.id] ?? []).map(p => (
-                                <div key={p.id} style={{ display:'flex', alignItems:'center', gap:7, background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:9999, padding:'4px 10px 4px 4px' }}>
-                                  <div style={{ width:22, height:22, borderRadius:'50%', background:'var(--accent)', flexShrink:0, overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, fontWeight:700, color:'#fff' }}>
+                                <div key={p.id} style={{ display:'flex', alignItems:'center', gap:7, background:'rgba(14,165,233,0.08)', border:'1px solid rgba(14,165,233,0.2)', borderRadius:9999, padding:'4px 10px 4px 4px' }}>
+                                  <div style={{ width:22, height:22, borderRadius:'50%', background:'rgba(14,165,233,0.35)', flexShrink:0, overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, fontWeight:700, color:'#fff' }}>
                                     {p.avatar_url ? <img src={p.avatar_url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }}/> : (p.full_name?.[0]?.toUpperCase() ?? '?')}
                                   </div>
-                                  <span style={{ fontSize:12, color:'var(--text-primary)', fontWeight:500, whiteSpace:'nowrap' }}>{p.full_name ?? 'Unknown'}</span>
+                                  <span style={{ fontSize:12, color:'#bae6fd', fontWeight:500, whiteSpace:'nowrap' }}>{p.full_name ?? 'Unknown'}</span>
                                 </div>
                               ))}
                             </div>
