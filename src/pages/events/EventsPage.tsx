@@ -121,7 +121,10 @@ export default function EventsPage() {
       .select('user_id, registered_at, checked_in_at, profile:profiles(full_name, avatar_url, email)')
       .eq('event_id', selectedEvent.id)
       .then(({ data }) => {
-        setEventRegistrants((data ?? []) as Registrant[])
+        setEventRegistrants((data ?? []).map((r: any) => ({
+          ...r,
+          profile: Array.isArray(r.profile) ? r.profile[0] ?? null : r.profile,
+        })))
         setLoadingRegistrants(false)
       })
   }, [selectedEvent, presidentClubIds])
