@@ -148,7 +148,7 @@ export default function EventsPage() {
       return
     }
     setRegistering(event.id)
-    await supabase.from('event_attendees').insert({ event_id: event.id, user_id: user.id })
+    await supabase.from('event_attendees').insert({ event_id: event.id, user_id: user.id, checked_in_at: null })
     setRegisteredEventIds(prev => new Set([...prev, event.id]))
     setEvents(prev => prev.map(e => e.id === event.id ? { ...e, attendee_count: e.attendee_count + 1 } : e))
     setRegistering(null)
