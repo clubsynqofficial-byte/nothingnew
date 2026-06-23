@@ -960,9 +960,21 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
       await supabase.from('event_attendees').insert({ event_id: ev.id, user_id: scannedUserId, checked_in_at: now })
     }
     if (pts > 0) await supabase.from('karak_transactions').insert({ user_id: scannedUserId, points: pts, reason: `Attended: ${ev.title}`, event_id: ev.id })
-    // Bust the local caches so the dropdowns refetch fresh data
-    setEventAttendees(prev => { const n = { ...prev }; delete n[ev.id]; return n })
-    setEventRegistered(prev => { const n = { ...prev }; delete n[ev.id]; return n })
+    const scannedProfile = { id: p.id, full_name: p.full_name ?? null, avatar_url: p.avatar_url ?? null }
+    // Add to checked-in list in-place (only if the dropdown has been loaded, otherwise leave for fresh fetch)
+    setEventAttendees(prev =>
+      prev[ev.id]
+        ? { ...prev, [ev.id]: [...prev[ev.id], scannedProfile] }
+        : prev
+    )
+    // Remove from registered list if they were pre-registered
+    if (existing) {
+      setEventRegistered(prev =>
+        prev[ev.id]
+          ? { ...prev, [ev.id]: prev[ev.id].filter(u => u.id !== p.id) }
+          : prev
+      )
+    }
     // Update live counts
     setCheckedInCountByEvent(prev => ({ ...prev, [ev.id]: (prev[ev.id] ?? 0) + 1 }))
     if (existing) setRegisteredCountByEvent(prev => ({ ...prev, [ev.id]: Math.max((prev[ev.id] ?? 1) - 1, 0) }))

@@ -21,12 +21,6 @@ interface EventRow {
   club?: { id: string; name: string; logo_url: string | null; category: string | null } | null
 }
 
-interface Registrant {
-  user_id: string
-  registered_at: string | null
-  checked_in_at: string | null
-  profile: { full_name: string | null; avatar_url: string | null; email: string | null } | null
-}
 
 type Filter = 'all' | 'live' | 'today' | 'week'
 
@@ -69,7 +63,6 @@ export default function EventsPage() {
   const [search, setSearch] = useState('')
   const [memberClubIds, setMemberClubIds] = useState<Set<string>>(new Set())
   const [pendingClubIds, setPendingClubIds] = useState<Set<string>>(new Set())
-  const [presidentClubIds, setPresidentClubIds] = useState<Set<string>>(new Set())
   const [registeredEventIds, setRegisteredEventIds] = useState<Set<string>>(new Set())
   const [joiningId, setJoiningId] = useState<string | null>(null)
   const [registering, setRegistering] = useState<string | null>(null)
@@ -77,8 +70,6 @@ export default function EventsPage() {
   const [registrationQR, setRegistrationQR] = useState<EventRow | null>(null)
   const [applyClub, setApplyClub] = useState<{ id: string; name: string } | null>(null)
   const [mounted, setMounted] = useState(false)
-  const [eventRegistrants, setEventRegistrants] = useState<Registrant[]>([])
-  const [loadingRegistrants, setLoadingRegistrants] = useState(false)
 
   useEffect(() => { const t = setTimeout(() => setMounted(true), 30); return () => clearTimeout(t) }, [])
 
@@ -90,7 +81,6 @@ export default function EventsPage() {
       supabase.from('event_attendees').select('event_id').eq('user_id', user.id),
     ])
     setMemberClubIds(new Set((mem ?? []).map((m: any) => m.club_id)))
-    setPresidentClubIds(new Set((mem ?? []).filter((m: any) => m.role === 'president').map((m: any) => m.club_id)))
     setPendingClubIds(new Set((pending ?? []).map((r: any) => r.club_id)))
     setRegisteredEventIds(new Set((regs ?? []).map((r: any) => r.event_id)))
   }, [user])
@@ -109,25 +99,6 @@ export default function EventsPage() {
   }, [user])
 
   useEffect(() => { fetchEvents(); fetchMemberships() }, [fetchEvents, fetchMemberships])
-
-  useEffect(() => {
-    if (!selectedEvent || !presidentClubIds.has(selectedEvent.club_id)) {
-      setEventRegistrants([])
-      return
-    }
-    setLoadingRegistrants(true)
-    supabase
-      .from('event_attendees')
-      .select('user_id, registered_at, checked_in_at, profile:profiles(full_name, avatar_url, email)')
-      .eq('event_id', selectedEvent.id)
-      .then(({ data }) => {
-        setEventRegistrants((data ?? []).map((r: any) => ({
-          ...r,
-          profile: Array.isArray(r.profile) ? r.profile[0] ?? null : r.profile,
-        })))
-        setLoadingRegistrants(false)
-      })
-  }, [selectedEvent, presidentClubIds])
 
   const handleJoin = async (clubId: string, clubName: string) => {
     if (!user || joiningId) return
@@ -345,7 +316,6 @@ export default function EventsPage() {
         const isMember = memberClubIds.has(ev.club_id)
         const isPending = pendingClubIds.has(ev.club_id)
         const joining = joiningId === ev.club_id
-        const isAdmin = presidentClubIds.has(ev.club_id)
         const isRegistered = registeredEventIds.has(ev.id)
         return (
           <div onClick={() => setSelectedEvent(null)} style={{ position:'fixed', inset:0, zIndex:9999, background:'rgba(0,0,0,0.78)', backdropFilter:'blur(8px)', display:'flex', alignItems:'center', justifyContent:'center', padding:'20px 16px', animation:'evOverlayIn .25s ease both' }}>
@@ -390,57 +360,9 @@ export default function EventsPage() {
                 </div>
 
                 {ev.description && (
-                  <div style={{ background:'rgba(255,255,255,0.03)', border:`1px solid ${catColor}18`, borderRadius:14, padding:'16px 18px', marginBottom: isAdmin ? 16 : 0 }}>
+                  <div style={{ background:'rgba(255,255,255,0.03)', border:`1px solid ${catColor}18`, borderRadius:14, padding:'16px 18px' }}>
                     <div style={{ fontSize:11, fontWeight:700, color:catColor, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:10 }}>About</div>
                     <p style={{ fontSize:14, color:'var(--text-secondary)', lineHeight:1.75, margin:0, whiteSpace:'pre-wrap' }}>{ev.description}</p>
-                  </div>
-                )}
-
-                {/* Admin registrants panel */}
-                {isAdmin && (
-                  <div style={{ border:`1px solid ${catColor}22`, borderRadius:14, overflow:'hidden' }}>
-                    <div style={{ padding:'11px 16px', background:`${catColor}0f`, borderBottom:`1px solid ${catColor}18`, display:'flex', alignItems:'center', gap:8 }}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={catColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
-                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                      </svg>
-                      <span style={{ fontSize:11.5, fontWeight:700, color:catColor, textTransform:'uppercase', letterSpacing:'0.07em' }}>Registrants</span>
-                      <span style={{ fontSize:11, fontWeight:700, background:`${catColor}22`, color:catColor, borderRadius:9999, padding:'1px 8px', marginLeft:'auto' }}>
-                        {loadingRegistrants ? '…' : eventRegistrants.length}
-                      </span>
-                    </div>
-                    {loadingRegistrants ? (
-                      <div style={{ padding:'20px', display:'flex', justifyContent:'center' }}>
-                        <div style={{ width:20, height:20, borderRadius:'50%', border:'2px solid rgba(138,21,56,.2)', borderTopColor:'var(--accent)', animation:'spin .8s linear infinite' }}/>
-                      </div>
-                    ) : eventRegistrants.length === 0 ? (
-                      <div style={{ padding:'18px 16px', fontSize:13, color:'var(--text-muted)', textAlign:'center' }}>No registrations yet</div>
-                    ) : (
-                      <div style={{ maxHeight:220, overflowY:'auto' }}>
-                        {eventRegistrants.map((r, ri) => (
-                          <div key={r.user_id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderBottom: ri < eventRegistrants.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none', animation:`evUp .25s ease ${ri * 0.04}s both` }}>
-                            <div style={{ width:30, height:30, borderRadius:'50%', flexShrink:0, background:`${catColor}22`, border:`1.5px solid ${catColor}44`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700, color:catColor, overflow:'hidden' }}>
-                              {r.profile?.avatar_url
-                                ? <img src={r.profile.avatar_url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
-                                : (r.profile?.full_name?.[0] ?? '?')}
-                            </div>
-                            <div style={{ flex:1, minWidth:0 }}>
-                              <div style={{ fontSize:13, fontWeight:600, color:'var(--text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                                {r.profile?.full_name ?? 'Unknown'}
-                              </div>
-                              {r.profile?.email && (
-                                <div style={{ fontSize:11, color:'var(--text-muted)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.profile.email}</div>
-                              )}
-                            </div>
-                            {r.checked_in_at ? (
-                              <span style={{ fontSize:10.5, fontWeight:700, color:'#4ade80', background:'rgba(34,197,94,0.1)', border:'1px solid rgba(34,197,94,0.25)', borderRadius:9999, padding:'2px 8px', flexShrink:0 }}>Checked in</span>
-                            ) : (
-                              <span style={{ fontSize:10.5, fontWeight:600, color:'var(--text-muted)', background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:9999, padding:'2px 8px', flexShrink:0 }}>Registered</span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
