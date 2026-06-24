@@ -95,7 +95,6 @@ const NAV_PRIMARY = [
 ]
 
 const NAV_SECONDARY = [
-  { path: '/marketplace',   label: 'KaraQ Market'    },
   { path: '/positions',     label: 'Open Positions'   },
   { path: '/tournaments',   label: 'Tournaments'      },
 ]
@@ -121,6 +120,7 @@ export default function SideNav({ open = false, onClose }: Props) {
   const [connectOpen, setConnectOpen] = useState(
     pathname === '/talent' || pathname === '/collaboration'
   )
+  const [marketOpen, setMarketOpen] = useState(pathname === '/marketplace')
   const [msgUnread, setMsgUnread] = useState(0)
   const [msgRequests, setMsgRequests] = useState(0)
   const [statusOpen, setStatusOpen] = useState(false)
@@ -410,6 +410,67 @@ export default function SideNav({ open = false, onClose }: Props) {
                     {item.label}
                   </NavLink>
                 ))}
+              </div>
+            )}
+          </div>
+
+          {/* ── KaraQ Market accordion ── */}
+          <div style={{ marginBottom: 2 }}>
+            <button
+              onClick={() => setMarketOpen(o => !o)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '11px 16px', borderRadius: 8, width: '100%',
+                background: pathname === '/marketplace' ? 'rgba(138,21,56,0.2)' : 'transparent',
+                borderLeft: pathname === '/marketplace' ? '3px solid var(--accent)' : '3px solid transparent',
+                color: pathname === '/marketplace' ? '#fff' : 'var(--text-muted)',
+                fontSize: 15, fontWeight: pathname === '/marketplace' ? 600 : 400,
+                border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                transition: 'color 0.15s, background 0.15s',
+                justifyContent: 'space-between',
+              }}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ opacity: 0.75, display: 'flex', flexShrink: 0 }}>
+                  {NAV_ICONS['/marketplace']}
+                </span>
+                KaraQ Market
+              </span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                style={{ transform: marketOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0, opacity: 0.4 }}>
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </button>
+
+            {marketOpen && (
+              <div style={{ marginLeft: 14, borderLeft: '1px solid rgba(255,255,255,0.07)', paddingLeft: 6, marginBottom: 4 }}>
+                <NavLink to="/marketplace/create-shop" onClick={onClose} style={({ isActive }) => ({
+                  display: 'flex', alignItems: 'center', gap: 9,
+                  padding: '8px 14px', borderRadius: 7, textDecoration: 'none',
+                  fontSize: 13.5, fontWeight: isActive ? 500 : 400,
+                  color: isActive ? '#fff' : 'rgba(255,255,255,0.42)',
+                  background: isActive ? 'rgba(138,21,56,0.16)' : 'transparent',
+                  marginBottom: 1, transition: 'color 0.15s, background 0.15s',
+                })}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.55, flexShrink: 0 }}>
+                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                  </svg>
+                  Create
+                </NavLink>
+                <NavLink to="/marketplace?tab=manage" onClick={onClose} style={({ isActive }) => ({
+                  display: 'flex', alignItems: 'center', gap: 9,
+                  padding: '8px 14px', borderRadius: 7, textDecoration: 'none',
+                  fontSize: 13.5, fontWeight: isActive ? 500 : 400,
+                  color: isActive ? '#fff' : 'rgba(255,255,255,0.42)',
+                  background: isActive ? 'rgba(138,21,56,0.16)' : 'transparent',
+                  marginBottom: 1, transition: 'color 0.15s, background 0.15s',
+                })}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.55, flexShrink: 0 }}>
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                  </svg>
+                  Manage
+                </NavLink>
               </div>
             )}
           </div>

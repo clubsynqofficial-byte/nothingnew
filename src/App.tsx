@@ -31,6 +31,8 @@ import MatchCommandCenterPage from './pages/tournaments/MatchCommandCenterPage'
 import MyTeamsPage from './pages/teams/MyTeamsPage'
 import MatchCenterPage from './pages/matches/MatchCenterPage'
 import MarketplacePage from './pages/marketplace/MarketplacePage'
+import CreateShopPage from './pages/marketplace/CreateShopPage'
+import ShopDetailPage from './pages/marketplace/ShopDetailPage'
 import ScanPage from './pages/scan/ScanPage'
 import QRPage from './pages/qr/QRPage'
 
@@ -189,6 +191,8 @@ function AppRoutes() {
       <Route path="/teams" element={<ProtectedRoute><MyTeamsPage /></ProtectedRoute>} />
       <Route path="/matches/:matchId" element={<ProtectedRoute><MatchCenterPage /></ProtectedRoute>} />
       <Route path="/marketplace" element={<ProtectedRoute><MarketplacePage /></ProtectedRoute>} />
+      <Route path="/marketplace/create-shop" element={<ProtectedRoute><CreateShopPage /></ProtectedRoute>} />
+      <Route path="/marketplace/shop/:shopId" element={<ProtectedRoute><ShopDetailPage /></ProtectedRoute>} />
       <Route path="/scan" element={<ProtectedRoute><ScanPage /></ProtectedRoute>} />
       <Route path="/qr" element={<ProtectedRoute><QRPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/home" replace />} />
