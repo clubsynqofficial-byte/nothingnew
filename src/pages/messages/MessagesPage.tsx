@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string
 import rawEmojiData from '@emoji-mart/data'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
@@ -378,7 +380,7 @@ function IcUsersBig({ size = 56, animated = false }: { size?: number; animated?:
 // ── Page ──────────────────────────────────────────────────────────────────
 
 export default function MessagesPage() {
-  const { user, consumeIncomingCall } = useAuth()
+  const { user, session, consumeIncomingCall } = useAuth()
   const consumeIncomingCallRef = useRef(consumeIncomingCall)
   consumeIncomingCallRef.current = consumeIncomingCall
   const navigate = useNavigate()
@@ -876,16 +878,28 @@ export default function MessagesPage() {
       : null
     setReplyingTo(null)
 
+    const senderName = (user.user_metadata as Record<string, string> | null)?.full_name ?? 'Someone'
+
+    function notifyRecipient(recipientId: string, conversationId?: string) {
+      fetch(`${SUPABASE_URL}/functions/v1/send-dm-notification`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipientId, senderName, messagePreview: text, conversationId }),
+      }).catch(() => {})
+    }
+
     if (activeCollab?.convId) {
       const optId = `opt-${Date.now()}`
       setCollabMsgs(prev => [...prev, { id: optId, conversation_id: activeCollab.convId!, sender_id: user.id, content: text, read_at: null, created_at: new Date().toISOString(), reply_to: replyTo }])
       const { data: saved } = await supabase.from('direct_messages').insert({ conversation_id: activeCollab.convId, sender_id: user.id, content: text, reply_to: replyTo }).select().single()
       setCollabMsgs(prev => saved ? prev.map(m => m.id === optId ? (saved as DM) : m) : prev.filter(m => m.id !== optId))
+      if (saved) notifyRecipient(activeCollab.matchUserId, activeCollab.convId)
     } else if (activeTrade) {
       const optId = `opt-${Date.now()}`
       setTradeMsgs(prev => [...prev, { id: optId, request_id: activeTrade.requestId, sender_id: user.id, content: text, created_at: new Date().toISOString(), reply_to: replyTo }])
       const { data: saved } = await supabase.from('skill_trade_messages').insert({ request_id: activeTrade.requestId, sender_id: user.id, content: text, reply_to: replyTo }).select().single()
       setTradeMsgs(prev => saved ? prev.map(m => m.id === optId ? (saved as TradeDM) : m) : prev.filter(m => m.id !== optId))
+      if (saved) notifyRecipient(activeTrade.otherUserId)
     } else if (activeLeader) {
       const currentConvId = activeLeader.convId
       if (!currentConvId) { setSending(false); return }
@@ -894,6 +908,7 @@ export default function MessagesPage() {
       const { data: saved } = await supabase.from('direct_messages').insert({ conversation_id: currentConvId, sender_id: user.id, content: text, reply_to: replyTo }).select().single()
       setLeaderMsgs(prev => saved ? prev.map(m => m.id === optId ? (saved as DM) : m) : prev.filter(m => m.id !== optId))
       setClubLeaders(prev => prev.map(l => l.userId === activeLeader.userId ? { ...l, lastMsg: text, lastAt: new Date().toISOString() } : l))
+      if (saved) notifyRecipient(activeLeader.userId, currentConvId)
     } else if (activeGroup) {
       const optId = `opt-${Date.now()}`
       setGroupMsgs(prev => [...prev, { id: optId, group_id: activeGroup.id, sender_id: user.id, content: text, created_at: new Date().toISOString(), reply_to: replyTo }])
@@ -913,6 +928,7 @@ export default function MessagesPage() {
       setDmMsgs(prev => saved ? prev.map(m => m.id === optId ? (saved as DM) : m) : prev.filter(m => m.id !== optId))
       await supabase.from('conversations').update({ last_message_at: new Date().toISOString() }).eq('id', activeDm.convId)
       setDmConvs(prev => prev.map(c => c.convId === activeDm.convId ? { ...c, lastMsg: text, lastAt: new Date().toISOString() } : c))
+      if (saved) notifyRecipient(activeDm.otherId, activeDm.convId)
     }
     setSending(false)
   }
