@@ -5,6 +5,8 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import ClubApplicationModal from '../../components/ClubApplicationModal'
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string
+
 interface EventRow {
   id: string
   club_id: string
@@ -55,7 +57,7 @@ function isThisWeek(iso: string | null) {
 }
 
 export default function EventsPage() {
-  const { user, refreshProfile } = useAuth()
+  const { user, session, refreshProfile } = useAuth()
   const navigate = useNavigate()
   const [events, setEvents] = useState<EventRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -124,6 +126,12 @@ export default function EventsPage() {
     setEvents(prev => prev.map(e => e.id === event.id ? { ...e, attendee_count: e.attendee_count + 1 } : e))
     setRegistering(null)
     setRegistrationQR(event)
+    // fire-and-forget confirmation email
+    fetch(`${SUPABASE_URL}/functions/v1/send-event-confirmation`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventId: event.id, userId: user.id }),
+    }).catch(() => {})
   }
 
   const liveCount  = events.filter(e => e.is_live).length

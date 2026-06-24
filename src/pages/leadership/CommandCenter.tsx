@@ -163,6 +163,8 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
   const [loadingRegistered, setLoadingRegistered] = useState<string | null>(null)
   const [registeredCountByEvent, setRegisteredCountByEvent] = useState<Record<string, number>>({})
   const [checkedInCountByEvent, setCheckedInCountByEvent] = useState<Record<string, number>>({})
+  const [sendingConfirmation, setSendingConfirmation] = useState<string | null>(null)
+  const [confirmationResult, setConfirmationResult] = useState<Record<string, string>>({})
 
   // Announcement state
   const [annContent, setAnnContent] = useState('')
@@ -682,6 +684,32 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
     const profiles = (data ?? []).map((r: any) => Array.isArray(r.profile) ? r.profile[0] : r.profile).filter(Boolean)
     setEventAttendees(prev => ({ ...prev, [eventId]: profiles }))
     setLoadingAttendees(null)
+  }
+
+  async function sendConfirmationEmails(eventId: string) {
+    if (sendingConfirmation) return
+    setSendingConfirmation(eventId)
+    setConfirmationResult(prev => ({ ...prev, [eventId]: '' }))
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-event-confirmation`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({ eventId }),
+        }
+      )
+      const json = await res.json()
+      if (json.error) setConfirmationResult(prev => ({ ...prev, [eventId]: `Error: ${json.error}` }))
+      else setConfirmationResult(prev => ({ ...prev, [eventId]: `Sent to ${json.sent} of ${json.total}` }))
+    } catch (e) {
+      setConfirmationResult(prev => ({ ...prev, [eventId]: 'Failed to send' }))
+    }
+    setSendingConfirmation(null)
   }
 
   async function toggleRegistered(eventId: string) {
@@ -1214,6 +1242,15 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
                         </div>
                         <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
                           <button onClick={() => setQrEvent(ev)} style={{ padding:'4px 11px', borderRadius:9999, border:'1px solid rgba(14,165,233,0.35)', background:'rgba(14,165,233,0.08)', color:'#38bdf8', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>QR</button>
+                          {registeredCountByEvent[ev.id] > 0 && (
+                            <button
+                              onClick={() => sendConfirmationEmails(ev.id)}
+                              disabled={sendingConfirmation === ev.id}
+                              style={{ padding:'4px 11px', borderRadius:9999, border:'1px solid rgba(168,85,247,0.35)', background:'rgba(168,85,247,0.08)', color:'#c084fc', fontSize:11, fontWeight:700, cursor: sendingConfirmation === ev.id ? 'default' : 'pointer', fontFamily:'inherit', opacity: sendingConfirmation === ev.id ? 0.6 : 1 }}
+                            >
+                              {sendingConfirmation === ev.id ? '…' : confirmationResult[ev.id] ? confirmationResult[ev.id] : '📧 Send Confirmation'}
+                            </button>
+                          )}
                           {isCompleted && <button onClick={() => setCertEvent(ev)} style={{ padding:'4px 11px', borderRadius:9999, border:'1px solid rgba(233,193,118,0.35)', background:'rgba(233,193,118,0.08)', color:'var(--gold)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>🎓 Send Certs</button>}
                           {ev.is_live && <button onClick={() => handleOpenEventAnn(ev)} style={{ padding:'4px 11px', borderRadius:9999, border:'1px solid rgba(255,180,171,0.35)', background:'rgba(255,180,171,0.08)', color:'var(--live-red)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>📢 Announce</button>}
                           {(!isCompleted || ev.is_live) && (

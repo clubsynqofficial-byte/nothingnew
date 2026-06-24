@@ -45,10 +45,13 @@ interface GroupChat {
   lastMsg: string | null; lastAt: string; unread: number; memberProfiles: Profile[]
 }
 
+interface ReplyTo { id: string; content: string; sender_name: string }
+
 interface DM {
   id: string; conversation_id: string; sender_id: string
   content: string; read_at: string | null; created_at: string
   reactions?: Record<string, string[]>
+  reply_to?: ReplyTo | null
 }
 
 interface TradeDM {
@@ -56,12 +59,14 @@ interface TradeDM {
   content: string; created_at: string
   profile?: { full_name: string | null } | null
   reactions?: Record<string, string[]>
+  reply_to?: ReplyTo | null
 }
 
 interface GroupMessage {
   id: string; group_id: string; sender_id: string; content: string; created_at: string
   profile?: { full_name: string | null; avatar_url: string | null } | null
   reactions?: Record<string, string[]>
+  reply_to?: ReplyTo | null
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -287,6 +292,8 @@ const CSS = `
     height: calc(100dvh - var(--topbar-height)) !important;
   }
 }
+
+@keyframes reply-in { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:none; } }
 
 @keyframes vc-fade  { from { opacity:0; } to { opacity:1; } }
 @keyframes spin     { to { transform:rotate(360deg); } }
@@ -617,7 +624,7 @@ export default function MessagesPage() {
 
   const openDm = async (conv: DMConv) => {
     setActiveDm(conv); setActiveCollab(null); setActiveTrade(null); setActiveLeader(null); setActiveGroup(null)
-    setInput(''); setSendErr(''); setMobileView('chat'); setLoadingDmMsgs(true)
+    setInput(''); setSendErr(''); setReplyingTo(null); setMobileView('chat'); setLoadingDmMsgs(true)
     const { data } = await supabase.from('direct_messages').select('*').eq('conversation_id', conv.convId).order('created_at', { ascending: true })
     setDmMsgs((data as DM[]) ?? [])
     setLoadingDmMsgs(false)
@@ -712,7 +719,7 @@ export default function MessagesPage() {
   // ── Open collab chat ──
   const openCollab = async (thread: CollabThread) => {
     setActiveCollab(thread); setActiveTrade(null); setActiveLeader(null); setActiveGroup(null)
-    setInput(''); setSendErr(''); setMobileView('chat'); setLoadingCollabMsgs(true)
+    setInput(''); setSendErr(''); setReplyingTo(null); setMobileView('chat'); setLoadingCollabMsgs(true)
     let convId = thread.convId
     if (!convId) {
       const { data } = await supabase.from('conversations').insert({ participant_1: user!.id, participant_2: thread.matchUserId, type: 'collab' }).select('id').single()
@@ -742,7 +749,7 @@ export default function MessagesPage() {
   // ── Open trade chat ──
   const openTrade = async (thread: TradeThread) => {
     setActiveTrade(thread); setActiveCollab(null); setActiveLeader(null); setActiveGroup(null)
-    setInput(''); setSendErr(''); setMobileView('chat'); setLoadingTradeMsgs(true)
+    setInput(''); setSendErr(''); setReplyingTo(null); setMobileView('chat'); setLoadingTradeMsgs(true)
     const { data } = await supabase.from('skill_trade_messages').select('*, profile:profiles!sender_id(full_name)').eq('request_id', thread.requestId).order('created_at', { ascending: true })
     setTradeMsgs((data as TradeDM[]) ?? [])
     setLoadingTradeMsgs(false)
@@ -762,7 +769,7 @@ export default function MessagesPage() {
   // ── Open leader DM ──
   const openLeader = async (leader: ClubLeader) => {
     setActiveLeader(leader); setActiveCollab(null); setActiveTrade(null); setActiveGroup(null)
-    setInput(''); setSendErr(''); setMobileView('chat'); setLoadingLeaderMsgs(true)
+    setInput(''); setSendErr(''); setReplyingTo(null); setMobileView('chat'); setLoadingLeaderMsgs(true)
     let convId = leader.convId
     if (!convId) {
       const { data: existing } = await supabase.from('conversations').select('id').eq('type','leader').or(`and(participant_1.eq.${user!.id},participant_2.eq.${leader.userId}),and(participant_1.eq.${leader.userId},participant_2.eq.${user!.id})`).maybeSingle()
@@ -796,7 +803,7 @@ export default function MessagesPage() {
   // ── Open group chat ──
   const openGroup = async (group: GroupChat) => {
     setActiveGroup(group); setActiveCollab(null); setActiveTrade(null); setActiveLeader(null)
-    setInput(''); setSendErr(''); setMobileView('chat'); setLoadingGroupMsgs(true)
+    setInput(''); setSendErr(''); setReplyingTo(null); setMobileView('chat'); setLoadingGroupMsgs(true)
     const { data } = await supabase.from('group_messages').select('*, profile:profiles!group_messages_sender_profile_fkey(full_name, avatar_url)').eq('group_id', group.id).order('created_at', { ascending: true })
     setGroupMsgs((data as GroupMessage[]) ?? [])
     setLoadingGroupMsgs(false)
@@ -864,28 +871,33 @@ export default function MessagesPage() {
     if (!check.ok) { setSendErr(check.reason!); return }
     setSendErr(''); setSending(true); setInput('')
 
+    const replyTo: ReplyTo | null = replyingTo
+      ? { id: replyingTo.id, content: replyingTo.content, sender_name: replyingSenderName(replyingTo) }
+      : null
+    setReplyingTo(null)
+
     if (activeCollab?.convId) {
       const optId = `opt-${Date.now()}`
-      setCollabMsgs(prev => [...prev, { id: optId, conversation_id: activeCollab.convId!, sender_id: user.id, content: text, read_at: null, created_at: new Date().toISOString() }])
-      const { data: saved } = await supabase.from('direct_messages').insert({ conversation_id: activeCollab.convId, sender_id: user.id, content: text }).select().single()
+      setCollabMsgs(prev => [...prev, { id: optId, conversation_id: activeCollab.convId!, sender_id: user.id, content: text, read_at: null, created_at: new Date().toISOString(), reply_to: replyTo }])
+      const { data: saved } = await supabase.from('direct_messages').insert({ conversation_id: activeCollab.convId, sender_id: user.id, content: text, reply_to: replyTo }).select().single()
       setCollabMsgs(prev => saved ? prev.map(m => m.id === optId ? (saved as DM) : m) : prev.filter(m => m.id !== optId))
     } else if (activeTrade) {
       const optId = `opt-${Date.now()}`
-      setTradeMsgs(prev => [...prev, { id: optId, request_id: activeTrade.requestId, sender_id: user.id, content: text, created_at: new Date().toISOString() }])
-      const { data: saved } = await supabase.from('skill_trade_messages').insert({ request_id: activeTrade.requestId, sender_id: user.id, content: text }).select().single()
+      setTradeMsgs(prev => [...prev, { id: optId, request_id: activeTrade.requestId, sender_id: user.id, content: text, created_at: new Date().toISOString(), reply_to: replyTo }])
+      const { data: saved } = await supabase.from('skill_trade_messages').insert({ request_id: activeTrade.requestId, sender_id: user.id, content: text, reply_to: replyTo }).select().single()
       setTradeMsgs(prev => saved ? prev.map(m => m.id === optId ? (saved as TradeDM) : m) : prev.filter(m => m.id !== optId))
     } else if (activeLeader) {
       const currentConvId = activeLeader.convId
       if (!currentConvId) { setSending(false); return }
       const optId = `opt-${Date.now()}`
-      setLeaderMsgs(prev => [...prev, { id: optId, conversation_id: currentConvId, sender_id: user.id, content: text, read_at: null, created_at: new Date().toISOString() }])
-      const { data: saved } = await supabase.from('direct_messages').insert({ conversation_id: currentConvId, sender_id: user.id, content: text }).select().single()
+      setLeaderMsgs(prev => [...prev, { id: optId, conversation_id: currentConvId, sender_id: user.id, content: text, read_at: null, created_at: new Date().toISOString(), reply_to: replyTo }])
+      const { data: saved } = await supabase.from('direct_messages').insert({ conversation_id: currentConvId, sender_id: user.id, content: text, reply_to: replyTo }).select().single()
       setLeaderMsgs(prev => saved ? prev.map(m => m.id === optId ? (saved as DM) : m) : prev.filter(m => m.id !== optId))
       setClubLeaders(prev => prev.map(l => l.userId === activeLeader.userId ? { ...l, lastMsg: text, lastAt: new Date().toISOString() } : l))
     } else if (activeGroup) {
       const optId = `opt-${Date.now()}`
-      setGroupMsgs(prev => [...prev, { id: optId, group_id: activeGroup.id, sender_id: user.id, content: text, created_at: new Date().toISOString() }])
-      const { data: saved } = await supabase.from('group_messages').insert({ group_id: activeGroup.id, sender_id: user.id, content: text }).select().single()
+      setGroupMsgs(prev => [...prev, { id: optId, group_id: activeGroup.id, sender_id: user.id, content: text, created_at: new Date().toISOString(), reply_to: replyTo }])
+      const { data: saved } = await supabase.from('group_messages').insert({ group_id: activeGroup.id, sender_id: user.id, content: text, reply_to: replyTo }).select().single()
       if (saved) await supabase.from('group_chats').update({ last_message_at: new Date().toISOString() }).eq('id', activeGroup.id)
       setGroupMsgs(prev => {
         if (!saved) return prev.filter(m => m.id !== optId)
@@ -896,8 +908,8 @@ export default function MessagesPage() {
       setGroupChats(prev => prev.map(g => g.id === activeGroup.id ? { ...g, lastMsg: text, lastAt: new Date().toISOString() } : g))
     } else if (activeDm) {
       const optId = `opt-${Date.now()}`
-      setDmMsgs(prev => [...prev, { id: optId, conversation_id: activeDm.convId, sender_id: user.id, content: text, read_at: null, created_at: new Date().toISOString() }])
-      const { data: saved } = await supabase.from('direct_messages').insert({ conversation_id: activeDm.convId, sender_id: user.id, content: text }).select().single()
+      setDmMsgs(prev => [...prev, { id: optId, conversation_id: activeDm.convId, sender_id: user.id, content: text, read_at: null, created_at: new Date().toISOString(), reply_to: replyTo }])
+      const { data: saved } = await supabase.from('direct_messages').insert({ conversation_id: activeDm.convId, sender_id: user.id, content: text, reply_to: replyTo }).select().single()
       setDmMsgs(prev => saved ? prev.map(m => m.id === optId ? (saved as DM) : m) : prev.filter(m => m.id !== optId))
       await supabase.from('conversations').update({ last_message_at: new Date().toISOString() }).eq('id', activeDm.convId)
       setDmConvs(prev => prev.map(c => c.convId === activeDm.convId ? { ...c, lastMsg: text, lastAt: new Date().toISOString() } : c))
@@ -938,6 +950,7 @@ export default function MessagesPage() {
   const [pickerState, setPickerState] = useState<{ msgId: string; openUpward: boolean } | null>(null)
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null)
   const [editingText, setEditingText] = useState('')
+  const [replyingTo, setReplyingTo] = useState<DM | TradeDM | GroupMessage | null>(null)
   useEffect(() => {
     if (!pickerState) return
     function handleClick() { setPickerState(null) }
@@ -974,6 +987,15 @@ export default function MessagesPage() {
       setDmMsgs(p => patch(p) as DM[])
       await supabase.from('direct_messages').update({ reactions: newReactions }).eq('id', msgId)
     }
+  }
+
+  function replyingSenderName(msg: DM | TradeDM | GroupMessage): string {
+    if (msg.sender_id === user?.id) return 'You'
+    if (activeGroup) {
+      const p = 'profile' in msg ? msg.profile : null
+      return p?.full_name ?? activeGroup.memberProfiles.find(m => m.id === msg.sender_id)?.full_name ?? 'User'
+    }
+    return activeProfile?.full_name ?? 'User'
   }
 
   async function saveEdit(msgId: string) {
@@ -1646,12 +1668,25 @@ export default function MessagesPage() {
                                   </div>
                                 </div>
                               ) : (
-                                <div className="msg-bubble" style={{ padding: '10px 14px', wordBreak: 'break-word', whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.55, background: isMine ? 'linear-gradient(135deg, var(--accent) 0%, #c42057 100%)' : 'rgba(255,255,255,0.07)', color: isMine ? '#fff' : 'var(--text-primary)', border: isMine ? 'none' : '1px solid rgba(255,255,255,0.08)', borderRadius: isMine ? (sameAsPrev && sameAsNext ? '20px 6px 6px 20px' : sameAsPrev ? '20px 6px 20px 20px' : sameAsNext ? '20px 20px 6px 20px' : '20px 6px 20px 20px') : (sameAsPrev && sameAsNext ? '6px 20px 20px 6px' : sameAsPrev ? '6px 20px 20px 20px' : sameAsNext ? '20px 20px 20px 6px' : '6px 20px 20px 20px'), boxShadow: isMine ? '0 4px 16px rgba(138,21,56,0.3)' : '0 2px 8px rgba(0,0,0,0.2)', opacity: isOpt ? 0.75 : 1 }}>
+                                <div className="msg-bubble" style={{ padding: msg.reply_to ? '8px 14px 10px' : '10px 14px', wordBreak: 'break-word', whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.55, background: isMine ? 'linear-gradient(135deg, var(--accent) 0%, #c42057 100%)' : 'rgba(255,255,255,0.07)', color: isMine ? '#fff' : 'var(--text-primary)', border: isMine ? 'none' : '1px solid rgba(255,255,255,0.08)', borderRadius: isMine ? (sameAsPrev && sameAsNext ? '20px 6px 6px 20px' : sameAsPrev ? '20px 6px 20px 20px' : sameAsNext ? '20px 20px 6px 20px' : '20px 6px 20px 20px') : (sameAsPrev && sameAsNext ? '6px 20px 20px 6px' : sameAsPrev ? '6px 20px 20px 20px' : sameAsNext ? '20px 20px 20px 6px' : '6px 20px 20px 20px'), boxShadow: isMine ? '0 4px 16px rgba(138,21,56,0.3)' : '0 2px 8px rgba(0,0,0,0.2)', opacity: isOpt ? 0.75 : 1 }}>
+                                  {msg.reply_to && (
+                                    <div style={{ borderLeft: `3px solid ${isMine ? 'rgba(255,255,255,0.5)' : 'rgba(138,21,56,0.7)'}`, paddingLeft: 8, marginBottom: 8, opacity: 0.75 }}>
+                                      <div style={{ fontSize: 10.5, fontWeight: 700, color: isMine ? 'rgba(255,255,255,0.8)' : 'var(--accent)', marginBottom: 2 }}>{msg.reply_to.sender_name}</div>
+                                      <div style={{ fontSize: 12, lineHeight: 1.4, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', color: isMine ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)', whiteSpace: 'pre-wrap' }}>{msg.reply_to.content}</div>
+                                    </div>
+                                  )}
                                   {msg.content}
                                 </div>
                               )}
                               {!isOpt && editingMsgId !== msg.id && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
+                                  <button
+                                    onClick={e => { e.stopPropagation(); setReplyingTo(msg); setPickerState(null); setTimeout(() => inputRef.current?.focus(), 50) }}
+                                    style={{ width: 26, height: 26, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.12)', background: replyingTo?.id === msg.id ? 'rgba(138,21,56,0.25)' : 'rgba(255,255,255,0.06)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .15s' }}
+                                    title="Reply"
+                                  >
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
+                                  </button>
                                   {isMine && (
                                     <button
                                       onClick={e => { e.stopPropagation(); setEditingMsgId(msg.id); setEditingText(msg.content); setPickerState(null) }}
@@ -1697,9 +1732,19 @@ export default function MessagesPage() {
 
             {/* Input */}
             <div className="mp-input" style={{ padding: '12px 18px 16px', borderTop: '1px solid rgba(255,255,255,0.06)', flexShrink: 0, background: 'rgba(14,8,11,0.6)', backdropFilter: 'blur(12px)' }}>
+              {replyingTo && (
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, background: 'rgba(138,21,56,0.1)', border: '1px solid rgba(138,21,56,0.25)', borderRadius: 10, padding: '8px 12px', marginBottom: 8, animation: 'reply-in 0.2s ease both' }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', marginBottom: 2 }}>Replying to {replyingSenderName(replyingTo)}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{replyingTo.content}</div>
+                  </div>
+                  <button onClick={() => setReplyingTo(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2, flexShrink: 0, lineHeight: 1, fontSize: 14 }}>✕</button>
+                </div>
+              )}
               {sendErr && <div style={{ fontSize: 12, color: '#f87171', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.16)', borderRadius: 8, padding: '6px 12px', marginBottom: 10 }}>{sendErr}</div>}
               <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-                <textarea ref={inputRef} value={input} onChange={e => { setInput(e.target.value); setSendErr('') }} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }} placeholder={activeGroup ? `Message ${activeGroup.name}…` : `Message ${activeProfile?.full_name?.split(' ')[0] ?? 'them'}…`} rows={1} maxLength={2000} style={{ flex: 1, resize: 'none', fontFamily: 'inherit', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 14, padding: '11px 16px', color: 'var(--text-primary)', fontSize: 14, outline: 'none', lineHeight: 1.55, maxHeight: 120, overflowY: 'auto' }} />
+                <textarea ref={inputRef} value={input} onChange={e => { setInput(e.target.value); setSendErr('') }} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } if (e.key === 'Escape') { setReplyingTo(null) } }} placeholder={activeGroup ? `Message ${activeGroup.name}…` : `Message ${activeProfile?.full_name?.split(' ')[0] ?? 'them'}…`} rows={1} maxLength={2000} style={{ flex: 1, resize: 'none', fontFamily: 'inherit', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 14, padding: '11px 16px', color: 'var(--text-primary)', fontSize: 14, outline: 'none', lineHeight: 1.55, maxHeight: 120, overflowY: 'auto' }} />
                 <button className="send-btn" onClick={sendMessage} disabled={!input.trim() || sending} style={{ width: 44, height: 44, borderRadius: '50%', flexShrink: 0, border: 'none', background: input.trim() ? 'linear-gradient(135deg, var(--accent) 0%, #c42057 100%)' : 'rgba(138,21,56,0.18)', color: '#fff', cursor: input.trim() ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: input.trim() ? '0 4px 16px rgba(138,21,56,0.35)' : 'none' }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
                 </button>
