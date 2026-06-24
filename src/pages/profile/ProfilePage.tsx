@@ -994,7 +994,7 @@ export default function ProfilePage() {
                       { key:'facebook'  as const, label:'Facebook', placeholder:'https://facebook.com/yourprofile', icon:'📘' },
                       { key:'youtube'   as const, label:'YouTube', placeholder:'https://youtube.com/@yourchannel', icon:'▶️' },
                       { key:'discord'   as const, label:'Discord', placeholder:'yourhandle or server invite', icon:'🎮' },
-                    ] as const).map(({ key, label, placeholder, icon }) => (
+                    ] as const).map(({ key, placeholder, icon }) => (
                       <div key={key} style={{ display:'flex', alignItems:'center', gap:8 }}>
                         <span style={{ fontSize:16, width:22, flexShrink:0, textAlign:'center' }}>{icon}</span>
                         <input
