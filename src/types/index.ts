@@ -27,6 +27,7 @@ export interface Profile {
   username: string | null
   manual_status: string | null
   notification_prefs: Record<string, boolean>
+  social_links: { instagram?: string; x?: string; facebook?: string; youtube?: string; discord?: string } | null
   university?: University
 }
 

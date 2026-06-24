@@ -95,7 +95,7 @@ const NAV_PRIMARY = [
 ]
 
 const NAV_SECONDARY = [
-  { path: '/marketplace',   label: 'Campus Market'    },
+  { path: '/marketplace',   label: 'KaraQ Market'    },
   { path: '/positions',     label: 'Open Positions'   },
   { path: '/tournaments',   label: 'Tournaments'      },
 ]

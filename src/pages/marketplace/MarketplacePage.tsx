@@ -221,17 +221,14 @@ export default function MarketplacePage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
               <div style={{ fontSize: 36 }}>🛍️</div>
               <h1 style={{ fontSize: 'clamp(24px,5vw,36px)', fontWeight: 900, color: '#fff', letterSpacing: '-1px', lineHeight: 1 }}>
-                Campus Market
+                KaraQ Market
               </h1>
             </div>
             <p style={{ fontSize: 13.5, color: 'rgba(255,255,255,.4)', lineHeight: 1.6, marginLeft: 48 }}>
-              Buy &amp; sell from student businesses · Cash on Delivery · Earn Karak Points
+              Buy &amp; sell from student businesses · Cash on Delivery
             </p>
             {/* Badges */}
             <div style={{ display: 'flex', gap: 8, marginTop: 12, marginLeft: 48, flexWrap: 'wrap' }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 11px', borderRadius: 9999, fontSize: 11, fontWeight: 700, background: 'rgba(233,193,118,.1)', border: '1px solid rgba(233,193,118,.22)', color: '#e9c176' }}>
-                ⭐ Karak Points on delivery
-              </span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 11px', borderRadius: 9999, fontSize: 11, fontWeight: 700, background: 'rgba(34,197,94,.08)', border: '1px solid rgba(34,197,94,.2)', color: '#4ade80' }}>
                 💵 Cash on Delivery only
               </span>
@@ -488,11 +485,6 @@ function ListingCard({ listing: l, index, isOwn, onBuy }: {
           <div style={{ padding: '4px 10px', borderRadius: 9999, fontSize: 10, fontWeight: 800, letterSpacing: '.04em', background: 'rgba(0,0,0,.55)', backdropFilter: 'blur(8px)', color: catColor, border: `1px solid ${catColor}44` }}>
             {CAT_EMOJI[l.category] ?? '🛍️'} {l.category}
           </div>
-          {l.karak_points_reward > 0 && (
-            <div style={{ padding: '4px 10px', borderRadius: 9999, fontSize: 10, fontWeight: 800, background: 'rgba(0,0,0,.55)', backdropFilter: 'blur(8px)', color: '#e9c176', border: '1px solid rgba(233,193,118,.35)' }}>
-              ⭐ +{l.karak_points_reward}
-            </div>
-          )}
         </div>
 
         {/* Bottom overlay — title + price */}
@@ -586,11 +578,6 @@ function OwnListingCard({ listing: l, index, onToggle, onDelete }: {
           {l.is_active ? '● Active' : '○ Paused'}
         </div>
 
-        {l.karak_points_reward > 0 && (
-          <div style={{ position: 'absolute', bottom: 10, left: 10, padding: '3px 8px', borderRadius: 6, fontSize: 9.5, fontWeight: 800, background: 'rgba(233,193,118,.18)', border: '1px solid rgba(233,193,118,.3)', color: '#e9c176' }}>
-            ⭐ +{l.karak_points_reward} pts
-          </div>
-        )}
       </div>
 
       <div style={{ padding: '12px 14px 14px', flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -672,7 +659,6 @@ function IncomingOrderCard({ order: o, index, updating, onUpdate }: {
           )}
           <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,.2)', marginBottom: nextAction ? 12 : 0 }}>
             {new Date(o.created_at).toLocaleDateString('en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-            {o.karak_points_reward > 0 && ` · ⭐ Buyer earns +${o.karak_points_reward} pts on delivery`}
           </div>
 
           {nextAction && (
@@ -690,11 +676,6 @@ function IncomingOrderCard({ order: o, index, updating, onUpdate }: {
             </div>
           )}
 
-          {o.status === 'delivered' && o.karak_awarded && o.karak_points_reward > 0 && (
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 9999, background: 'rgba(34,197,94,.1)', border: '1px solid rgba(34,197,94,.25)', fontSize: 12, color: '#4ade80', fontWeight: 700 }}>
-              ✓ +{o.karak_points_reward} pts awarded to buyer
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -771,11 +752,6 @@ function BuyerOrderCard({ order: o, index }: { order: Order; index: number }) {
             {!cancelled && o.status !== 'delivered' && (
               <span style={{ fontSize: 11.5, color: 'rgba(233,193,118,.7)', fontWeight: 700 }}>
                 💵 Pay AED {o.total_price.toFixed(2)} cash on delivery
-              </span>
-            )}
-            {o.status === 'delivered' && o.karak_points_reward > 0 && (
-              <span style={{ fontSize: 11.5, fontWeight: 800, color: o.karak_awarded ? '#4ade80' : '#e9c176' }}>
-                {o.karak_awarded ? `⭐ +${o.karak_points_reward} Karak points earned!` : `⭐ +${o.karak_points_reward} pts pending`}
               </span>
             )}
           </div>
@@ -1015,9 +991,6 @@ function BuyModal({ listing: l, buyerId, onClose, onOrdered }: {
             <div style={{ padding: '14px 18px', borderRadius: 16, background: 'rgba(233,193,118,.07)', border: '1px solid rgba(233,193,118,.2)', marginBottom: 24, textAlign: 'left' }}>
               <div style={{ fontSize: 13, color: '#e9c176', fontWeight: 800, marginBottom: 5 }}>💵 Cash on Delivery</div>
               <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,.5)' }}>Pay <strong style={{ color: '#fff' }}>AED {total.toFixed(2)}</strong> in cash when your order arrives.</div>
-              {l.karak_points_reward > 0 && (
-                <div style={{ fontSize: 12, color: 'rgba(233,193,118,.75)', marginTop: 6 }}>⭐ You'll earn <strong>+{l.karak_points_reward} Karak points</strong> after delivery!</div>
-              )}
             </div>
             <button onClick={onOrdered} style={{ width: '100%', padding: '13px', borderRadius: 13, border: 'none', background: 'linear-gradient(135deg,#8a1538,#c0185c)', color: '#fff', fontSize: 14, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 20px rgba(138,21,56,.5)' }}>
               View My Orders →
@@ -1082,9 +1055,6 @@ function BuyModal({ listing: l, buyerId, onClose, onOrdered }: {
                 <div>
                   <div style={{ fontSize: 12.5, fontWeight: 800, color: '#e9c176', marginBottom: 3 }}>Cash on Delivery</div>
                   <div style={{ fontSize: 12, color: 'rgba(255,255,255,.4)', lineHeight: 1.55 }}>Pay AED {total.toFixed(2)} in cash when your order arrives.</div>
-                  {l.karak_points_reward > 0 && (
-                    <div style={{ fontSize: 12, color: 'rgba(233,193,118,.7)', marginTop: 5, fontWeight: 600 }}>⭐ Earn +{l.karak_points_reward} Karak points after delivery!</div>
-                  )}
                 </div>
               </div>
 
