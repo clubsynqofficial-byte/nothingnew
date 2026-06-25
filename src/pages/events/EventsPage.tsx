@@ -20,6 +20,7 @@ interface EventRow {
   is_live: boolean
   attendee_count: number
   category: string | null
+  registration_closed: boolean
   club?: { id: string; name: string; logo_url: string | null; category: string | null } | null
 }
 
@@ -381,13 +382,18 @@ export default function EventsPage() {
                   onMouseEnter={e => e.currentTarget.style.borderColor='rgba(255,255,255,.25)'}
                   onMouseLeave={e => e.currentTarget.style.borderColor='rgba(255,255,255,.1)'}>Close</button>
 
-                {isMember && !isRegistered && (
+                {isMember && !isRegistered && !ev.registration_closed && (
                   <button onClick={() => { setSelectedEvent(null); handleRegister(ev) }} disabled={registering === ev.id}
                     style={{ flex:2, padding:'11px', background:'linear-gradient(135deg,#8a1538,#c0255a)', border:'none', borderRadius:12, color:'#fff', fontSize:14, fontWeight:700, cursor:registering===ev.id?'default':'pointer', fontFamily:'inherit', opacity:registering===ev.id?0.6:1, boxShadow:'0 4px 18px rgba(138,21,56,.4)', transition:'all .2s' }}
                     onMouseEnter={e => { if (!registering) { e.currentTarget.style.transform='translateY(-1px)'; e.currentTarget.style.boxShadow='0 8px 28px rgba(138,21,56,.55)' }}}
                     onMouseLeave={e => { e.currentTarget.style.transform='none'; e.currentTarget.style.boxShadow='0 4px 18px rgba(138,21,56,.4)' }}>
                     {registering === ev.id ? '…' : 'Register for Event'}
                   </button>
+                )}
+                {isMember && !isRegistered && ev.registration_closed && (
+                  <div style={{ flex:2, padding:'11px', background:'rgba(245,158,11,0.07)', border:'1px solid rgba(245,158,11,0.2)', borderRadius:12, color:'#f59e0b', fontSize:13, fontWeight:700, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:7 }}>
+                    🔒 Registration Closed
+                  </div>
                 )}
                 {isMember && isRegistered && (
                   <button onClick={() => { setSelectedEvent(null); setRegistrationQR(ev) }}
@@ -547,6 +553,8 @@ function EventCard({
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
             Registered
           </button>
+        ) : isMember && event.registration_closed ? (
+          <span style={{ padding:'7px 12px', borderRadius:9, border:'1px solid rgba(245,158,11,0.3)', background:'rgba(245,158,11,0.08)', color:'#f59e0b', fontSize:12, fontWeight:700, whiteSpace:'nowrap' }}>🔒 Closed</span>
         ) : isMember ? (
           <button ref={btnRef} className="ev-action-btn" onClick={handleAction} disabled={registering}
             style={{ padding:'7px 16px', borderRadius:9, background:'var(--accent)', border:'1px solid rgba(138,21,56,0.5)', color:'#fff', fontSize:12, fontWeight:700, cursor:registering?'default':'pointer', opacity:registering?0.6:1, whiteSpace:'nowrap', fontFamily:'inherit', position:'relative', overflow:'hidden', boxShadow:'0 4px 14px rgba(138,21,56,.35)' }}>

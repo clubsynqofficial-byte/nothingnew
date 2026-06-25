@@ -547,6 +547,11 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
     fetchAll()
   }
 
+  async function toggleRegistrationClosed(event: Event) {
+    await supabase.from('events').update({ registration_closed: !(event as any).registration_closed }).eq('id', event.id)
+    fetchAll()
+  }
+
   function handleAnnImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -1258,6 +1263,9 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
                               {ev.is_live ? '● LIVE' : 'Go Live'}
                             </button>
                           )}
+                          <button onClick={() => toggleRegistrationClosed(ev)} style={{ padding:'4px 11px', borderRadius:9999, border:(ev as any).registration_closed?'1px solid rgba(245,158,11,0.45)':'1px solid rgba(87,65,68,0.3)', background:(ev as any).registration_closed?'rgba(245,158,11,0.12)':'transparent', color:(ev as any).registration_closed?'#f59e0b':'var(--text-muted)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
+                            {(ev as any).registration_closed ? '🔒 Reg. Closed' : '🔓 Close Reg.'}
+                          </button>
                           {/* Delete */}
                           {deleteEventConfirmId === ev.id ? (
                             <div style={{ display:'flex', alignItems:'center', gap:4 }}>
