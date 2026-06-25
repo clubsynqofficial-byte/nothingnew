@@ -119,6 +119,7 @@ export default function ShopDetailPage() {
   const isOwn = user?.id === shop.owner_id
 
   async function handleDeleteShop() {
+    if (!shop) return
     setDeleting(true)
     await supabase.from('shops').delete().eq('id', shop.id)
     navigate('/marketplace', { replace: true })
