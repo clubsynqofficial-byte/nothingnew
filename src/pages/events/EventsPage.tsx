@@ -230,6 +230,12 @@ export default function EventsPage() {
         <p style={{ margin: '5px 0 0', fontSize: 14, color: 'var(--text-muted)', animation: mounted ? 'evSubIn .45s ease .12s both' : 'none' }}>
           Upcoming events from all clubs
         </p>
+        <div style={{ marginTop: 12, display: 'flex', alignItems: 'flex-start', gap: 7, background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 10, padding: '9px 13px', animation: mounted ? 'evSubIn .45s ease .18s both' : 'none' }}>
+          <span style={{ fontSize: 13, flexShrink: 0 }}>⚠️</span>
+          <span style={{ fontSize: 12, color: 'rgba(245,158,11,0.85)', lineHeight: 1.5 }}>
+            <strong style={{ fontWeight: 700 }}>Note:</strong> ClubSynQ won't be responsible for any event that's being hosted.
+          </span>
+        </div>
       </div>
 
       {/* Search */}
