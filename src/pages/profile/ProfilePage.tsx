@@ -1527,8 +1527,8 @@ function ThemeCustomizer({ editTheme, setEditTheme, onClose, onSave, saving }: T
       />
       {/* Panel */}
       <div style={{
-        position:'fixed', bottom:0, left:'50%', transform:'translateX(-50%)',
-        width:'min(680px,100vw)', maxHeight:'88vh',
+        position:'fixed', bottom:0, left:0, right:0,
+        width:'min(680px,100vw)', maxHeight:'88vh', margin:'0 auto',
         background:'rgba(14,8,11,0.97)', backdropFilter:'blur(24px)',
         borderRadius:'22px 22px 0 0', border:`1px solid ${ta(0.28)}`,
         borderBottom:'none', zIndex:401, overflow:'hidden',
