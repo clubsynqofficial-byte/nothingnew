@@ -39,12 +39,43 @@ function extractHandle(url: string): string {
   }
 }
 
+interface ProfileTheme {
+  accent: string
+  bg: string
+  pill: string
+  glow: boolean
+}
+
 interface ViewedProfile {
   id: string; full_name: string | null; avatar_url: string | null
   bio: string | null; skills: string[]; karak_points: number
   role: string; university: { name: string } | null; username: string | null
   banner_url: string | null; banner_position: number | null; banner_zoom: number | null
   social_links?: SocialLinks | null
+  profile_theme?: ProfileTheme | null
+}
+
+const DEFAULT_THEME: ProfileTheme = { accent: '#8a1538', bg: 'dark', pill: 'filled', glow: false }
+
+const ACCENT_PRESETS = [
+  '#8a1538','#e11d48','#ec4899','#d946ef','#a855f7',
+  '#6366f1','#3b82f6','#06b6d4','#22c55e','#f97316',
+  '#e9c176','#ffffff',
+]
+
+const BG_THEMES: Record<string, { label: string; emoji: string; card: string; banner: string }> = {
+  dark:     { label:'Dark',     emoji:'🌑', card:'rgba(22,13,17,0.75)', banner:'135deg,rgba(155,22,65,.65) 0%,rgba(95,12,42,.5) 45%,rgba(22,8,16,.3) 100%' },
+  midnight: { label:'Midnight', emoji:'🌌', card:'rgba(8,8,20,0.9)',    banner:'135deg,rgba(30,20,80,.8) 0%,rgba(10,5,40,.7) 50%,rgba(4,2,20,.4) 100%' },
+  space:    { label:'Space',    emoji:'🚀', card:'rgba(4,8,16,0.92)',   banner:'135deg,rgba(8,40,100,.7) 0%,rgba(4,15,50,.6) 50%,rgba(2,5,20,.4) 100%' },
+  forest:   { label:'Forest',   emoji:'🌲', card:'rgba(4,18,8,0.88)',   banner:'135deg,rgba(10,60,20,.7) 0%,rgba(4,30,10,.6) 50%,rgba(2,12,4,.4) 100%' },
+  ocean:    { label:'Ocean',    emoji:'🌊', card:'rgba(4,12,22,0.9)',   banner:'135deg,rgba(8,50,120,.7) 0%,rgba(4,20,70,.6) 50%,rgba(2,8,30,.4) 100%' },
+  dusk:     { label:'Dusk',     emoji:'🌅', card:'rgba(18,10,4,0.9)',   banner:'135deg,rgba(120,40,0,.7) 0%,rgba(80,15,0,.6) 50%,rgba(30,5,0,.4) 100%' },
+  void:     { label:'Void',     emoji:'⬛', card:'rgba(2,2,2,0.97)',    banner:'135deg,rgba(15,15,15,.9) 0%,rgba(5,5,5,.8) 50%,rgba(0,0,0,.7) 100%' },
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const c = hex.replace('#', '')
+  return [parseInt(c.slice(0,2),16), parseInt(c.slice(2,4),16), parseInt(c.slice(4,6),16)]
 }
 
 const CAT_COLORS: Record<string, string> = {
@@ -80,7 +111,8 @@ const inputSt: React.CSSProperties = {
   fontSize:14, outline:'none', fontFamily:'inherit',
 }
 
-const CSS = `
+function buildCSS(r: number, g: number, b: number) {
+  return `
   @keyframes pf-up {
     from { opacity:0; transform:translateY(22px); }
     to   { opacity:1; transform:translateY(0); }
@@ -98,6 +130,11 @@ const CSS = `
   @keyframes pf-glow {
     0%,100% { opacity:.7; } 50% { opacity:1; }
   }
+  @keyframes pf-custIn {
+    from { opacity:0; transform:translateY(30px) scale(0.97); }
+    to   { opacity:1; transform:translateY(0) scale(1); }
+  }
+  @keyframes pf-bdIn { from { opacity:0; } to { opacity:1; } }
 
   .pf-0  { animation: pf-up 0.5s cubic-bezier(0.22,1,0.36,1) both; }
   .pf-1  { animation: pf-up 0.5s cubic-bezier(0.22,1,0.36,1) 0.07s both; }
@@ -119,7 +156,7 @@ const CSS = `
   .pf-club:hover { transform:translateY(-3px); box-shadow:0 10px 28px rgba(0,0,0,0.35) !important; }
 
   .pf-card   { transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s; }
-  .pf-card:hover { transform:translateY(-2px); box-shadow:0 8px 24px rgba(0,0,0,0.3) !important; border-color:rgba(138,21,56,0.3) !important; }
+  .pf-card:hover { transform:translateY(-2px); box-shadow:0 8px 24px rgba(0,0,0,0.3) !important; border-color:rgba(${r},${g},${b},0.3) !important; }
 
   .pf-review { transition: transform 0.2s, border-color 0.2s; }
   .pf-review:hover { transform:translateY(-2px); border-color:rgba(87,65,68,0.38) !important; }
@@ -139,7 +176,16 @@ const CSS = `
   .pf-tab:hover { color:var(--text-primary) !important; }
 
   .pf-post { transition: transform 0.18s, border-color 0.18s, box-shadow 0.18s; }
-  .pf-post:hover { transform:translateY(-2px); border-color:rgba(138,21,56,0.3) !important; box-shadow:0 8px 24px rgba(0,0,0,0.3) !important; }
+  .pf-post:hover { transform:translateY(-2px); border-color:rgba(${r},${g},${b},0.3) !important; box-shadow:0 8px 24px rgba(0,0,0,0.3) !important; }
+
+  .pf-cust-btn { font-family:inherit; cursor:pointer; transition:all 0.2s; }
+  .pf-cust-btn:hover { transform:translateY(-2px); box-shadow:0 8px 28px rgba(${r},${g},${b},0.5) !important; }
+
+  .pf-swatch { cursor:pointer; transition:all 0.15s; }
+  .pf-swatch:hover { transform:scale(1.12); }
+
+  .pf-bg-opt { cursor:pointer; transition:all 0.15s; }
+  .pf-bg-opt:hover { transform:translateY(-2px); }
 
   @media(max-width:600px) {
     .pf-inner-pad { padding: 0 14px 20px !important; }
@@ -152,8 +198,9 @@ const CSS = `
     .pf-msg-btn span.pf-msg-label { display: none; }
   }
 
-  input:focus, textarea:focus { border-color:rgba(138,21,56,0.55) !important; outline:none; }
+  input:focus, textarea:focus { border-color:rgba(${r},${g},${b},0.55) !important; outline:none; }
 `
+}
 
 export default function ProfilePage() {
   const { userId: paramUserId } = useParams<{ userId: string }>()
@@ -201,6 +248,11 @@ export default function ProfilePage() {
   const [msgLoading, setMsgLoading] = useState(false)
   const [profilePosts, setProfilePosts] = useState<ProfilePost[]>([])
   const [loadingPosts, setLoadingPosts] = useState(false)
+
+  const [theme, setTheme]           = useState<ProfileTheme>(DEFAULT_THEME)
+  const [editTheme, setEditTheme]   = useState<ProfileTheme>(DEFAULT_THEME)
+  const [customizing, setCustomizing] = useState(false)
+  const [savingTheme, setSavingTheme] = useState(false)
 
   const fetchAll = useCallback(async (targetId: string) => {
     setLoading(true)
@@ -286,12 +338,20 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (isOwnProfile) {
-      if (user) { fetchAll(user.id); fetchProfilePosts(user.id) }
+      if (user) {
+        fetchAll(user.id)
+        fetchProfilePosts(user.id)
+        supabase.from('profiles').select('profile_theme').eq('id', user.id).single()
+          .then(({ data }) => {
+            if (data?.profile_theme) setTheme({ ...DEFAULT_THEME, ...(data.profile_theme as ProfileTheme) })
+          })
+      }
     } else if (paramUserId) {
-      supabase.from('profiles').select('id, full_name, avatar_url, bio, skills, karak_points, role, username, university:universities(name), banner_url, banner_position, banner_zoom, social_links').eq('id', paramUserId).maybeSingle()
+      supabase.from('profiles').select('id, full_name, avatar_url, bio, skills, karak_points, role, username, university:universities(name), banner_url, banner_position, banner_zoom, social_links, profile_theme').eq('id', paramUserId).maybeSingle()
         .then(({ data }) => {
           if (!data) { setNotFound(true); setLoading(false); return }
           setViewedProfile(data as unknown as ViewedProfile)
+          if ((data as any).profile_theme) setTheme({ ...DEFAULT_THEME, ...((data as any).profile_theme as ProfileTheme) })
           fetchAll(paramUserId)
           fetchProfilePosts(paramUserId)
         })
@@ -387,6 +447,15 @@ export default function ProfilePage() {
     await supabase.from('message_requests').update({ status: 'declined' }).eq('id', msgReqId)
     setMsgStatus('none')
     setMsgReqId(null)
+  }
+
+  async function saveTheme() {
+    if (!user) return
+    setSavingTheme(true)
+    await supabase.from('profiles').update({ profile_theme: editTheme }).eq('id', user.id)
+    setTheme(editTheme)
+    setSavingTheme(false)
+    setCustomizing(false)
   }
 
   function openEdit() {
@@ -515,6 +584,13 @@ export default function ProfilePage() {
   const initials = (n: string | null) => (n ?? '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
   const dp = isOwnProfile ? profile : viewedProfile
 
+  // Theme-derived values
+  const activeTheme = customizing ? editTheme : theme
+  const [tr, tg, tb] = hexToRgb(activeTheme.accent)
+  const ta = (a: number) => `rgba(${tr},${tg},${tb},${a})`
+  const bgTheme = BG_THEMES[activeTheme.bg] ?? BG_THEMES.dark
+  const CSS = buildCSS(tr, tg, tb)
+
   // ── Loading skeleton ──────────────────────────────────────────────────────────
   if (loading) return (
     <div className="page-content" style={{ maxWidth: 860 }}>
@@ -560,20 +636,26 @@ export default function ProfilePage() {
 
   // ── Main ──────────────────────────────────────────────────────────────────────
   return (
-    <div className="page-content" style={{ maxWidth: 860 }}>
+    <div className="page-content" style={{ maxWidth: 860, '--accent': activeTheme.accent } as React.CSSProperties}>
       <style>{CSS}</style>
 
       {/* ── Header card ── */}
       <div className="pf-0" style={{
-        background:'rgba(22,13,17,0.75)', border:'1px solid rgba(87,65,68,0.22)',
+        background: bgTheme.card,
+        border:`1px solid ${ta(0.22)}`,
         borderRadius:22, marginBottom:16, overflow:'hidden',
-        backdropFilter:'blur(16px)', boxShadow:'0 4px 48px rgba(0,0,0,0.35)',
+        backdropFilter:'blur(16px)',
+        boxShadow: activeTheme.glow
+          ? `0 4px 48px rgba(0,0,0,0.35), 0 0 60px ${ta(0.15)}`
+          : '0 4px 48px rgba(0,0,0,0.35)',
+        transition:'box-shadow 0.4s, border-color 0.4s',
       }}>
 
         {/* Banner */}
         <div style={{
           height:118, position:'relative', overflow:'hidden',
-          background:'linear-gradient(135deg, rgba(155,22,65,0.65) 0%, rgba(95,12,42,0.5) 45%, rgba(22,8,16,0.3) 100%)',
+          background:`linear-gradient(${bgTheme.banner})`,
+          transition:'background 0.5s',
         }}>
           {/* Banner image */}
           {dp?.banner_url && (
@@ -618,9 +700,9 @@ export default function ProfilePage() {
           )}
           {!dp?.banner_url && (
             <>
-              <div style={{ position:'absolute', top:-55, right:-55, width:240, height:240, borderRadius:'50%', background:'rgba(138,21,56,0.15)', pointerEvents:'none' }} />
+              <div style={{ position:'absolute', top:-55, right:-55, width:240, height:240, borderRadius:'50%', background:ta(0.15), pointerEvents:'none', transition:'background 0.5s' }} />
               <div style={{ position:'absolute', top:10, left:'40%', width:260, height:80, background:'radial-gradient(ellipse, rgba(255,255,255,0.04) 0%, transparent 70%)', pointerEvents:'none' }} />
-              <div style={{ position:'absolute', bottom:-35, left:100, width:150, height:150, borderRadius:'50%', background:'rgba(200,40,100,0.07)', pointerEvents:'none' }} />
+              <div style={{ position:'absolute', bottom:-35, left:100, width:150, height:150, borderRadius:'50%', background:ta(0.07), pointerEvents:'none', transition:'background 0.5s' }} />
             </>
           )}
 
@@ -705,10 +787,15 @@ export default function ProfilePage() {
 
           {/* Edit Profile button — own profile, top-right of banner */}
           {isOwnProfile && (
-            <div style={{ position:'absolute', top:14, right:16, zIndex:2 }}>
+            <div style={{ position:'absolute', top:14, right:16, zIndex:2, display:'flex', gap:7 }}>
+              <button className="pf-btn" onClick={() => { setEditTheme({ ...theme }); setCustomizing(true) }}
+                style={{ padding:'7px 13px', background:'rgba(0,0,0,0.4)', backdropFilter:'blur(10px)', border:`1px solid ${ta(0.3)}`, borderRadius:10, color:activeTheme.accent, fontSize:13, fontWeight:700, display:'flex', alignItems:'center', gap:5 }}
+                onMouseEnter={e => { e.currentTarget.style.background=ta(0.25); e.currentTarget.style.color='#fff'; }}
+                onMouseLeave={e => { e.currentTarget.style.background='rgba(0,0,0,0.4)'; e.currentTarget.style.color=activeTheme.accent; }}
+              >🎨 Theme</button>
               <button className="pf-btn" onClick={openEdit}
                 style={{ padding:'7px 16px', background:'rgba(0,0,0,0.4)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:10, color:'rgba(255,255,255,0.8)', fontSize:13, fontWeight:600 }}
-                onMouseEnter={e => { e.currentTarget.style.background='rgba(138,21,56,0.55)'; e.currentTarget.style.borderColor='rgba(138,21,56,0.6)'; e.currentTarget.style.color='#fff'; }}
+                onMouseEnter={e => { e.currentTarget.style.background=ta(0.55); e.currentTarget.style.borderColor=ta(0.6); e.currentTarget.style.color='#fff'; }}
                 onMouseLeave={e => { e.currentTarget.style.background='rgba(0,0,0,0.4)'; e.currentTarget.style.borderColor='rgba(255,255,255,0.15)'; e.currentTarget.style.color='rgba(255,255,255,0.8)'; }}
               >Edit Profile</button>
             </div>
@@ -727,13 +814,16 @@ export default function ProfilePage() {
                   className={isOwnProfile ? 'pf-av-wrap' : ''}
                   style={{
                     width:88, height:88, borderRadius:22,
-                    background:'linear-gradient(135deg, var(--accent) 0%, #c0255a 100%)',
+                    background:`linear-gradient(135deg, ${activeTheme.accent} 0%, ${ta(0.9)} 100%)`,
                     display:'flex', alignItems:'center', justifyContent:'center',
                     fontSize:30, fontWeight:900, color:'#fff',
                     border:'4px solid rgba(16,9,13,0.97)',
                     overflow:'hidden', position:'relative',
-                    boxShadow:'0 0 0 1.5px rgba(138,21,56,0.45), 0 14px 40px rgba(0,0,0,0.6)',
+                    boxShadow: activeTheme.glow
+                      ? `0 0 0 1.5px ${ta(0.45)}, 0 14px 40px rgba(0,0,0,0.6), 0 0 30px ${ta(0.4)}`
+                      : `0 0 0 1.5px ${ta(0.45)}, 0 14px 40px rgba(0,0,0,0.6)`,
                     cursor: isOwnProfile ? 'pointer' : 'default',
+                    transition:'box-shadow 0.4s',
                   }}
                 >
                   {dp?.avatar_url
@@ -800,14 +890,15 @@ export default function ProfilePage() {
 
               {dp?.skills && dp.skills.length > 0 && (
                 <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:22 }}>
-                  {dp.skills.map((s, i) => (
-                    <span key={s} style={{
-                      fontSize:11, fontWeight:700, padding:'4px 12px', borderRadius:99,
-                      background:'rgba(138,21,56,0.1)', color:'var(--accent)',
-                      border:'1px solid rgba(138,21,56,0.22)',
-                      animation:`pf-up 0.35s cubic-bezier(0.22,1,0.36,1) ${0.04*i}s both`,
-                    }}>{s}</span>
-                  ))}
+                  {dp.skills.map((s, i) => {
+                    const pillStyle: React.CSSProperties =
+                      activeTheme.pill === 'outlined'
+                        ? { fontSize:11, fontWeight:700, padding:'4px 12px', borderRadius:99, background:'transparent', color:activeTheme.accent, border:`1.5px solid ${ta(0.55)}`, animation:`pf-up 0.35s cubic-bezier(0.22,1,0.36,1) ${0.04*i}s both` }
+                        : activeTheme.pill === 'glow'
+                        ? { fontSize:11, fontWeight:700, padding:'4px 12px', borderRadius:99, background:ta(0.15), color:activeTheme.accent, border:`1px solid ${ta(0.35)}`, boxShadow:`0 0 10px ${ta(0.3)}`, animation:`pf-up 0.35s cubic-bezier(0.22,1,0.36,1) ${0.04*i}s both` }
+                        : { fontSize:11, fontWeight:700, padding:'4px 12px', borderRadius:99, background:ta(0.1), color:activeTheme.accent, border:`1px solid ${ta(0.22)}`, animation:`pf-up 0.35s cubic-bezier(0.22,1,0.36,1) ${0.04*i}s both` }
+                    return <span key={s} style={pillStyle}>{s}</span>
+                  })}
                 </div>
               )}
 
@@ -1088,20 +1179,32 @@ export default function ProfilePage() {
             flex:1, padding:'9px 10px', borderRadius:12, fontSize:13,
             fontWeight: tab === t.key ? 700 : 500,
             color: tab === t.key ? '#fff' : 'var(--text-muted)',
-            background: tab === t.key ? 'rgba(138,21,56,0.22)' : 'transparent',
-            border: tab === t.key ? '1px solid rgba(138,21,56,0.32)' : '1px solid transparent',
+            background: tab === t.key ? ta(0.22) : 'transparent',
+            border: tab === t.key ? `1px solid ${ta(0.32)}` : '1px solid transparent',
             display:'flex', alignItems:'center', justifyContent:'center', gap:7,
+            transition:'all 0.18s',
           }}>
             {t.label}
             <span style={{
               fontSize:11, fontWeight:700, padding:'1px 7px', borderRadius:99, minWidth:20,
-              background: tab === t.key ? 'rgba(138,21,56,0.35)' : 'rgba(255,255,255,0.06)',
-              color: tab === t.key ? '#f08' : 'var(--text-muted)',
+              background: tab === t.key ? ta(0.35) : 'rgba(255,255,255,0.06)',
+              color: tab === t.key ? activeTheme.accent : 'var(--text-muted)',
               transition:'all 0.18s',
             }}>{t.count}</span>
           </button>
         ))}
       </div>
+
+      {/* ── Theme Customizer ── */}
+      {customizing && isOwnProfile && (
+        <ThemeCustomizer
+          editTheme={editTheme}
+          setEditTheme={setEditTheme}
+          onClose={() => { setCustomizing(false); setEditTheme(theme) }}
+          onSave={saveTheme}
+          saving={savingTheme}
+        />
+      )}
 
       {/* ── Tab panel (key forces remount → animation plays) ── */}
       <div key={tab} className="pf-panel" style={{ marginBottom:36 }}>
@@ -1177,7 +1280,7 @@ export default function ProfilePage() {
 
                         {/* Quoted repost source */}
                         {isRepost && p.repostSource && (
-                          <div style={{ background:'rgba(0,0,0,0.25)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:10, padding:'10px 13px', marginBottom:10, borderLeft:'3px solid rgba(138,21,56,0.4)' }}>
+                          <div style={{ background:'rgba(0,0,0,0.25)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:10, padding:'10px 13px', marginBottom:10, borderLeft:`3px solid ${ta(0.4)}` }}>
                             <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', marginBottom:5 }}>
                               {p.repostSource.profile?.full_name ?? 'User'}
                             </div>
@@ -1377,5 +1480,237 @@ function EmptyCard({ icon, text }: { icon: string; text: string }) {
       <div style={{ fontSize:34, marginBottom:12, opacity:0.3 }}>{icon}</div>
       <div style={{ fontSize:13, color:'var(--text-muted)', lineHeight:1.65 }}>{text}</div>
     </div>
+  )
+}
+
+// ── Theme Customizer ──────────────────────────────────────────────────────────
+
+interface ThemeCustomizerProps {
+  editTheme: ProfileTheme
+  setEditTheme: (t: ProfileTheme) => void
+  onClose: () => void
+  onSave: () => void
+  saving: boolean
+}
+
+function ThemeCustomizer({ editTheme, setEditTheme, onClose, onSave, saving }: ThemeCustomizerProps) {
+  const [tr, tg, tb] = hexToRgb(editTheme.accent)
+  const ta = (a: number) => `rgba(${tr},${tg},${tb},${a})`
+  const bgT = BG_THEMES[editTheme.bg] ?? BG_THEMES.dark
+  const [customHex, setCustomHex] = useState(editTheme.accent)
+  const [hexError, setHexError]   = useState(false)
+
+  function applyHex(val: string) {
+    setCustomHex(val)
+    const valid = /^#[0-9a-fA-F]{6}$/.test(val)
+    setHexError(!valid)
+    if (valid) setEditTheme({ ...editTheme, accent: val })
+  }
+
+  const sec: React.CSSProperties = { marginBottom: 26 }
+  const secLabel: React.CSSProperties = { fontSize:10, fontWeight:800, letterSpacing:'0.1em', textTransform:'uppercase', color:'rgba(255,255,255,0.35)', marginBottom:12 }
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        onClick={onClose}
+        style={{ position:'fixed', inset:0, zIndex:400, background:'rgba(0,0,0,0.7)', backdropFilter:'blur(6px)', animation:'pf-bdIn 0.2s ease both' }}
+      />
+      {/* Panel */}
+      <div style={{
+        position:'fixed', bottom:0, left:'50%', transform:'translateX(-50%)',
+        width:'min(680px,100vw)', maxHeight:'88vh',
+        background:'rgba(14,8,11,0.97)', backdropFilter:'blur(24px)',
+        borderRadius:'22px 22px 0 0', border:`1px solid ${ta(0.28)}`,
+        borderBottom:'none', zIndex:401, overflow:'hidden',
+        display:'flex', flexDirection:'column',
+        boxShadow:`0 -8px 60px rgba(0,0,0,0.7), 0 -2px 0 ${ta(0.5)}`,
+        animation:'pf-custIn 0.32s cubic-bezier(0.22,1,0.36,1) both',
+      }}>
+        {/* Handle */}
+        <div style={{ display:'flex', justifyContent:'center', padding:'12px 0 0' }}>
+          <div style={{ width:36, height:4, borderRadius:99, background:'rgba(255,255,255,0.12)' }} />
+        </div>
+
+        {/* Header */}
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'14px 24px 0' }}>
+          <div>
+            <div style={{ fontSize:17, fontWeight:900, color:'var(--text-primary)', letterSpacing:'-0.3px' }}>
+              🎨 Customize Profile
+            </div>
+            <div style={{ fontSize:12, color:'rgba(255,255,255,0.35)', marginTop:2 }}>Changes preview live — save when happy</div>
+          </div>
+          <button
+            onClick={onClose}
+            style={{ width:32, height:32, borderRadius:'50%', background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.1)', color:'rgba(255,255,255,0.5)', fontSize:16, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit', lineHeight:1 }}
+            onMouseEnter={e => e.currentTarget.style.background='rgba(255,255,255,0.12)'}
+            onMouseLeave={e => e.currentTarget.style.background='rgba(255,255,255,0.06)'}
+          >✕</button>
+        </div>
+
+        {/* Scrollable body */}
+        <div style={{ flex:1, overflowY:'auto', padding:'20px 24px', scrollbarWidth:'thin' }}>
+
+          {/* Accent Color */}
+          <div style={sec}>
+            <div style={secLabel}>Accent Color</div>
+            <div style={{ display:'flex', gap:10, flexWrap:'wrap', marginBottom:14 }}>
+              {ACCENT_PRESETS.map(hex => {
+                const active = editTheme.accent === hex
+                const [r,g,b] = hexToRgb(hex)
+                return (
+                  <button
+                    key={hex}
+                    className="pf-swatch"
+                    onClick={() => { setEditTheme({ ...editTheme, accent: hex }); setCustomHex(hex); setHexError(false) }}
+                    title={hex}
+                    style={{
+                      width:36, height:36, borderRadius:10,
+                      background: hex === '#ffffff' ? 'linear-gradient(135deg,#e5e7eb,#ffffff)' : `linear-gradient(135deg,${hex},rgba(${r},${g},${b},0.7))`,
+                      border: active ? `3px solid #fff` : '2px solid rgba(255,255,255,0.08)',
+                      boxShadow: active ? `0 0 0 2px ${hex}, 0 4px 16px rgba(${r},${g},${b},0.5)` : 'none',
+                      cursor:'pointer', outline:'none', padding:0, flexShrink:0,
+                      transition:'all 0.15s',
+                    }}
+                  />
+                )
+              })}
+            </div>
+            {/* Custom hex input */}
+            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+              <div style={{ width:36, height:36, borderRadius:10, background:editTheme.accent, border:'2px solid rgba(255,255,255,0.15)', flexShrink:0 }} />
+              <input
+                value={customHex}
+                onChange={e => applyHex(e.target.value)}
+                placeholder="#8a1538"
+                maxLength={7}
+                style={{ background:'rgba(255,255,255,0.05)', border:`1.5px solid ${hexError ? '#f87171' : 'rgba(255,255,255,0.1)'}`, borderRadius:9, padding:'8px 12px', color:'var(--text-primary)', fontSize:13, fontFamily:'monospace', outline:'none', width:120, transition:'border-color 0.15s' }}
+              />
+              <span style={{ fontSize:11, color:'rgba(255,255,255,0.35)' }}>Custom hex (e.g. #ff6b00)</span>
+            </div>
+          </div>
+
+          {/* Background Theme */}
+          <div style={sec}>
+            <div style={secLabel}>Page Theme</div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(88px,1fr))', gap:8 }}>
+              {Object.entries(BG_THEMES).map(([key, bt]) => {
+                const active = editTheme.bg === key
+                return (
+                  <button
+                    key={key}
+                    className="pf-bg-opt"
+                    onClick={() => setEditTheme({ ...editTheme, bg: key })}
+                    style={{
+                      padding:'10px 8px', borderRadius:12, cursor:'pointer', fontFamily:'inherit',
+                      background: active ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.03)',
+                      border: active ? `1.5px solid ${ta(0.55)}` : '1.5px solid rgba(255,255,255,0.08)',
+                      display:'flex', flexDirection:'column', alignItems:'center', gap:6,
+                      boxShadow: active ? `0 0 16px ${ta(0.25)}` : 'none',
+                      transition:'all 0.15s',
+                    }}
+                  >
+                    {/* Mini preview */}
+                    <div style={{ width:52, height:30, borderRadius:7, background:`linear-gradient(${bt.banner})`, border:'1px solid rgba(255,255,255,0.08)', flexShrink:0 }} />
+                    <span style={{ fontSize:10, fontWeight:700, color: active ? editTheme.accent : 'rgba(255,255,255,0.5)', letterSpacing:'0.02em', lineHeight:1 }}>{bt.emoji} {bt.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Skill Pill Style */}
+          <div style={sec}>
+            <div style={secLabel}>Skill Pill Style</div>
+            <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+              {([
+                { key:'filled',   label:'Filled',   preview: (r:number,g:number,b:number) => ({ background:`rgba(${r},${g},${b},0.12)`, border:`1px solid rgba(${r},${g},${b},0.28)` }) },
+                { key:'outlined', label:'Outlined', preview: (r:number,g:number,b:number) => ({ background:'transparent', border:`1.5px solid rgba(${r},${g},${b},0.6)` }) },
+                { key:'glow',     label:'Glow ✨',   preview: (r:number,g:number,b:number) => ({ background:`rgba(${r},${g},${b},0.15)`, border:`1px solid rgba(${r},${g},${b},0.4)`, boxShadow:`0 0 10px rgba(${r},${g},${b},0.35)` }) },
+              ] as const).map(opt => {
+                const [r,g,b] = hexToRgb(editTheme.accent)
+                const active = editTheme.pill === opt.key
+                const pv = opt.preview(r,g,b)
+                return (
+                  <button
+                    key={opt.key}
+                    onClick={() => setEditTheme({ ...editTheme, pill: opt.key })}
+                    style={{
+                      padding:'10px 16px', borderRadius:11, cursor:'pointer', fontFamily:'inherit',
+                      background: active ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.02)',
+                      border: active ? `1.5px solid ${ta(0.5)}` : '1.5px solid rgba(255,255,255,0.07)',
+                      display:'flex', flexDirection:'column', alignItems:'center', gap:8,
+                      transition:'all 0.15s',
+                    }}
+                  >
+                    <span style={{ fontSize:11, fontWeight:700, padding:'3px 11px', borderRadius:99, color:editTheme.accent, ...pv }}>
+                      Skill
+                    </span>
+                    <span style={{ fontSize:11, color: active ? 'var(--text-primary)' : 'rgba(255,255,255,0.4)', fontWeight: active ? 700 : 500 }}>
+                      {opt.label}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Card Glow */}
+          <div style={{ ...sec, marginBottom:8 }}>
+            <div style={secLabel}>Card Glow Effect</div>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'14px 16px', background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:13 }}>
+              <div>
+                <div style={{ fontSize:13, fontWeight:600, color:'var(--text-primary)', marginBottom:3 }}>
+                  Ambient glow {editTheme.glow ? '🌟' : ''}
+                </div>
+                <div style={{ fontSize:11, color:'rgba(255,255,255,0.35)' }}>
+                  Adds a coloured aura to cards and the avatar
+                </div>
+              </div>
+              <button
+                onClick={() => setEditTheme({ ...editTheme, glow: !editTheme.glow })}
+                style={{
+                  width:48, height:26, borderRadius:99,
+                  background: editTheme.glow ? ta(0.8) : 'rgba(255,255,255,0.1)',
+                  border:'none', cursor:'pointer', position:'relative', flexShrink:0,
+                  transition:'background 0.25s',
+                  boxShadow: editTheme.glow ? `0 0 16px ${ta(0.5)}` : 'none',
+                }}
+              >
+                <div style={{
+                  position:'absolute', top:3, left: editTheme.glow ? 25 : 3,
+                  width:20, height:20, borderRadius:'50%', background:'#fff',
+                  transition:'left 0.25s', boxShadow:'0 1px 4px rgba(0,0,0,0.4)',
+                }} />
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding:'14px 24px 20px', borderTop:'1px solid rgba(255,255,255,0.06)', display:'flex', gap:10 }}>
+          <button
+            onClick={onClose}
+            style={{ flex:1, padding:'12px', background:'transparent', border:'1px solid rgba(255,255,255,0.1)', borderRadius:12, color:'rgba(255,255,255,0.5)', fontSize:14, fontFamily:'inherit', cursor:'pointer', fontWeight:600, transition:'all 0.15s' }}
+            onMouseEnter={e => e.currentTarget.style.borderColor='rgba(255,255,255,0.2)'}
+            onMouseLeave={e => e.currentTarget.style.borderColor='rgba(255,255,255,0.1)'}
+          >Cancel</button>
+          <button
+            onClick={onSave}
+            disabled={saving || hexError}
+            style={{ flex:2, padding:'12px', background: saving || hexError ? ta(0.4) : `linear-gradient(135deg,${editTheme.accent},${ta(0.7)})`, border:'none', borderRadius:12, color:'#fff', fontSize:14, fontFamily:'inherit', cursor: saving || hexError ? 'default' : 'pointer', fontWeight:800, opacity: saving || hexError ? 0.6 : 1, transition:'all 0.2s', display:'flex', alignItems:'center', justifyContent:'center', gap:8, boxShadow: saving || hexError ? 'none' : `0 4px 24px ${ta(0.45)}` }}
+            onMouseEnter={e => { if (!saving && !hexError) e.currentTarget.style.opacity='0.9' }}
+            onMouseLeave={e => { e.currentTarget.style.opacity='1' }}
+          >
+            {saving
+              ? <><span style={{ width:14, height:14, border:'2px solid rgba(255,255,255,0.3)', borderTopColor:'#fff', borderRadius:'50%', animation:'pf-spin .7s linear infinite', display:'inline-block' }} /> Saving…</>
+              : '✓ Save Theme'
+            }
+          </button>
+        </div>
+      </div>
+    </>
   )
 }

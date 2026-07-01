@@ -1085,6 +1085,7 @@ function AnnouncementCard({ ann, userId, userClubIds, onJoined }: {
   onJoined: (clubId: string) => void
 }) {
   const [joining, setJoining] = useState(false)
+  const navigate = useNavigate()
   const isMember = userClubIds.includes(ann.club_id)
 
   const timeAgo = (iso: string) => {
@@ -1112,11 +1113,16 @@ function AnnouncementCard({ ann, userId, userClubIds, onJoined }: {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '13px 16px 10px', background: 'rgba(138,21,56,0.06)' }}>
         {/* Club logo */}
-        <div style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(138,21,56,0.18)', border: '1px solid rgba(138,21,56,0.3)', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: 'var(--accent)' }}>
-          {ann.club?.logo_url ? <img src={ann.club.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
-        </div>
+        <button onClick={() => navigate(`/clubs/${ann.club_id}`)} style={{ display: 'flex', alignItems: 'center', gap: 11, background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0 }}>
+          <div style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(138,21,56,0.18)', border: '1px solid rgba(138,21,56,0.3)', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: 'var(--accent)' }}>
+            {ann.club?.logo_url ? <img src={ann.club.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
+          </div>
+        </button>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ann.club?.name ?? 'Club'}</div>
+          <div onClick={() => navigate(`/clubs/${ann.club_id}`)} style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer', display: 'inline-block', maxWidth: '100%' }}
+            onMouseEnter={e => (e.currentTarget.style.textDecoration = 'underline')}
+            onMouseLeave={e => (e.currentTarget.style.textDecoration = 'none')}
+          >{ann.club?.name ?? 'Club'}</div>
           <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 1 }}>
             {ann.profile?.full_name ?? 'Admin'} · {timeAgo(ann.created_at)}
           </div>
