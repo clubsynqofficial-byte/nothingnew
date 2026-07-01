@@ -340,7 +340,7 @@ export default function ClubProfilePage() {
   const pastEvents     = events.filter(isPast)
   const shownEvents    = eventFilter === 'live' ? liveEvents : eventFilter === 'past' ? pastEvents : upcomingEvents
   const myMember   = members.find(m => m.profile?.id === user?.id)
-  const canPost    = myMember?.role === 'president' || authProfile?.role === 'admin'
+  const canPost    = myMember?.role === 'president' || authProfile?.role === 'admin' || club.president_id === user?.id
   const presidents       = members.filter(m => m.role === 'president')
   const officers         = members.filter(m => m.role === 'officer')
   const assignedMembers  = members.filter(m => m.role === 'member' && !!m.custom_role)
