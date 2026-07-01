@@ -1496,7 +1496,6 @@ interface ThemeCustomizerProps {
 function ThemeCustomizer({ editTheme, setEditTheme, onClose, onSave, saving }: ThemeCustomizerProps) {
   const [tr, tg, tb] = hexToRgb(editTheme.accent)
   const ta = (a: number) => `rgba(${tr},${tg},${tb},${a})`
-  const bgT = BG_THEMES[editTheme.bg] ?? BG_THEMES.dark
   const [customHex, setCustomHex] = useState(editTheme.accent)
   const [hexError, setHexError]   = useState(false)
 
