@@ -33,6 +33,7 @@ interface ClubDetail {
   president_id: string | null; member_count: number
   created_at: string
   social_links?: SocialLink[]
+  club_theme?: ClubTheme | null
   university?: { name: string; short_name: string | null } | null
 }
 
@@ -95,6 +96,66 @@ const ROLE_ORDER = { president: 0, officer: 1, member: 2 }
 const MONTH_NAMES = ['January','February','March','April','May','June',
                      'July','August','September','October','November','December']
 const DAY_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+
+// ─────────────────────────── Club theme system ──
+interface ClubTheme { accent: string; bg: string; glow: boolean }
+const DEFAULT_CLUB_THEME: ClubTheme = { accent: '', bg: 'dark', glow: false }
+
+const CLUB_ACCENT_PRESETS = [
+  '#8a1538','#e53e3e','#f97316','#f59e0b','#22c55e',
+  '#0ea5e9','#3b82f6','#8b5cf6','#ec4899','#06b6d4','#ffffff','#6b7280',
+]
+
+const CLUB_BG_THEMES: Record<string, { base: string; dots: string }> = {
+  dark:     { base: '#0b0210', dots: 'rgba(255,255,255,0.09)' },
+  midnight: { base: '#050820', dots: 'rgba(255,255,255,0.07)' },
+  space:    { base: '#040416', dots: 'rgba(255,255,255,0.06)' },
+  forest:   { base: '#041208', dots: 'rgba(255,255,255,0.07)' },
+  ocean:    { base: '#030e1c', dots: 'rgba(255,255,255,0.06)' },
+  dusk:     { base: '#110818', dots: 'rgba(255,255,255,0.08)' },
+  void:     { base: '#080808', dots: 'rgba(255,255,255,0.05)' },
+}
+
+function hexToRgbClub(hex: string): [number, number, number] {
+  const c = hex.replace('#', '')
+  if (c.length !== 6) return [138, 21, 56]
+  return [parseInt(c.slice(0,2),16), parseInt(c.slice(2,4),16), parseInt(c.slice(4,6),16)]
+}
+
+function buildClubCSS(r: number, g: number, b: number) {
+  const a = (al: number) => `rgba(${r},${g},${b},${al})`
+  return `
+    @keyframes livePulse{0%,100%{opacity:1}50%{opacity:0.4}}
+    @keyframes spinCP{to{transform:rotate(360deg)}}
+    @keyframes cp-up{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes cp-pop{from{opacity:0;transform:translateY(10px) scale(0.99)}to{opacity:1;transform:translateY(0) scale(1)}}
+    @keyframes cp-fade{from{opacity:0}to{opacity:1}}
+    .cp-banner{animation:cp-fade 0.5s ease both}
+    .cp-0{animation:cp-up 0.5s cubic-bezier(0.22,1,0.36,1) 0.1s both}
+    .cp-1{animation:cp-up 0.5s cubic-bezier(0.22,1,0.36,1) 0.18s both}
+    .cp-2{animation:cp-up 0.5s cubic-bezier(0.22,1,0.36,1) 0.26s both}
+    .cp-panel{animation:cp-pop 0.28s cubic-bezier(0.22,1,0.36,1) both}
+    .ev-card{transition:border-color 0.2s,box-shadow 0.2s,transform 0.2s!important}
+    .ev-card:hover{border-color:${a(0.4)}!important;transform:translateY(-1px);box-shadow:0 5px 20px rgba(0,0,0,0.25)!important}
+    .mem-card{transition:border-color 0.2s,background 0.2s!important}
+    .mem-card:hover{border-color:${a(0.3)}!important;background:rgba(255,255,255,0.05)!important}
+    .cal-day:hover{background:rgba(255,255,255,0.06)!important;cursor:pointer}
+    .thread-row:hover{border-color:${a(0.3)}!important}
+    .cal-layout{display:grid;grid-template-columns:1fr 300px;gap:24px;align-items:start}
+    .cp-tabs{display:flex;border-bottom:1px solid rgba(87,65,68,0.3);overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    .cp-tabs::-webkit-scrollbar{display:none}
+    .cp-tab{padding:11px 22px;background:transparent;border:none;cursor:pointer;white-space:nowrap;flex-shrink:0;transition:color 0.15s;font-family:inherit;display:flex;align-items:center;gap:6px;margin-bottom:-1px}
+    @media(max-width:640px){
+      .cal-layout{grid-template-columns:1fr}
+      .cp-banner-wrap{margin:12px 0 0!important;border-radius:0!important}
+      .cp-back{padding:16px 16px 0!important}
+      .cp-content{padding:0 14px 52px!important}
+      .cp-tab{padding:10px 14px!important;font-size:13px!important}
+      .cp-club-name{font-size:20px!important}
+      .cp-logo{width:56px!important;height:56px!important;border-radius:14px!important}
+    }
+  `
+}
 
 // ──────────────────────────────────────── Helpers ──
 
@@ -190,11 +251,16 @@ export default function ClubProfilePage() {
   const [evtAnns, setEvtAnns] = useState<EventAnnouncementRow[]>([])
   const [loadingEvtAnns, setLoadingEvtAnns] = useState(false)
 
+  const [theme,       setTheme]       = useState<ClubTheme | null>(null)
+  const [editTheme,   setEditTheme]   = useState<ClubTheme>(DEFAULT_CLUB_THEME)
+  const [customizing, setCustomizing] = useState(false)
+  const [savingTheme, setSavingTheme] = useState(false)
+
   // ── fetch ──
   const fetchAll = useCallback(async () => {
     if (!clubId || !user) return
     const [{ data: cd }, { data: ed }, { data: md }, { data: att }, { data: td }, { data: ad }] = await Promise.all([
-      supabase.from('clubs').select('*, social_links, university:universities(name,short_name)').eq('id', clubId).single(),
+      supabase.from('clubs').select('*, social_links, club_theme, university:universities(name,short_name)').eq('id', clubId).single(),
       supabase.from('events').select('*').eq('club_id', clubId).order('start_time', { ascending: true }),
       supabase.from('club_memberships')
         .select('id,role,custom_role,joined_at,profile:profiles(id,full_name,school,skills)')
@@ -211,6 +277,7 @@ export default function ClubProfilePage() {
         .order('created_at', { ascending: false }),
     ])
     setClub(cd ?? null)
+    if (cd?.club_theme) setTheme(cd.club_theme as ClubTheme)
     const attended = new Set((att ?? []).map(a => a.event_id))
     setEvents((ed ?? []).map(e => ({ ...e, is_attending: attended.has(e.id) })))
     setMembers(
@@ -258,6 +325,15 @@ export default function ClubProfilePage() {
     setLoadingEvtAnns(false)
   }, [])
 
+  async function saveTheme() {
+    if (!clubId) return
+    setSavingTheme(true)
+    await supabase.from('clubs').update({ club_theme: editTheme }).eq('id', clubId)
+    setTheme(editTheme)
+    setSavingTheme(false)
+    setCustomizing(false)
+  }
+
   // ── derived ──
   const liveEvents     = events.filter(e => e.is_live)
   const upcomingEvents = events.filter(isUpcoming)
@@ -289,42 +365,17 @@ export default function ClubProfilePage() {
     </div>
   )
 
-  const catColor = CATEGORY_COLORS[club.category ?? ''] ?? 'var(--accent)'
+  const catColor = CATEGORY_COLORS[club.category ?? ''] ?? '#8a1538'
+  const activeTheme  = customizing ? editTheme : (theme ?? DEFAULT_CLUB_THEME)
+  const activeAccent = activeTheme.accent || catColor
+  const bgTheme      = CLUB_BG_THEMES[activeTheme.bg] ?? CLUB_BG_THEMES.dark
+  const [tr, tg, tb] = hexToRgbClub(activeAccent)
+  const ta           = (alpha: number) => `rgba(${tr},${tg},${tb},${alpha})`
   const uniLabel = club.university?.short_name ?? club.university?.name ?? null
 
   return (
-    <div className="page-content" style={{ maxWidth: 1100 }}>
-      <style>{`
-        @keyframes livePulse{0%,100%{opacity:1}50%{opacity:0.4}}
-        @keyframes spinCP{to{transform:rotate(360deg)}}
-        @keyframes cp-up{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes cp-pop{from{opacity:0;transform:translateY(10px) scale(0.99)}to{opacity:1;transform:translateY(0) scale(1)}}
-        @keyframes cp-fade{from{opacity:0}to{opacity:1}}
-        .cp-banner{animation:cp-fade 0.5s ease both}
-        .cp-0{animation:cp-up 0.5s cubic-bezier(0.22,1,0.36,1) 0.1s both}
-        .cp-1{animation:cp-up 0.5s cubic-bezier(0.22,1,0.36,1) 0.18s both}
-        .cp-2{animation:cp-up 0.5s cubic-bezier(0.22,1,0.36,1) 0.26s both}
-        .cp-panel{animation:cp-pop 0.28s cubic-bezier(0.22,1,0.36,1) both}
-        .ev-card{transition:border-color 0.2s,box-shadow 0.2s,transform 0.2s!important}
-        .ev-card:hover{border-color:rgba(138,21,56,0.4)!important;transform:translateY(-1px);box-shadow:0 5px 20px rgba(0,0,0,0.25)!important}
-        .mem-card{transition:border-color 0.2s,background 0.2s!important}
-        .mem-card:hover{border-color:rgba(138,21,56,0.3)!important;background:rgba(255,255,255,0.05)!important}
-        .cal-day:hover{background:rgba(255,255,255,0.06)!important;cursor:pointer}
-        .thread-row:hover{border-color:rgba(138,21,56,0.3)!important}
-        .cal-layout{display:grid;grid-template-columns:1fr 300px;gap:24px;align-items:start}
-        .cp-tabs{display:flex;border-bottom:1px solid rgba(87,65,68,0.3);overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
-        .cp-tabs::-webkit-scrollbar{display:none}
-        .cp-tab{padding:11px 22px;background:transparent;border:none;cursor:pointer;white-space:nowrap;flex-shrink:0;transition:color 0.15s;font-family:inherit;display:flex;align-items:center;gap:6px;margin-bottom:-1px}
-        @media(max-width:640px){
-          .cal-layout{grid-template-columns:1fr}
-          .cp-banner-wrap{margin:12px 0 0!important;border-radius:0!important}
-          .cp-back{padding:16px 16px 0!important}
-          .cp-content{padding:0 14px 52px!important}
-          .cp-tab{padding:10px 14px!important;font-size:13px!important}
-          .cp-club-name{font-size:20px!important}
-          .cp-logo{width:56px!important;height:56px!important;border-radius:14px!important}
-        }
-      `}</style>
+    <div className="page-content" style={{ maxWidth: 1100, '--accent': activeAccent } as React.CSSProperties}>
+      <style>{buildClubCSS(tr, tg, tb)}</style>
 
       {/* ── Back ── */}
       <div className="cp-back" style={{ padding: '20px 28px 0' }}>
@@ -337,33 +388,52 @@ export default function ClubProfilePage() {
           ? <img src={club.banner_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
           : <div style={{
               width: '100%', height: '100%',
-              backgroundColor: '#0b0210',
+              backgroundColor: bgTheme.base,
               backgroundImage: [
-                'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.09) 1px, transparent 0)',
-                `radial-gradient(ellipse 75% 120% at 18% 55%, ${catColor}cc 0%, transparent 55%)`,
-                `radial-gradient(ellipse 60% 85% at 82% 22%, ${catColor}88 0%, transparent 52%)`,
-                `radial-gradient(ellipse 50% 65% at 55% 95%, ${catColor}55 0%, transparent 50%)`,
+                `radial-gradient(circle at 1px 1px, ${bgTheme.dots} 1px, transparent 0)`,
+                `radial-gradient(ellipse 75% 120% at 18% 55%, ${activeAccent}cc 0%, transparent 55%)`,
+                `radial-gradient(ellipse 60% 85% at 82% 22%, ${activeAccent}88 0%, transparent 52%)`,
+                `radial-gradient(ellipse 50% 65% at 55% 95%, ${activeAccent}55 0%, transparent 50%)`,
               ].join(', '),
               backgroundSize: '22px 22px, 100% 100%, 100% 100%, 100% 100%',
             }}/>
         }
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(18,8,10,0.95) 0%, rgba(18,8,10,0.45) 55%, transparent 100%)' }}/>
-        {club.is_verified && (
-          <div style={{
-            position: 'absolute', top: 16, right: 16,
-            background: 'rgba(233,193,118,0.15)', border: '1px solid rgba(233,193,118,0.4)',
-            backdropFilter: 'blur(8px)', borderRadius: 9999,
-            padding: '4px 12px', fontSize: 11, fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.05em',
-          }}>✓ VERIFIED</div>
-        )}
+        {/* Top-right controls */}
+        <div style={{ position: 'absolute', top: 16, right: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
+          {club.is_verified && (
+            <div style={{
+              background: 'rgba(233,193,118,0.15)', border: '1px solid rgba(233,193,118,0.4)',
+              backdropFilter: 'blur(8px)', borderRadius: 9999,
+              padding: '4px 12px', fontSize: 11, fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.05em',
+            }}>✓ VERIFIED</div>
+          )}
+          {canPost && (
+            <button
+              onClick={() => { setEditTheme(theme ?? DEFAULT_CLUB_THEME); setCustomizing(true) }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(10px)',
+                border: `1px solid ${ta(0.35)}`, borderRadius: 9999,
+                padding: '5px 14px', fontSize: 12, fontWeight: 700,
+                color: '#fff', cursor: 'pointer', letterSpacing: '0.02em',
+                transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = ta(0.25) }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.45)' }}
+            >
+              🎨 Customize
+            </button>
+          )}
+        </div>
         {/* Club identity */}
         <div style={{ position: 'absolute', bottom: 22, left: 22, right: 22, display: 'flex', alignItems: 'flex-end', gap: 18 }}>
-          <div style={{
+          <div className="cp-logo" style={{
             width: 76, height: 76, borderRadius: 18,
-            border: '3px solid rgba(255,255,255,0.14)',
-            overflow: 'hidden', background: 'var(--bg-muted)',
-            boxShadow: '0 8px 28px rgba(0,0,0,0.6)', flexShrink: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            border: `3px solid ${ta(0.28)}`,
+            overflow: 'hidden', background: ta(0.12),
+            boxShadow: `0 8px 28px rgba(0,0,0,0.6)${activeTheme.glow ? `, 0 0 28px ${ta(0.35)}` : ''}`,
+            flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             {club.logo_url
               ? <img src={club.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
@@ -397,7 +467,9 @@ export default function ClubProfilePage() {
             { label: 'Threads',  value: threads.length },
           ].map(({ label, value }, i) => (
             <div key={label} style={{
-              background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+              background: 'rgba(255,255,255,0.03)',
+              border: `1px solid ${activeTheme.glow ? ta(0.18) : 'rgba(255,255,255,0.07)'}`,
+              boxShadow: activeTheme.glow ? `0 0 16px ${ta(0.1)}` : 'none',
               borderRadius: 12, padding: '14px 18px', textAlign: 'center',
               animation: `cp-up 0.45s cubic-bezier(0.22,1,0.36,1) ${0.1 + i * 0.07}s both`,
             }}>
@@ -409,7 +481,7 @@ export default function ClubProfilePage() {
 
         {/* ── About ── */}
         {club.description && (
-          <div className="cp-1" style={{ marginTop: 16, padding: '16px 20px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14 }}>
+          <div className="cp-1" style={{ marginTop: 16, padding: '16px 20px', background: 'rgba(255,255,255,0.03)', border: `1px solid ${activeTheme.glow ? ta(0.16) : 'rgba(255,255,255,0.06)'}`, borderRadius: 14 }}>
             <SectionLabel>About</SectionLabel>
             <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.7, margin: 0 }}>{club.description}</p>
           </div>
@@ -598,6 +670,18 @@ export default function ClubProfilePage() {
 
         </div>
       </div>
+
+      {/* Club Theme Customizer */}
+      {customizing && canPost && (
+        <ClubThemeCustomizer
+          editTheme={editTheme}
+          setEditTheme={setEditTheme}
+          catColor={catColor}
+          saving={savingTheme}
+          onSave={saveTheme}
+          onCancel={() => setCustomizing(false)}
+        />
+      )}
 
       {/* Event Announcements Modal — live events only, visible to all members */}
       {evtAnnModal && (
@@ -1678,6 +1762,183 @@ function EventAnnouncementsModal({
               ))}
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ───────────────────────── ClubThemeCustomizer ──────
+
+const BG_THEME_LABELS: Record<string, string> = {
+  dark: 'Dark', midnight: 'Midnight', space: 'Space',
+  forest: 'Forest', ocean: 'Ocean', dusk: 'Dusk', void: 'Void',
+}
+
+function ClubThemeCustomizer({
+  editTheme, setEditTheme, catColor, saving, onSave, onCancel,
+}: {
+  editTheme: ClubTheme
+  setEditTheme: React.Dispatch<React.SetStateAction<ClubTheme>>
+  catColor: string
+  saving: boolean
+  onSave: () => void
+  onCancel: () => void
+}) {
+  const [hexInput, setHexInput] = useState(editTheme.accent)
+  const update = (patch: Partial<ClubTheme>) => setEditTheme(prev => ({ ...prev, ...patch }))
+
+  const previewAccent = editTheme.accent || catColor
+  const [pr, pg, pb] = hexToRgbClub(previewAccent)
+  const pa = (a: number) => `rgba(${pr},${pg},${pb},${a})`
+
+  return (
+    <div style={{
+      position: 'fixed', bottom: 0, left: 0, right: 0,
+      width: 'min(680px,100vw)', maxHeight: '88vh',
+      margin: '0 auto',
+      background: 'rgba(12,6,9,0.96)',
+      backdropFilter: 'blur(28px)',
+      WebkitBackdropFilter: 'blur(28px)',
+      border: `1px solid ${pa(0.28)}`,
+      borderBottom: 'none',
+      borderRadius: '22px 22px 0 0',
+      zIndex: 55,
+      overflowY: 'auto',
+      paddingBottom: 'env(safe-area-inset-bottom)',
+      boxShadow: `0 -20px 60px rgba(0,0,0,0.7), 0 -1px 0 ${pa(0.2)}`,
+    }}>
+      {/* Drag handle */}
+      <div style={{ padding: '14px 0 6px', display: 'flex', justifyContent: 'center' }}>
+        <div style={{ width: 38, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.12)' }}/>
+      </div>
+
+      <div style={{ padding: '4px 22px 28px' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+          <div>
+            <h3 style={{ fontSize: 16, fontWeight: 800, color: '#fff', margin: 0, letterSpacing: '-0.2px' }}>Club Appearance</h3>
+            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.32)', margin: '4px 0 0' }}>Changes are live-previewed above</p>
+          </div>
+          <button onClick={onCancel} style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.5)', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+        </div>
+
+        {/* ── Accent Color ── */}
+        <div style={{ marginBottom: 26 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>Accent Color</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+            {/* Auto = category color */}
+            <button
+              onClick={() => { update({ accent: '' }); setHexInput('') }}
+              title="Auto (category color)"
+              style={{
+                width: 42, height: 42, borderRadius: '50%',
+                background: catColor,
+                border: !editTheme.accent ? '3px solid #fff' : '3px solid transparent',
+                cursor: 'pointer', outline: 'none', flexShrink: 0,
+                boxShadow: !editTheme.accent ? `0 0 0 2px ${catColor}` : 'none',
+                position: 'relative',
+              }}
+            >
+              <span style={{ position: 'absolute', bottom: -16, left: '50%', transform: 'translateX(-50%)', fontSize: 8, color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap', fontWeight: 600 }}>AUTO</span>
+            </button>
+            {CLUB_ACCENT_PRESETS.map(hex => (
+              <button key={hex} onClick={() => { update({ accent: hex }); setHexInput(hex) }}
+                style={{
+                  width: 42, height: 42, borderRadius: '50%',
+                  background: hex,
+                  border: editTheme.accent === hex ? '3px solid #fff' : '3px solid transparent',
+                  cursor: 'pointer', outline: 'none', flexShrink: 0,
+                  boxShadow: editTheme.accent === hex ? `0 0 0 2px ${hex}` : 'none',
+                  transition: 'transform 0.12s, box-shadow 0.12s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.12)' }}
+                onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
+              />
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 18 }}>
+            <div style={{ width: 28, height: 28, borderRadius: 8, background: previewAccent, flexShrink: 0, border: '1px solid rgba(255,255,255,0.1)' }}/>
+            <input
+              value={hexInput}
+              onChange={e => {
+                setHexInput(e.target.value)
+                if (/^#[0-9a-f]{6}$/i.test(e.target.value)) update({ accent: e.target.value })
+              }}
+              placeholder="#8a1538"
+              style={{ flex: 1, padding: '9px 12px', borderRadius: 9, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-primary)', fontSize: 13, outline: 'none', fontFamily: 'monospace' }}
+            />
+          </div>
+        </div>
+
+        {/* ── Banner Background ── */}
+        <div style={{ marginBottom: 26 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>Banner Background</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
+            {Object.entries(CLUB_BG_THEMES).map(([key, t]) => {
+              const active = editTheme.bg === key
+              return (
+                <button
+                  key={key}
+                  onClick={() => update({ bg: key })}
+                  style={{
+                    borderRadius: 12, overflow: 'hidden', cursor: 'pointer',
+                    border: active ? `2px solid ${previewAccent}` : '2px solid rgba(255,255,255,0.07)',
+                    padding: 0, outline: 'none', background: 'transparent',
+                    boxShadow: active ? `0 0 12px ${pa(0.4)}` : 'none',
+                    transition: 'border-color 0.15s, box-shadow 0.15s',
+                  }}
+                >
+                  <div style={{
+                    height: 52,
+                    backgroundColor: t.base,
+                    backgroundImage: [
+                      `radial-gradient(ellipse 80% 140% at 30% 60%, ${previewAccent}aa 0%, transparent 60%)`,
+                      `radial-gradient(ellipse 60% 90% at 80% 20%, ${previewAccent}66 0%, transparent 55%)`,
+                    ].join(','),
+                    display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: '0 0 6px',
+                  }}>
+                    <span style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>{BG_THEME_LABELS[key]}</span>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* ── Card Glow ── */}
+        <div style={{ marginBottom: 28 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>Card Glow</div>
+          <button
+            onClick={() => update({ glow: !editTheme.glow })}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '12px 16px', borderRadius: 12, cursor: 'pointer',
+              background: editTheme.glow ? pa(0.12) : 'rgba(255,255,255,0.04)',
+              border: editTheme.glow ? `1px solid ${pa(0.35)}` : '1px solid rgba(255,255,255,0.09)',
+              color: editTheme.glow ? previewAccent : 'rgba(255,255,255,0.4)',
+              fontSize: 13, fontWeight: 600, transition: 'all 0.15s', width: '100%', textAlign: 'left',
+              boxShadow: editTheme.glow ? `0 0 20px ${pa(0.18)}` : 'none',
+            }}
+          >
+            <div style={{
+              width: 18, height: 18, borderRadius: '50%',
+              background: editTheme.glow ? previewAccent : 'rgba(255,255,255,0.12)',
+              boxShadow: editTheme.glow ? `0 0 10px ${pa(0.6)}` : 'none',
+              transition: 'all 0.2s', flexShrink: 0,
+            }}/>
+            {editTheme.glow ? 'Glow On — cards have an accent border glow' : 'Glow Off — standard flat card borders'}
+          </button>
+        </div>
+
+        {/* ── Actions ── */}
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={onCancel} style={{ flex: 1, padding: '12px', borderRadius: 12, background: 'transparent', border: '1px solid rgba(255,255,255,0.09)', color: 'rgba(255,255,255,0.45)', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
+            Cancel
+          </button>
+          <button onClick={onSave} disabled={saving} style={{ flex: 2, padding: '12px', borderRadius: 12, border: 'none', background: `linear-gradient(135deg, ${previewAccent}, ${previewAccent}cc)`, color: '#fff', fontSize: 14, fontWeight: 700, cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1, boxShadow: saving ? 'none' : `0 4px 20px ${pa(0.4)}`, transition: 'all 0.2s' }}>
+            {saving ? 'Saving…' : 'Save Appearance'}
+          </button>
         </div>
       </div>
     </div>
