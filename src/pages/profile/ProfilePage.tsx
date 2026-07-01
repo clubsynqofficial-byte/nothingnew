@@ -196,6 +196,10 @@ function buildCSS(r: number, g: number, b: number) {
     .pf-tabs-row::-webkit-scrollbar { display: none; }
     .pf-tab { white-space: nowrap; flex-shrink: 0; }
     .pf-msg-btn span.pf-msg-label { display: none; }
+    .pf-btn-theme-label { display: none; }
+  }
+  @media(max-width:400px) {
+    .pf-tab { padding: 8px 7px !important; font-size: 11px !important; }
   }
 
   input:focus, textarea:focus { border-color:rgba(${r},${g},${b},0.55) !important; outline:none; }
@@ -787,17 +791,22 @@ export default function ProfilePage() {
 
           {/* Edit Profile button — own profile, top-right of banner */}
           {isOwnProfile && (
-            <div style={{ position:'absolute', top:14, right:16, zIndex:2, display:'flex', gap:7 }}>
-              <button className="pf-btn" onClick={() => { setEditTheme({ ...theme }); setCustomizing(true) }}
-                style={{ padding:'7px 13px', background:'rgba(0,0,0,0.4)', backdropFilter:'blur(10px)', border:`1px solid ${ta(0.3)}`, borderRadius:10, color:activeTheme.accent, fontSize:13, fontWeight:700, display:'flex', alignItems:'center', gap:5 }}
+            <div style={{ position:'absolute', top:10, right:12, zIndex:2, display:'flex', gap:6 }}>
+              {/* 🎨 Theme — icon-only on mobile */}
+              <button className="pf-btn pf-btn-theme" onClick={() => { setEditTheme({ ...theme }); setCustomizing(true) }}
+                style={{ padding:'7px 12px', background:'rgba(0,0,0,0.4)', backdropFilter:'blur(10px)', border:`1px solid ${ta(0.3)}`, borderRadius:10, color:activeTheme.accent, fontSize:13, fontWeight:700, display:'flex', alignItems:'center', gap:5 }}
                 onMouseEnter={e => { e.currentTarget.style.background=ta(0.25); e.currentTarget.style.color='#fff'; }}
                 onMouseLeave={e => { e.currentTarget.style.background='rgba(0,0,0,0.4)'; e.currentTarget.style.color=activeTheme.accent; }}
-              >🎨 Theme</button>
+                title="Customize Theme"
+              >
+                <span>🎨</span>
+                <span className="pf-btn-theme-label">Theme</span>
+              </button>
               <button className="pf-btn" onClick={openEdit}
-                style={{ padding:'7px 16px', background:'rgba(0,0,0,0.4)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:10, color:'rgba(255,255,255,0.8)', fontSize:13, fontWeight:600 }}
+                style={{ padding:'7px 14px', background:'rgba(0,0,0,0.4)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:10, color:'rgba(255,255,255,0.8)', fontSize:13, fontWeight:600, whiteSpace:'nowrap' }}
                 onMouseEnter={e => { e.currentTarget.style.background=ta(0.55); e.currentTarget.style.borderColor=ta(0.6); e.currentTarget.style.color='#fff'; }}
                 onMouseLeave={e => { e.currentTarget.style.background='rgba(0,0,0,0.4)'; e.currentTarget.style.borderColor='rgba(255,255,255,0.15)'; e.currentTarget.style.color='rgba(255,255,255,0.8)'; }}
-              >Edit Profile</button>
+              >Edit</button>
             </div>
           )}
         </div>
@@ -1526,6 +1535,7 @@ function ThemeCustomizer({ editTheme, setEditTheme, onClose, onSave, saving }: T
         display:'flex', flexDirection:'column',
         boxShadow:`0 -8px 60px rgba(0,0,0,0.7), 0 -2px 0 ${ta(0.5)}`,
         animation:'pf-custIn 0.32s cubic-bezier(0.22,1,0.36,1) both',
+        paddingBottom:'env(safe-area-inset-bottom)',
       }}>
         {/* Handle */}
         <div style={{ display:'flex', justifyContent:'center', padding:'12px 0 0' }}>
@@ -1565,7 +1575,7 @@ function ThemeCustomizer({ editTheme, setEditTheme, onClose, onSave, saving }: T
                     onClick={() => { setEditTheme({ ...editTheme, accent: hex }); setCustomHex(hex); setHexError(false) }}
                     title={hex}
                     style={{
-                      width:36, height:36, borderRadius:10,
+                      width:42, height:42, borderRadius:12,
                       background: hex === '#ffffff' ? 'linear-gradient(135deg,#e5e7eb,#ffffff)' : `linear-gradient(135deg,${hex},rgba(${r},${g},${b},0.7))`,
                       border: active ? `3px solid #fff` : '2px solid rgba(255,255,255,0.08)',
                       boxShadow: active ? `0 0 0 2px ${hex}, 0 4px 16px rgba(${r},${g},${b},0.5)` : 'none',

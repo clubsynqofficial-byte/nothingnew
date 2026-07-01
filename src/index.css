@@ -109,6 +109,8 @@ button { cursor: pointer; }
 
   .main-content {
     margin-left: 0;
+    /* Space for bottom nav */
+    padding-bottom: calc(58px + env(safe-area-inset-bottom));
   }
 
   .top-bar-logo-space {
@@ -125,8 +127,11 @@ button { cursor: pointer; }
 
   /* Page content padding on mobile */
   .page-content {
-    padding: 20px 16px !important;
+    padding: 16px 14px 24px !important;
   }
+
+  /* Touch-target minimum */
+  button, a { min-height: 36px; }
 }
 
 @media (min-width: 769px) {
@@ -188,6 +193,23 @@ button { cursor: pointer; }
 
 /* ── Extra small phones ── */
 @media (max-width: 480px) {
-  .page-content { padding: 14px 12px 64px !important; }
+  .page-content { padding: 12px 12px 20px !important; }
   .r-modal { border-radius: 20px !important; padding: 20px 16px !important; }
+}
+
+/* ── FloatingChat stays above bottom nav ── */
+@media (max-width: 768px) {
+  .fc-fab {
+    bottom: calc(68px + env(safe-area-inset-bottom)) !important;
+    right: 16px !important;
+    padding: 10px 16px 10px 13px !important;
+    font-size: 13px !important;
+  }
+  .fc-panel {
+    bottom: calc(126px + env(safe-area-inset-bottom)) !important;
+    right: 12px !important;
+    left: 12px !important;
+    width: auto !important;
+    max-height: 60vh !important;
+  }
 }

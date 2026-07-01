@@ -2,6 +2,7 @@ import { useState, useEffect, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 import SideNav from './SideNav'
 import TopBar from './TopBar'
+import BottomNav from './BottomNav'
 import FloatingChat from '../FloatingChat'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -31,6 +32,7 @@ export default function AppLayout({ children }: Props) {
         {children}
       </main>
       {pathname !== '/messages' && <FloatingChat />}
+      <BottomNav />
     </div>
   )
 }
