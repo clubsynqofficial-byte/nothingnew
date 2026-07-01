@@ -224,10 +224,19 @@ export default function CreateShopPage() {
   if (showPreview) {
     return (
       <div style={{ minHeight:'100vh', background:'var(--bg-primary)', overflowY:'auto' }}>
-        <style>{`@keyframes pvFadeIn { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} } @keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        <style>{`
+          @keyframes pvFadeIn { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} }
+          @keyframes spin{to{transform:rotate(360deg)}}
+          @media (max-width: 600px) {
+            .cs-pv-top-bar { padding: 10px 14px !important; flex-wrap: wrap !important; gap: 8px !important; }
+            .cs-pv-items-grid { grid-template-columns: repeat(2,1fr) !important; }
+            .cs-pv-confirm { flex-direction: column !important; }
+            .cs-pv-links { display: none !important; }
+          }
+        `}</style>
 
         {/* Sticky top bar */}
-        <div style={{ position:'sticky', top:0, zIndex:20, background:'rgba(12,8,10,0.92)', backdropFilter:'blur(20px)', borderBottom:'1px solid rgba(255,255,255,0.06)', padding:'12px 28px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+        <div className="cs-pv-top-bar" style={{ position:'sticky', top:0, zIndex:20, background:'rgba(12,8,10,0.92)', backdropFilter:'blur(20px)', borderBottom:'1px solid rgba(255,255,255,0.06)', padding:'12px 28px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
           <div style={{ display:'flex', alignItems:'center', gap:10 }}>
             <button onClick={() => setShowPreview(false)}
               style={{ display:'flex', alignItems:'center', gap:7, background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.09)', borderRadius:9, padding:'7px 14px', color:'rgba(255,255,255,0.6)', fontSize:13, fontWeight:500, cursor:'pointer', fontFamily:'inherit', transition:'all .15s' }}
@@ -280,7 +289,7 @@ export default function CreateShopPage() {
                   </span>
                 </div>
               </div>
-              <div style={{ display:'flex', gap:7, flexShrink:0 }}>
+              <div className="cs-pv-links" style={{ display:'flex', gap:7, flexShrink:0 }}>
                 {instagram && <div style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 11px', borderRadius:8, background:'rgba(225,48,108,0.08)', border:'1px solid rgba(225,48,108,0.18)', fontSize:11.5, fontWeight:600, color:'#e1306c' }}>
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><defs><linearGradient id="fs-ig" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" stopColor="#FCAF45"/><stop offset="100%" stopColor="#833AB4"/></linearGradient></defs><rect x="2" y="2" width="20" height="20" rx="5.5" stroke="url(#fs-ig)" strokeWidth="2.2"/><circle cx="12" cy="12" r="4.5" stroke="url(#fs-ig)" strokeWidth="2.2"/><circle cx="17.5" cy="6.5" r="1.2" fill="url(#fs-ig)"/></svg>
                   {extractHandle(instagram)}
@@ -314,7 +323,7 @@ export default function CreateShopPage() {
             </span>
           </div>
 
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14 }}>
+          <div className="cs-pv-items-grid" style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14 }}>
             {dummyItems.map((item, i) => (
               <div key={i} style={{ borderRadius:14, overflow:'hidden', background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.07)', transition:'transform .18s, border-color .18s', cursor:'pointer' }}
                 onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform='translateY(-3px)'; (e.currentTarget as HTMLDivElement).style.borderColor=`${col}40` }}
@@ -361,7 +370,7 @@ export default function CreateShopPage() {
           </div>
 
           {/* Bottom confirm */}
-          <div style={{ marginTop:36, padding:'20px 24px', borderRadius:16, background:'rgba(138,21,56,0.07)', border:'1px solid rgba(138,21,56,0.18)', display:'flex', alignItems:'center', justifyContent:'space-between', gap:16 }}>
+          <div className="cs-pv-confirm" style={{ marginTop:36, padding:'20px 24px', borderRadius:16, background:'rgba(138,21,56,0.07)', border:'1px solid rgba(138,21,56,0.18)', display:'flex', alignItems:'center', justifyContent:'space-between', gap:16 }}>
             <div>
               <p style={{ fontSize:14, fontWeight:600, color:'var(--text-primary)', margin:'0 0 3px' }}>Looks good?</p>
               <p style={{ fontSize:12.5, color:'rgba(255,255,255,0.35)', margin:0 }}>Once you confirm, your shop will go live and you can start adding real listings.</p>
@@ -389,10 +398,16 @@ export default function CreateShopPage() {
         @keyframes previewIn { from { opacity:0; transform:translateY(12px) scale(0.98); } to { opacity:1; transform:translateY(0) scale(1); } }
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes shimmer { 0%,100% { opacity:.5 } 50% { opacity:1 } }
+        @media (max-width: 800px) {
+          .cs-main-grid { grid-template-columns: 1fr !important; padding: 24px 16px !important; }
+          .cs-live-preview { display: none !important; }
+          .cs-top-bar { padding: 12px 16px !important; }
+          .cs-cat-grid { grid-template-columns: repeat(2,1fr) !important; }
+        }
       `}</style>
 
       {/* Top bar */}
-      <div style={{ borderBottom:'1px solid rgba(255,255,255,0.06)', padding:'14px 32px', display:'flex', alignItems:'center', gap:10, background:'rgba(12,8,10,0.85)', backdropFilter:'blur(20px)', position:'sticky', top:0, zIndex:20 }}>
+      <div className="cs-top-bar" style={{ borderBottom:'1px solid rgba(255,255,255,0.06)', padding:'14px 32px', display:'flex', alignItems:'center', gap:10, background:'rgba(12,8,10,0.85)', backdropFilter:'blur(20px)', position:'sticky', top:0, zIndex:20 }}>
         <button onClick={() => navigate('/marketplace')}
           style={{ display:'flex', alignItems:'center', justifyContent:'center', width:30, height:30, borderRadius:8, background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.08)', cursor:'pointer', color:'var(--text-muted)', transition:'background .15s', flexShrink:0 }}
           onMouseEnter={e => e.currentTarget.style.background='rgba(255,255,255,0.1)'}
@@ -405,7 +420,7 @@ export default function CreateShopPage() {
         <span style={{ fontSize:13, fontWeight:600, color:'var(--text-primary)' }}>Create Shop</span>
       </div>
 
-      <div style={{ maxWidth:1100, margin:'0 auto', padding:'36px 28px', display:'grid', gridTemplateColumns:'minmax(0,1fr) 400px', gap:36, alignItems:'start' }}>
+      <div className="cs-main-grid" style={{ maxWidth:1100, margin:'0 auto', padding:'36px 28px', display:'grid', gridTemplateColumns:'minmax(0,1fr) 400px', gap:36, alignItems:'start' }}>
 
         {/* ── FORM ── */}
         <div style={{ animation:'fadeUp 0.4s cubic-bezier(0.22,1,0.36,1) both' }}>
@@ -449,7 +464,7 @@ export default function CreateShopPage() {
             {/* Category */}
             <div style={sectionCard}>
               <p style={{ fontSize:11, fontWeight:700, color:'var(--accent)', letterSpacing:'0.07em', textTransform:'uppercase', margin:'0 0 16px' }}>Category</p>
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8 }}>
+              <div className="cs-cat-grid" style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8 }}>
                 {CATEGORIES.map(c => {
                   const active = category === c.label
                   return (
@@ -533,7 +548,7 @@ export default function CreateShopPage() {
         </div>
 
         {/* ── LIVE PREVIEW ── */}
-        <div style={{ position:'sticky', top:78, animation:'previewIn 0.5s cubic-bezier(0.22,1,0.36,1) 0.12s both' }}>
+        <div className="cs-live-preview" style={{ position:'sticky', top:78, animation:'previewIn 0.5s cubic-bezier(0.22,1,0.36,1) 0.12s both' }}>
 
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
             <span style={{ fontSize:11, fontWeight:700, color:'rgba(255,255,255,0.22)', letterSpacing:'0.08em', textTransform:'uppercase' }}>Live Preview</span>

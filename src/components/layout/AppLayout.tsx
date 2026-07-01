@@ -32,7 +32,7 @@ export default function AppLayout({ children }: Props) {
         {children}
       </main>
       {pathname !== '/messages' && <FloatingChat />}
-      <BottomNav />
+      {pathname !== '/messages' && <BottomNav />}
     </div>
   )
 }
