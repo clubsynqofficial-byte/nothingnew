@@ -10,6 +10,44 @@ import { filterText, validateImage } from '../../lib/contentFilter'
 import ClubFormBuilder from './ClubFormBuilder'
 import ClubPositions from './ClubPositions'
 
+// ── Club theme ──────────────────────────────────────
+interface DashWidget { id: 'stats'|'events'|'members'|'announcements'; order: number; size: 'half'|'full'; hidden?: boolean }
+interface ClubTheme { accent: string; bg: string; glow: boolean; dashBg?: string; dashTextMode?: 'dark'|'light'; widgets?: DashWidget[] }
+const DEFAULT_CLUB_THEME: ClubTheme = { accent: '', bg: 'dark', glow: false }
+const DEFAULT_WIDGETS: DashWidget[] = [
+  { id: 'stats',         order: 0, size: 'full'  },
+  { id: 'events',        order: 1, size: 'half'  },
+  { id: 'members',       order: 2, size: 'half'  },
+  { id: 'announcements', order: 3, size: 'full'  },
+]
+const CLUB_ACCENT_PRESETS = [
+  '#8a1538','#e53e3e','#f97316','#f59e0b','#22c55e',
+  '#0ea5e9','#3b82f6','#8b5cf6','#ec4899','#06b6d4','#ffffff','#6b7280',
+]
+const CLUB_BG_THEMES: Record<string, { base: string; dots: string }> = {
+  dark:     { base: '#0b0210', dots: 'rgba(255,255,255,0.09)' },
+  midnight: { base: '#050820', dots: 'rgba(255,255,255,0.07)' },
+  space:    { base: '#040416', dots: 'rgba(255,255,255,0.06)' },
+  forest:   { base: '#041208', dots: 'rgba(255,255,255,0.07)' },
+  ocean:    { base: '#030e1c', dots: 'rgba(255,255,255,0.06)' },
+  dusk:     { base: '#110818', dots: 'rgba(255,255,255,0.08)' },
+  void:     { base: '#080808', dots: 'rgba(255,255,255,0.05)' },
+}
+const BG_THEME_LABELS: Record<string, string> = {
+  dark:'Dark', midnight:'Midnight', space:'Space',
+  forest:'Forest', ocean:'Ocean', dusk:'Dusk', void:'Void',
+}
+function hexToRgbCC(hex: string): [number, number, number] {
+  const c = hex.replace('#', '')
+  if (c.length !== 6) return [138, 21, 56]
+  return [parseInt(c.slice(0,2),16), parseInt(c.slice(2,4),16), parseInt(c.slice(4,6),16)]
+}
+const CATEGORY_COLORS: Record<string, string> = {
+  Technology: '#0ea5e9', 'Arts & Culture': '#a855f7', Sports: '#e9c176',
+  Entrepreneurship: '#f97316', Engineering: '#22c55e', Business: '#ec4899',
+  Community: '#f43f5e', Law: '#8b5cf6', Science: '#06b6d4', Media: '#f59e0b',
+}
+
 interface Stats {
   memberCount: number
   eventCount: number
@@ -126,6 +164,29 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
   const navigate = useNavigate()
   const isPresident = userPermissions === undefined
   const canDo = (perm: string) => isPresident || (userPermissions ?? []).includes(perm)
+
+  const [theme,       setTheme]       = useState<ClubTheme>(club.club_theme ?? DEFAULT_CLUB_THEME)
+  const [editTheme,   setEditTheme]   = useState<ClubTheme>(DEFAULT_CLUB_THEME)
+  const [customizing, setCustomizing] = useState(false)
+  const [savingTheme, setSavingTheme] = useState(false)
+
+  // Apply custom background to page body while this component is mounted
+  useEffect(() => {
+    const bg = theme.dashBg
+    if (!bg) return
+    const prev = document.body.style.background
+    document.body.style.background = bg
+    return () => { document.body.style.background = prev }
+  }, [theme.dashBg])
+
+  async function saveTheme() {
+    setSavingTheme(true)
+    await supabase.from('clubs').update({ club_theme: editTheme }).eq('id', club.id)
+    setTheme(editTheme)
+    setSavingTheme(false)
+    setCustomizing(false)
+  }
+
   const [stats, setStats] = useState<Stats>({ memberCount: 0, eventCount: 0, totalAttendees: 0, threadCount: 0, newMembersThisMonth: 0 })
   const [events, setEvents] = useState<Event[]>([])
   const [announcements, setAnnouncements] = useState<AnnouncementRow[]>([])
@@ -896,12 +957,7 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
     setBudgetEntries(prev => prev.filter(e => e.id !== id))
   }
 
-  const defaultTab = isPresident || canDo('manage_events') ? 'events'
-    : canDo('post_announcements') ? 'announcements'
-    : canDo('remove_members') || canDo('accept_members') ? 'team'
-    : canDo('edit_appearance') ? 'settings'
-    : 'events'
-  const [activeTab, setActiveTab] = useState<string>(defaultTab)
+  const [activeTab, setActiveTab] = useState<string>('overview')
 
   async function fetchAnalytics() {
     setLoadingAnalytics(true)
@@ -1017,6 +1073,10 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
   const avgAttendees = stats.eventCount > 0 ? (stats.totalAttendees / stats.eventCount).toFixed(1) : '—'
   const liveCount = events.filter(e => e.is_live).length
 
+  // Dashboard widget layout (sorted by order, filtered visible)
+  const dashWidgets = [...(theme.widgets ?? DEFAULT_WIDGETS)].sort((a, b) => a.order - b.order)
+  const isLightText = theme.dashTextMode === 'light'
+
   const statCard = (label: string, value: string | number, sub?: string, accentColor?: string) => (
     <div style={{
       background: 'rgba(255,255,255,0.04)',
@@ -1040,6 +1100,7 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
   )
 
   const ALL_TABS = [
+    { key: 'overview',      label: '🏠 Overview',     badge: null,                 badgeColor: undefined as string|undefined,                                                        tier: 1, visible: true },
     { key: 'events',        label: 'Events',          badge: events.length,        badgeColor: undefined as string|undefined,                                                        tier: 1, visible: isPresident || canDo('manage_events') },
     { key: 'team',          label: 'Team',             badge: teamMembers.length,   badgeColor: undefined as string|undefined,                                                        tier: 1, visible: isPresident || canDo('remove_members') || canDo('accept_members') },
     { key: 'applications',  label: 'Applications',     badge: applications.length,  badgeColor: applications.length > 0 ? '#f87171' : undefined,                                     tier: 1, visible: isPresident || canDo('accept_members') },
@@ -1057,7 +1118,14 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
   const TABS_UTILITY = ALL_TABS.filter(t => t.tier === 2)
 
   return (
-    <div className="page-content" style={{ maxWidth: 1100 }}>
+    <div className="page-content" style={{
+      maxWidth: 1100,
+      ...(isLightText ? {
+        '--text-primary':   '#111111',
+        '--text-secondary': '#333333',
+        '--text-muted':     '#555555',
+      } as React.CSSProperties : {}),
+    }}>
       <style>{`
         @keyframes cc-pop { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
         .cc-panel { animation: cc-pop 0.25s cubic-bezier(0.22,1,0.36,1) both; }
@@ -1106,40 +1174,29 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
           </div>
           <p style={{ fontSize:14, color:'var(--text-muted)' }}>{isPresident ? "Manage your organization's legacy, reach, and standing." : `You have limited access to ${club.name}.`}</p>
         </div>
-        {(isPresident || canDo('manage_events')) && (
-          <button
-            onClick={() => { setActiveTab('events'); setShowEventForm(v => !v) }}
-            style={{ background:'var(--accent)', border:'none', borderRadius:10, padding:'11px 22px', color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer', boxShadow:'0 0 20px rgba(138,21,56,0.3)', fontFamily:'inherit' }}
-          >
-            {showEventForm ? '✕ Cancel' : '+ Create Event'}
-          </button>
-        )}
+        <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
+          {isPresident && (
+            <button
+              onClick={() => { setEditTheme(theme); setCustomizing(true) }}
+              style={{ display:'flex', alignItems:'center', gap:7, background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.12)', borderRadius:10, padding:'11px 18px', color:'var(--text-secondary)', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:'inherit', transition:'all .15s' }}
+              onMouseEnter={e => { e.currentTarget.style.background='rgba(255,255,255,0.1)'; e.currentTarget.style.borderColor='rgba(255,255,255,0.22)' }}
+              onMouseLeave={e => { e.currentTarget.style.background='rgba(255,255,255,0.05)'; e.currentTarget.style.borderColor='rgba(255,255,255,0.12)' }}
+            >
+              🎨 Customize
+            </button>
+          )}
+          {(isPresident || canDo('manage_events')) && (
+            <button
+              onClick={() => { setActiveTab('events'); setShowEventForm(v => !v) }}
+              style={{ background:'var(--accent)', border:'none', borderRadius:10, padding:'11px 22px', color:'#fff', fontSize:14, fontWeight:700, cursor:'pointer', boxShadow:'0 0 20px rgba(138,21,56,0.3)', fontFamily:'inherit' }}
+            >
+              {showEventForm ? '✕ Cancel' : '+ Create Event'}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ── Stats (untouched) ── */}
-      {loadingStats ? (
-        <div style={{ color:'var(--text-muted)', marginBottom:28 }}>Loading stats…</div>
-      ) : (
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:14, marginBottom:24 }}>
-          {statCard('Members', stats.memberCount, 'Total enrolled')}
-          {statCard('Events', stats.eventCount, 'All time')}
-          {statCard('Total Attendees', stats.totalAttendees, 'Across all events')}
-          {statCard('Avg Attendance', avgAttendees, 'Per event', '#0ea5e9')}
-          {statCard('Community Threads', stats.threadCount, 'Active discussions', '#a855f7')}
-          {statCard('Joined This Month', stats.newMembersThisMonth, 'Last 30 days', '#22c55e')}
-        </div>
-      )}
-
-      {/* ── Live banner ── */}
-      {liveCount > 0 && (
-        <div style={{ background:'rgba(255,180,171,0.07)', border:'1px solid rgba(255,180,171,0.22)', borderRadius:11, padding:'11px 18px', marginBottom:18, display:'flex', alignItems:'center', gap:10 }}>
-          <span style={{ fontSize:11, fontWeight:700, color:'var(--live-red)', letterSpacing:'0.1em' }}>● LIVE</span>
-          <span style={{ fontSize:13, color:'var(--text-secondary)' }}>
-            {liveCount} event{liveCount !== 1 ? 's' : ''} currently live — members can check in now
-          </span>
-        </div>
-      )}
-
       {/* ── Mobile tab bar (hidden on desktop) ── */}
       <div className="cc-mobile-tabs" style={{ display:'none', overflowX:'auto', gap:2, marginBottom:20, scrollbarWidth:'none', WebkitOverflowScrolling:'touch' } as React.CSSProperties}>
         {[...TABS, ...TABS_UTILITY].map(t => (
@@ -1184,6 +1241,128 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
 
         {/* Tab content */}
         <div className="cc-content" style={{ flex:1, minWidth:0 }}>
+
+      {/* ── Overview tab ── */}
+      {activeTab === 'overview' && (
+        <div key="overview" className="cc-panel">
+
+          {/* Live banner */}
+          {liveCount > 0 && (
+            <div style={{ background:'rgba(255,180,171,0.07)', border:'1px solid rgba(255,180,171,0.22)', borderRadius:11, padding:'11px 18px', marginBottom:16, display:'flex', alignItems:'center', gap:10 }}>
+              <span style={{ fontSize:11, fontWeight:700, color:'var(--live-red)', letterSpacing:'0.1em' }}>● LIVE</span>
+              <span style={{ fontSize:13, color:'var(--text-secondary)' }}>
+                {liveCount} event{liveCount !== 1 ? 's' : ''} currently live — members can check in now
+              </span>
+            </div>
+          )}
+
+          {/* Configurable widget grid */}
+          <div style={{ display:'flex', flexWrap:'wrap', gap:14 }}>
+            {dashWidgets.filter(w => !w.hidden).map(w => (
+              <div key={w.id} style={{
+                width: w.size === 'half' ? 'calc(50% - 7px)' : '100%',
+                minWidth: w.size === 'half' ? 260 : undefined,
+                flex: w.size === 'half' ? '1 1 260px' : '1 1 100%',
+              }}>
+
+                {/* Stats widget */}
+                {w.id === 'stats' && (
+                  <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:16, padding:20 }}>
+                    <div style={{ fontSize:13, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:14 }}>Club Stats</div>
+                    {loadingStats ? (
+                      <div style={{ color:'var(--text-muted)' }}>Loading…</div>
+                    ) : (
+                      <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:10 }}>
+                        {statCard('Members',        stats.memberCount,        'Total enrolled')}
+                        {statCard('Events',         stats.eventCount,         'All time')}
+                        {statCard('Total Attendees',stats.totalAttendees,     'Across all events')}
+                        {statCard('Avg Attendance', avgAttendees,             'Per event',        '#0ea5e9')}
+                        {statCard('Threads',        stats.threadCount,        'Active discussions','#a855f7')}
+                        {statCard('Joined This Mo', stats.newMembersThisMonth,'Last 30 days',     '#22c55e')}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Events widget */}
+                {w.id === 'events' && (
+                  <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:16, padding:20, height:'100%', boxSizing:'border-box' }}>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
+                      <div style={{ fontSize:13, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em' }}>Recent Events</div>
+                      <button onClick={() => setActiveTab('events')} style={{ fontSize:12, color:'var(--accent)', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', padding:0, fontWeight:600 }}>View all →</button>
+                    </div>
+                    {events.length === 0 ? (
+                      <div style={{ color:'var(--text-muted)', fontSize:13 }}>No events yet</div>
+                    ) : (
+                      <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                        {events.slice(0, 4).map(ev => (
+                          <div key={ev.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', background:'rgba(255,255,255,0.03)', borderRadius:10 }}>
+                            <div style={{ width:8, height:8, borderRadius:'50%', background: ev.is_live ? 'var(--live-red)' : 'rgba(255,255,255,0.2)', flexShrink:0 }} />
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <div style={{ fontSize:13, fontWeight:600, color:'var(--text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ev.title}</div>
+                              <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:1 }}>{ev.attendee_count} attendees{ev.start_time ? ` · ${new Date(ev.start_time).toLocaleDateString()}` : ''}</div>
+                            </div>
+                            {ev.is_live && <span style={{ fontSize:10, fontWeight:700, color:'var(--live-red)', letterSpacing:'0.05em' }}>LIVE</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Members widget */}
+                {w.id === 'members' && (
+                  <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:16, padding:20, height:'100%', boxSizing:'border-box' }}>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
+                      <div style={{ fontSize:13, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em' }}>Members</div>
+                      <button onClick={() => setActiveTab('team')} style={{ fontSize:12, color:'var(--accent)', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', padding:0, fontWeight:600 }}>Manage →</button>
+                    </div>
+                    <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                      {teamMembers.slice(0, 5).map(m => (
+                        <div key={m.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', background:'rgba(255,255,255,0.03)', borderRadius:9 }}>
+                          <div style={{ width:28, height:28, borderRadius:'50%', background:'rgba(138,21,56,0.25)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700, color:'var(--accent)', flexShrink:0 }}>
+                            {(m.profile?.full_name ?? '?').charAt(0).toUpperCase()}
+                          </div>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontSize:13, fontWeight:600, color:'var(--text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{m.profile?.full_name ?? '—'}</div>
+                            <div style={{ fontSize:11, color:'var(--text-muted)' }}>{m.custom_role || m.role}</div>
+                          </div>
+                        </div>
+                      ))}
+                      {teamMembers.length > 5 && (
+                        <div style={{ fontSize:12, color:'var(--text-muted)', textAlign:'center', padding:'4px 0' }}>+{teamMembers.length - 5} more</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Announcements widget */}
+                {w.id === 'announcements' && (
+                  <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:16, padding:20 }}>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
+                      <div style={{ fontSize:13, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.08em' }}>Recent Announcements</div>
+                      <button onClick={() => setActiveTab('announcements')} style={{ fontSize:12, color:'var(--accent)', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', padding:0, fontWeight:600 }}>View all →</button>
+                    </div>
+                    {announcements.length === 0 ? (
+                      <div style={{ color:'var(--text-muted)', fontSize:13 }}>No announcements yet</div>
+                    ) : (
+                      <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                        {announcements.slice(0, 3).map(a => (
+                          <div key={a.id} style={{ padding:'10px 12px', background:'rgba(255,255,255,0.03)', borderRadius:10 }}>
+                            <div style={{ fontSize:13, color:'var(--text-secondary)', lineHeight:1.5, marginBottom:4, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' } as React.CSSProperties}>{a.content}</div>
+                            <div style={{ fontSize:11, color:'var(--text-muted)' }}>{a.profile?.full_name ?? 'Unknown'} · {new Date(a.created_at).toLocaleDateString()}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Events tab ── */}
       {activeTab === 'events' && (
@@ -3068,6 +3247,19 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
         document.body
       )}
       {evtAnnEvent && <EventAnnouncementModal event={evtAnnEvent} announcements={evtAnnouncements} content={evtAnnContent} posting={postingEvtAnn} onContentChange={setEvtAnnContent} onPost={handlePostEventAnn} onClose={() => setEvtAnnEvent(null)} />}
+
+      {/* Club Theme Customizer */}
+      {customizing && createPortal(
+        <CCThemeCustomizer
+          editTheme={editTheme}
+          setEditTheme={setEditTheme}
+          catColor={CATEGORY_COLORS[club.category ?? ''] ?? '#8a1538'}
+          saving={savingTheme}
+          onSave={saveTheme}
+          onCancel={() => setCustomizing(false)}
+        />,
+        document.body
+      )}
     </div>
   )
 }
@@ -4432,6 +4624,218 @@ function BannerCropModal({
               {saving ? 'Saving…' : 'Save Banner'}
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Club theme customizer bottom sheet ──────────────────────────────────────
+interface CCThemeCustomizerProps {
+  editTheme: ClubTheme
+  setEditTheme: (t: ClubTheme) => void
+  catColor: string
+  saving: boolean
+  onSave: () => void
+  onCancel: () => void
+}
+
+const WIDGET_LABELS: Record<string, string> = {
+  stats: '📊 Stats',
+  events: '📅 Events',
+  members: '👥 Members',
+  announcements: '📢 Announcements',
+}
+
+function GlowToggle({ on, accent, onToggle }: { on: boolean; accent: string; onToggle: () => void }) {
+  return (
+    <button onClick={onToggle} style={{ width:44, height:24, borderRadius:12, background: on ? accent : 'rgba(255,255,255,0.1)', border:'none', cursor:'pointer', position:'relative', flexShrink:0, transition:'background 0.2s' }}>
+      <div style={{ position:'absolute', top:2, left: on ? 22 : 2, width:20, height:20, borderRadius:'50%', background:'#fff', transition:'left 0.2s' }} />
+    </button>
+  )
+}
+
+function CCThemeCustomizer({ editTheme, setEditTheme, catColor, saving, onSave, onCancel }: CCThemeCustomizerProps) {
+  const [tab, setTab] = useState<'colors'|'layout'>('colors')
+  const activeAccent = editTheme.accent || catColor
+  const [r, g, b] = hexToRgbCC(activeAccent)
+  const ta = (a: number) => `rgba(${r},${g},${b},${a})`
+
+  const widgets = [...(editTheme.widgets ?? DEFAULT_WIDGETS)].sort((a, b) => a.order - b.order)
+
+  function moveWidget(id: string, dir: -1 | 1) {
+    const sorted = [...widgets]
+    const idx = sorted.findIndex(w => w.id === id)
+    const swapIdx = idx + dir
+    if (swapIdx < 0 || swapIdx >= sorted.length) return
+    const updated = sorted.map((w, i) => {
+      if (i === idx) return { ...w, order: sorted[swapIdx].order }
+      if (i === swapIdx) return { ...w, order: sorted[idx].order }
+      return w
+    })
+    setEditTheme({ ...editTheme, widgets: updated })
+  }
+
+  function setWidgetSize(id: string, size: 'half' | 'full') {
+    setEditTheme({ ...editTheme, widgets: widgets.map(w => w.id === id ? { ...w, size } : w) })
+  }
+
+  function toggleWidgetHidden(id: string) {
+    setEditTheme({ ...editTheme, widgets: widgets.map(w => w.id === id ? { ...w, hidden: !w.hidden } : w) })
+  }
+
+  const tabBtn = (key: 'colors'|'layout', label: string) => (
+    <button
+      onClick={() => setTab(key)}
+      style={{
+        flex: 1, padding: '9px', border: 'none', borderRadius: 10, cursor: 'pointer',
+        fontFamily: 'inherit', fontSize: 13, fontWeight: 700,
+        background: tab === key ? activeAccent : 'rgba(255,255,255,0.05)',
+        color: tab === key ? '#fff' : 'rgba(255,255,255,0.5)',
+        transition: 'all 0.15s',
+      }}
+    >{label}</button>
+  )
+
+  return (
+    <div onClick={onCancel} style={{ position:'fixed', inset:0, zIndex:9999, background:'rgba(0,0,0,0.65)', display:'flex', alignItems:'flex-end', justifyContent:'center' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width:'100%', maxWidth:540, background:'#12071a', border:`1px solid ${ta(0.3)}`, borderRadius:'20px 20px 0 0', padding:'20px 20px 32px', boxShadow:`0 -8px 40px ${ta(0.2)}`, maxHeight:'85vh', overflowY:'auto' }}>
+
+        {/* Handle */}
+        <div style={{ width:36, height:4, background:'rgba(255,255,255,0.15)', borderRadius:2, margin:'0 auto 16px' }} />
+
+        <div style={{ fontSize:16, fontWeight:700, color:'#fff', marginBottom:14 }}>🎨 Customize Dashboard</div>
+
+        {/* Tab switcher */}
+        <div style={{ display:'flex', gap:6, marginBottom:20, background:'rgba(255,255,255,0.04)', borderRadius:12, padding:4 }}>
+          {tabBtn('colors', '🎨 Colors')}
+          {tabBtn('layout', '⚙️ Layout')}
+        </div>
+
+        {/* ── Colors tab ── */}
+        {tab === 'colors' && (<>
+
+          {/* Accent color */}
+          <div style={{ marginBottom:18 }}>
+            <div style={{ fontSize:11, color:'rgba(255,255,255,0.4)', fontWeight:700, marginBottom:10, textTransform:'uppercase', letterSpacing:'0.08em' }}>Accent Color</div>
+            <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+              {CLUB_ACCENT_PRESETS.map(hex => (
+                <button key={hex} onClick={() => setEditTheme({ ...editTheme, accent: hex === catColor ? '' : hex })} title={hex}
+                  style={{ width:30, height:30, borderRadius:'50%', background:hex, border:'none', cursor:'pointer', outline:(editTheme.accent === hex || (!editTheme.accent && hex === catColor)) ? '3px solid #fff' : '3px solid transparent', outlineOffset:2, transition:'outline 0.1s' }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Page background color */}
+          <div style={{ marginBottom:18 }}>
+            <div style={{ fontSize:11, color:'rgba(255,255,255,0.4)', fontWeight:700, marginBottom:10, textTransform:'uppercase', letterSpacing:'0.08em' }}>Page Background Color</div>
+            <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+              <input
+                type="color"
+                value={editTheme.dashBg || '#0b0210'}
+                onChange={e => setEditTheme({ ...editTheme, dashBg: e.target.value })}
+                style={{ width:44, height:36, borderRadius:10, border:'2px solid rgba(255,255,255,0.15)', cursor:'pointer', background:'none', padding:2 }}
+              />
+              <div>
+                <div style={{ fontSize:13, color:'#fff', fontWeight:600 }}>{editTheme.dashBg || '#0b0210'}</div>
+                <div style={{ fontSize:11, color:'rgba(255,255,255,0.4)' }}>Fill color for the dashboard page</div>
+              </div>
+              {editTheme.dashBg && (
+                <button onClick={() => setEditTheme({ ...editTheme, dashBg: undefined })}
+                  style={{ marginLeft:'auto', fontSize:12, color:'rgba(255,255,255,0.4)', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit' }}>
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Text mode */}
+          <div style={{ marginBottom:18 }}>
+            <div style={{ fontSize:11, color:'rgba(255,255,255,0.4)', fontWeight:700, marginBottom:10, textTransform:'uppercase', letterSpacing:'0.08em' }}>Text Color Mode</div>
+            <div style={{ display:'flex', gap:8 }}>
+              {(['dark','light'] as const).map(mode => (
+                <button key={mode} onClick={() => setEditTheme({ ...editTheme, dashTextMode: editTheme.dashTextMode === mode ? undefined : mode })}
+                  style={{ flex:1, padding:'10px', borderRadius:10, border:`1px solid ${editTheme.dashTextMode === mode ? activeAccent : 'rgba(255,255,255,0.1)'}`, background: editTheme.dashTextMode === mode ? ta(0.15) : 'rgba(255,255,255,0.03)', color: editTheme.dashTextMode === mode ? activeAccent : 'rgba(255,255,255,0.6)', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', transition:'all 0.15s' }}>
+                  {mode === 'dark' ? '🌙 Dark text' : '☀️ Light text'}
+                </button>
+              ))}
+            </div>
+            <div style={{ fontSize:11, color:'rgba(255,255,255,0.35)', marginTop:6 }}>Use "Light text" when you set a dark background color</div>
+          </div>
+
+          {/* BG theme presets */}
+          <div style={{ marginBottom:18 }}>
+            <div style={{ fontSize:11, color:'rgba(255,255,255,0.4)', fontWeight:700, marginBottom:10, textTransform:'uppercase', letterSpacing:'0.08em' }}>Dot Grid Preset</div>
+            <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+              {Object.entries(CLUB_BG_THEMES).map(([key, val]) => (
+                <button key={key} onClick={() => setEditTheme({ ...editTheme, bg: key })}
+                  style={{ width:46, height:38, borderRadius:9, background:val.base, border: editTheme.bg === key ? `2px solid ${activeAccent}` : '2px solid rgba(255,255,255,0.1)', cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'flex-end', padding:'0 0 3px', transition:'border 0.1s' }}
+                  title={BG_THEME_LABELS[key]}>
+                  <span style={{ fontSize:8, color: editTheme.bg === key ? activeAccent : 'rgba(255,255,255,0.5)', fontWeight:700 }}>{BG_THEME_LABELS[key]}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Card glow */}
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:4 }}>
+            <div>
+              <div style={{ fontSize:14, color:'#fff', fontWeight:600 }}>Card Glow</div>
+              <div style={{ fontSize:12, color:'rgba(255,255,255,0.4)' }}>Accent-colored glow on cards</div>
+            </div>
+            <GlowToggle on={editTheme.glow} accent={activeAccent} onToggle={() => setEditTheme({ ...editTheme, glow: !editTheme.glow })} />
+          </div>
+
+        </>)}
+
+        {/* ── Layout tab ── */}
+        {tab === 'layout' && (<>
+          <div style={{ fontSize:13, color:'rgba(255,255,255,0.45)', marginBottom:14 }}>
+            Drag to reorder, resize, or hide dashboard widgets.
+          </div>
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            {widgets.map((w, idx) => (
+              <div key={w.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 14px', background: w.hidden ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)', borderRadius:12, border:'1px solid rgba(255,255,255,0.07)', opacity: w.hidden ? 0.45 : 1 }}>
+
+                {/* Reorder arrows */}
+                <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+                  <button onClick={() => moveWidget(w.id, -1)} disabled={idx === 0}
+                    style={{ background:'none', border:'none', cursor: idx === 0 ? 'default' : 'pointer', color: idx === 0 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.6)', fontSize:12, padding:'1px 4px', lineHeight:1, fontFamily:'inherit' }}>▲</button>
+                  <button onClick={() => moveWidget(w.id, 1)} disabled={idx === widgets.length - 1}
+                    style={{ background:'none', border:'none', cursor: idx === widgets.length - 1 ? 'default' : 'pointer', color: idx === widgets.length - 1 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.6)', fontSize:12, padding:'1px 4px', lineHeight:1, fontFamily:'inherit' }}>▼</button>
+                </div>
+
+                {/* Label */}
+                <div style={{ flex:1, fontSize:14, fontWeight:600, color: w.hidden ? 'rgba(255,255,255,0.3)' : '#fff' }}>
+                  {WIDGET_LABELS[w.id]}
+                </div>
+
+                {/* Size toggle */}
+                {!w.hidden && (
+                  <div style={{ display:'flex', gap:4 }}>
+                    {(['half','full'] as const).map(sz => (
+                      <button key={sz} onClick={() => setWidgetSize(w.id, sz)}
+                        style={{ padding:'4px 10px', borderRadius:7, border: `1px solid ${w.size === sz ? activeAccent : 'rgba(255,255,255,0.12)'}`, background: w.size === sz ? ta(0.2) : 'transparent', color: w.size === sz ? activeAccent : 'rgba(255,255,255,0.45)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
+                        {sz === 'half' ? '½' : '⬛ Full'}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Hide toggle */}
+                <GlowToggle on={!w.hidden} accent={activeAccent} onToggle={() => toggleWidgetHidden(w.id)} />
+              </div>
+            ))}
+          </div>
+        </>)}
+
+        {/* Action buttons */}
+        <div style={{ display:'flex', gap:10, marginTop:22 }}>
+          <button onClick={onCancel} style={{ flex:1, padding:'12px', background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:12, color:'rgba(255,255,255,0.6)', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>Cancel</button>
+          <button onClick={onSave} disabled={saving} style={{ flex:2, padding:'12px', background: saving ? ta(0.4) : activeAccent, border:'none', borderRadius:12, color:'#fff', fontSize:14, fontWeight:700, cursor: saving ? 'default' : 'pointer', fontFamily:'inherit', boxShadow: saving ? 'none' : `0 4px 20px ${ta(0.4)}`, transition:'all 0.15s' }}>
+            {saving ? 'Saving…' : 'Save Theme'}
+          </button>
         </div>
       </div>
     </div>

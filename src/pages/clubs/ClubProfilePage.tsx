@@ -98,8 +98,15 @@ const MONTH_NAMES = ['January','February','March','April','May','June',
 const DAY_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 
 // ─────────────────────────── Club theme system ──
-interface ClubTheme { accent: string; bg: string; glow: boolean }
+interface PageSection { id: 'stats'|'about'|'links'|'tabs'; order: number; size?: 'compact'|'normal'|'large'; hidden?: boolean }
+interface ClubTheme { accent: string; bg: string; glow: boolean; pageBg?: string; pageSections?: PageSection[] }
 const DEFAULT_CLUB_THEME: ClubTheme = { accent: '', bg: 'dark', glow: false }
+const DEFAULT_PAGE_SECTIONS: PageSection[] = [
+  { id: 'stats', order: 0, size: 'normal' },
+  { id: 'about', order: 1 },
+  { id: 'links', order: 2 },
+  { id: 'tabs',  order: 3 },
+]
 
 const CLUB_ACCENT_PRESETS = [
   '#8a1538','#e53e3e','#f97316','#f59e0b','#22c55e',
@@ -254,6 +261,8 @@ export default function ClubProfilePage() {
   const [theme,       setTheme]       = useState<ClubTheme | null>(null)
   const [editTheme,   setEditTheme]   = useState<ClubTheme>(DEFAULT_CLUB_THEME)
   const [customizing, setCustomizing] = useState(false)
+  const [pageDragId,     setPageDragId]     = useState<string | null>(null)
+  const [pageDragOverId, setPageDragOverId] = useState<string | null>(null)
   const [savingTheme, setSavingTheme] = useState(false)
 
   // ── fetch ──
@@ -334,6 +343,28 @@ export default function ClubProfilePage() {
     setCustomizing(false)
   }
 
+  function dropOnSection(targetId: string) {
+    if (!pageDragId || pageDragId === targetId) { setPageDragId(null); setPageDragOverId(null); return }
+    const sorted = [...(editTheme.pageSections ?? DEFAULT_PAGE_SECTIONS)].sort((a, b) => a.order - b.order)
+    const from = sorted.findIndex(s => s.id === pageDragId)
+    const to   = sorted.findIndex(s => s.id === targetId)
+    if (from === -1 || to === -1) { setPageDragId(null); setPageDragOverId(null); return }
+    const arr = [...sorted]
+    const [item] = arr.splice(from, 1)
+    arr.splice(to, 0, item)
+    setEditTheme(prev => ({ ...prev, pageSections: arr.map((s, i) => ({ ...s, order: i })) }))
+    setPageDragId(null)
+    setPageDragOverId(null)
+  }
+
+  // Override the --bg-dark CSS variable so app-shell + body both pick it up
+  useEffect(() => {
+    const bg = (customizing ? editTheme : theme)?.pageBg
+    if (!bg) return
+    document.body.style.setProperty('--bg-dark', bg)
+    return () => { document.body.style.removeProperty('--bg-dark') }
+  }, [theme?.pageBg, editTheme?.pageBg, customizing])
+
   // ── derived ──
   const liveEvents     = events.filter(e => e.is_live)
   const upcomingEvents = events.filter(isUpcoming)
@@ -371,7 +402,8 @@ export default function ClubProfilePage() {
   const bgTheme      = CLUB_BG_THEMES[activeTheme.bg] ?? CLUB_BG_THEMES.dark
   const [tr, tg, tb] = hexToRgbClub(activeAccent)
   const ta           = (alpha: number) => `rgba(${tr},${tg},${tb},${alpha})`
-  const uniLabel = club.university?.short_name ?? club.university?.name ?? null
+  const uniLabel     = club.university?.short_name ?? club.university?.name ?? null
+  const pageSections = [...(activeTheme.pageSections ?? DEFAULT_PAGE_SECTIONS)].sort((a, b) => a.order - b.order)
 
   return (
     <div className="page-content" style={{ maxWidth: 1100, '--accent': activeAccent } as React.CSSProperties}>
@@ -459,43 +491,83 @@ export default function ClubProfilePage() {
       {/* ── Content area ── */}
       <div className="cp-content" style={{ padding: '0 28px 52px' }}>
 
-        {/* ── Stats row ── */}
-        <div className="cp-0" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 20 }}>
-          {[
-            { label: 'Members',  value: club.member_count },
-            { label: 'Events',   value: events.length },
-            { label: 'Threads',  value: threads.length },
-          ].map(({ label, value }, i) => (
-            <div key={label} style={{
-              background: 'rgba(255,255,255,0.03)',
-              border: `1px solid ${activeTheme.glow ? ta(0.18) : 'rgba(255,255,255,0.07)'}`,
-              boxShadow: activeTheme.glow ? `0 0 16px ${ta(0.1)}` : 'none',
-              borderRadius: 12, padding: '14px 18px', textAlign: 'center',
-              animation: `cp-up 0.45s cubic-bezier(0.22,1,0.36,1) ${0.1 + i * 0.07}s both`,
-            }}>
-              <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>{value}</div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginTop: 4, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{label}</div>
+        {/* ── Configurable sections — draggable by admin in customise mode ── */}
+        {pageSections.filter(s => !s.hidden).map(sec => {
+          const canDrag = canPost && customizing
+          const isDragging = pageDragId === sec.id
+          const isTarget   = pageDragOverId === sec.id
+          const dragHandlers = canDrag ? {
+            draggable: true as const,
+            onDragStart: (e: React.DragEvent) => { setPageDragId(sec.id); e.dataTransfer.effectAllowed = 'move' },
+            onDragOver:  (e: React.DragEvent) => { e.preventDefault(); setPageDragOverId(sec.id) },
+            onDragLeave: () => setPageDragOverId(null),
+            onDrop:      () => dropOnSection(sec.id),
+            onDragEnd:   () => { setPageDragId(null); setPageDragOverId(null) },
+          } : {}
+          const wrapStyle: React.CSSProperties = {
+            position: 'relative',
+            outline: canDrag ? (isTarget ? `2px dashed ${activeAccent}` : `2px dashed ${ta(0.18)}`) : 'none',
+            outlineOffset: 6,
+            borderRadius: 16,
+            opacity: isDragging ? 0.35 : 1,
+            cursor: canDrag ? 'grab' : undefined,
+            transition: 'outline 0.1s, opacity 0.15s',
+          }
+
+          if (sec.id === 'stats') {
+            const compact = sec.size === 'compact'
+            const large   = sec.size === 'large'
+            return (
+              <div key="stats" {...dragHandlers} style={{ marginTop: 20, ...wrapStyle }}>
+                {canDrag && <span style={{ position:'absolute', top:-10, left:14, zIndex:10, background: activeAccent, color:'#fff', fontSize:9, fontWeight:800, letterSpacing:'0.08em', padding:'2px 8px', borderRadius:5, pointerEvents:'none', textTransform:'uppercase' }}>⠿ Stats</span>}
+                <div className="cp-0" style={{ display: 'grid', gridTemplateColumns: large ? '1fr' : 'repeat(3, 1fr)', gap: compact ? 8 : 12 }}>
+                  {[
+                    { label: 'Members', value: club.member_count },
+                    { label: 'Events',  value: events.length },
+                    { label: 'Threads', value: threads.length },
+                  ].map(({ label, value }, i) => (
+                    <div key={label} style={{
+                      background: 'rgba(255,255,255,0.03)',
+                      border: `1px solid ${activeTheme.glow ? ta(0.18) : 'rgba(255,255,255,0.07)'}`,
+                      boxShadow: activeTheme.glow ? `0 0 16px ${ta(0.1)}` : 'none',
+                      borderRadius: compact ? 10 : 12,
+                      padding: compact ? '10px 14px' : large ? '26px 24px' : '14px 18px',
+                      textAlign: large ? 'left' : 'center',
+                      animation: `cp-up 0.45s cubic-bezier(0.22,1,0.36,1) ${0.1 + i * 0.07}s both`,
+                    }}>
+                      <div style={{ fontSize: compact ? 18 : large ? 40 : 22, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>{value}</div>
+                      <div style={{ fontSize: compact ? 10 : 11, fontWeight: 600, color: 'var(--text-muted)', marginTop: 4, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          }
+
+          if (sec.id === 'about') {
+            if (!club.description) return null
+            return (
+              <div key="about" {...dragHandlers} style={{ marginTop: 16, ...wrapStyle }}>
+                {canDrag && <span style={{ position:'absolute', top:-10, left:14, zIndex:10, background: activeAccent, color:'#fff', fontSize:9, fontWeight:800, letterSpacing:'0.08em', padding:'2px 8px', borderRadius:5, pointerEvents:'none', textTransform:'uppercase' }}>⠿ About</span>}
+                <div className="cp-1" style={{ padding: '16px 20px', background: 'rgba(255,255,255,0.03)', border: `1px solid ${activeTheme.glow ? ta(0.16) : 'rgba(255,255,255,0.06)'}`, borderRadius: 14 }}>
+                  <SectionLabel>About</SectionLabel>
+                  <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.7, margin: 0 }}>{club.description}</p>
+                </div>
+              </div>
+            )
+          }
+
+          if (sec.id === 'links') return (
+            <div key="links" {...dragHandlers} style={{ marginTop: 16, ...wrapStyle }}>
+              {canDrag && <span style={{ position:'absolute', top:-10, left:14, zIndex:10, background: activeAccent, color:'#fff', fontSize:9, fontWeight:800, letterSpacing:'0.08em', padding:'2px 8px', borderRadius:5, pointerEvents:'none', textTransform:'uppercase' }}>⠿ Links</span>}
+              <LinksSection club={club} canEdit={canPost} onSaved={links => setClub(c => c ? { ...c, social_links: links } : c)} />
             </div>
-          ))}
-        </div>
+          )
 
-        {/* ── About ── */}
-        {club.description && (
-          <div className="cp-1" style={{ marginTop: 16, padding: '16px 20px', background: 'rgba(255,255,255,0.03)', border: `1px solid ${activeTheme.glow ? ta(0.16) : 'rgba(255,255,255,0.06)'}`, borderRadius: 14 }}>
-            <SectionLabel>About</SectionLabel>
-            <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.7, margin: 0 }}>{club.description}</p>
-          </div>
-        )}
-
-        {/* ── Links ── */}
-        <LinksSection
-          club={club}
-          canEdit={canPost}
-          onSaved={links => setClub(c => c ? { ...c, social_links: links } : c)}
-        />
-
-        {/* ── Tabs ── */}
-        <div className="cp-2 cp-tabs" style={{ marginTop: 28 }}>
+          if (sec.id === 'tabs') return (
+            <div key="tabs" {...dragHandlers} style={{ marginTop: 16, ...wrapStyle }}>
+              {canDrag && <span style={{ position:'absolute', top:-10, left:14, zIndex:10, background: activeAccent, color:'#fff', fontSize:9, fontWeight:800, letterSpacing:'0.08em', padding:'2px 8px', borderRadius:5, pointerEvents:'none', textTransform:'uppercase' }}>⠿ Events / Members / More</span>}
+              <div className="cp-2 cp-tabs" style={{ marginTop: 12 }}>
           {([
             { key: 'events'        as Tab, label: 'Events',        badge: events.length },
             { key: 'calendar'      as Tab, label: 'Calendar',      badge: null },
@@ -670,6 +742,10 @@ export default function ClubProfilePage() {
 
         </div>
       </div>
+    )
+    return null
+  })}
+</div>
 
       {/* Club Theme Customizer */}
       {customizing && canPost && (
@@ -1774,6 +1850,26 @@ const BG_THEME_LABELS: Record<string, string> = {
   dark: 'Dark', midnight: 'Midnight', space: 'Space',
   forest: 'Forest', ocean: 'Ocean', dusk: 'Dusk', void: 'Void',
 }
+const SECTION_LABELS: Record<string, string> = {
+  stats: '📊 Stats', about: '📝 About', links: '🔗 Links', tabs: '📑 Tabs',
+}
+const STAT_SIZE_LABELS: Record<string, string> = { compact: 'Compact', normal: 'Normal', large: 'Large' }
+
+interface ThemePreset { name: string; accent: string; bg: string; glow: boolean; pageBg: string }
+const CLUB_THEME_PRESETS: ThemePreset[] = [
+  { name: 'Default',       accent: '#8a1538', bg: 'dark',     glow: false, pageBg: '#0b0210' },
+  { name: 'Midnight Blue', accent: '#0ea5e9', bg: 'midnight', glow: true,  pageBg: '#050820' },
+  { name: 'Violet Dream',  accent: '#8b5cf6', bg: 'dusk',     glow: true,  pageBg: '#110818' },
+  { name: 'Forest',        accent: '#22c55e', bg: 'forest',   glow: true,  pageBg: '#041208' },
+  { name: 'Ocean',         accent: '#06b6d4', bg: 'ocean',    glow: true,  pageBg: '#030e1c' },
+  { name: 'Solar',         accent: '#f97316', bg: 'void',     glow: true,  pageBg: '#0d0400' },
+  { name: 'Rose',          accent: '#ec4899', bg: 'dark',     glow: true,  pageBg: '#0d0608' },
+  { name: 'Gold',          accent: '#f59e0b', bg: 'void',     glow: true,  pageBg: '#080600' },
+  { name: 'Cosmic',        accent: '#3b82f6', bg: 'space',    glow: false, pageBg: '#040416' },
+  { name: 'Crimson',       accent: '#e53e3e', bg: 'dark',     glow: true,  pageBg: '#120404' },
+  { name: 'Monochrome',    accent: '#e2e8f0', bg: 'void',     glow: false, pageBg: '#080808' },
+  { name: 'Emerald',       accent: '#10b981', bg: 'forest',   glow: true,  pageBg: '#020d06' },
+]
 
 function ClubThemeCustomizer({
   editTheme, setEditTheme, catColor, saving, onSave, onCancel,
@@ -1785,6 +1881,8 @@ function ClubThemeCustomizer({
   onSave: () => void
   onCancel: () => void
 }) {
+  const [tab, setTab] = useState<'presets'|'colors'|'layout'>('presets')
+  const [minimized, setMinimized] = useState(false)
   const [hexInput, setHexInput] = useState(editTheme.accent)
   const update = (patch: Partial<ClubTheme>) => setEditTheme(prev => ({ ...prev, ...patch }))
 
@@ -1792,12 +1890,63 @@ function ClubThemeCustomizer({
   const [pr, pg, pb] = hexToRgbClub(previewAccent)
   const pa = (a: number) => `rgba(${pr},${pg},${pb},${a})`
 
+  const sections = [...(editTheme.pageSections ?? DEFAULT_PAGE_SECTIONS)].sort((a, b) => a.order - b.order)
+
+  function applyPreset(p: ThemePreset) {
+    setEditTheme(prev => ({ ...prev, accent: p.accent, bg: p.bg, glow: p.glow, pageBg: p.pageBg }))
+    setHexInput(p.accent)
+  }
+
+  function resetTheme() {
+    setEditTheme({ ...DEFAULT_CLUB_THEME })
+    setHexInput('')
+  }
+
+  function setSectionSize(id: string, size: 'compact'|'normal'|'large') {
+    update({ pageSections: sections.map(s => s.id === id ? { ...s, size } : s) })
+  }
+
+  function toggleSectionHidden(id: string) {
+    update({ pageSections: sections.map(s => s.id === id ? { ...s, hidden: !s.hidden } : s) })
+  }
+
+  const tabBtn = (key: 'presets'|'colors'|'layout', label: string) => (
+    <button onClick={() => setTab(key)} style={{
+      flex: 1, padding: '8px 4px', border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
+      background: tab === key ? previewAccent : 'rgba(255,255,255,0.05)',
+      color: tab === key ? '#fff' : 'rgba(255,255,255,0.45)',
+      transition: 'all 0.15s',
+    }}>{label}</button>
+  )
+
+  if (minimized) return (
+    <div style={{
+      position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
+      zIndex: 55, display: 'flex', alignItems: 'center', gap: 10,
+      background: 'rgba(12,6,9,0.95)', backdropFilter: 'blur(20px)',
+      border: `1px solid ${pa(0.35)}`, borderRadius: 99,
+      padding: '10px 16px',
+      boxShadow: `0 8px 32px rgba(0,0,0,0.6), 0 0 0 1px ${pa(0.15)}`,
+    }}>
+      <div style={{ width: 8, height: 8, borderRadius: '50%', background: previewAccent, boxShadow: `0 0 8px ${pa(0.8)}` }} />
+      <span style={{ fontSize: 13, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>Drag sections to reorder</span>
+      <button onClick={() => setMinimized(false)}
+        style={{ padding: '5px 14px', borderRadius: 99, border: 'none', background: previewAccent, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+        Open panel
+      </button>
+      <button onClick={onCancel}
+        style={{ width: 26, height: 26, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        ✕
+      </button>
+    </div>
+  )
+
   return (
     <div style={{
       position: 'fixed', bottom: 0, left: 0, right: 0,
-      width: 'min(680px,100vw)', maxHeight: '88vh',
+      width: 'min(680px,100vw)', maxHeight: '90vh',
       margin: '0 auto',
-      background: 'rgba(12,6,9,0.96)',
+      background: 'rgba(12,6,9,0.97)',
       backdropFilter: 'blur(28px)',
       WebkitBackdropFilter: 'blur(28px)',
       border: `1px solid ${pa(0.28)}`,
@@ -1808,131 +1957,206 @@ function ClubThemeCustomizer({
       paddingBottom: 'env(safe-area-inset-bottom)',
       boxShadow: `0 -20px 60px rgba(0,0,0,0.7), 0 -1px 0 ${pa(0.2)}`,
     }}>
-      {/* Drag handle */}
-      <div style={{ padding: '14px 0 6px', display: 'flex', justifyContent: 'center' }}>
-        <div style={{ width: 38, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.12)' }}/>
+      {/* Drag handle — click to minimize */}
+      <div onClick={() => setMinimized(true)} style={{ padding: '14px 0 6px', display: 'flex', justifyContent: 'center', cursor: 'pointer' }}>
+        <div style={{ width: 38, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.18)' }}/>
       </div>
 
       <div style={{ padding: '4px 22px 28px' }}>
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <div>
             <h3 style={{ fontSize: 16, fontWeight: 800, color: '#fff', margin: 0, letterSpacing: '-0.2px' }}>Club Appearance</h3>
-            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.32)', margin: '4px 0 0' }}>Changes are live-previewed above</p>
+            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.32)', margin: '4px 0 0' }}>Drag the handle above to minimize while you move sections</p>
           </div>
-          <button onClick={onCancel} style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.5)', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
-        </div>
-
-        {/* ── Accent Color ── */}
-        <div style={{ marginBottom: 26 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>Accent Color</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-            {/* Auto = category color */}
-            <button
-              onClick={() => { update({ accent: '' }); setHexInput('') }}
-              title="Auto (category color)"
-              style={{
-                width: 42, height: 42, borderRadius: '50%',
-                background: catColor,
-                border: !editTheme.accent ? '3px solid #fff' : '3px solid transparent',
-                cursor: 'pointer', outline: 'none', flexShrink: 0,
-                boxShadow: !editTheme.accent ? `0 0 0 2px ${catColor}` : 'none',
-                position: 'relative',
-              }}
-            >
-              <span style={{ position: 'absolute', bottom: -16, left: '50%', transform: 'translateX(-50%)', fontSize: 8, color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap', fontWeight: 600 }}>AUTO</span>
-            </button>
-            {CLUB_ACCENT_PRESETS.map(hex => (
-              <button key={hex} onClick={() => { update({ accent: hex }); setHexInput(hex) }}
-                style={{
-                  width: 42, height: 42, borderRadius: '50%',
-                  background: hex,
-                  border: editTheme.accent === hex ? '3px solid #fff' : '3px solid transparent',
-                  cursor: 'pointer', outline: 'none', flexShrink: 0,
-                  boxShadow: editTheme.accent === hex ? `0 0 0 2px ${hex}` : 'none',
-                  transition: 'transform 0.12s, box-shadow 0.12s',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.12)' }}
-                onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
-              />
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 18 }}>
-            <div style={{ width: 28, height: 28, borderRadius: 8, background: previewAccent, flexShrink: 0, border: '1px solid rgba(255,255,255,0.1)' }}/>
-            <input
-              value={hexInput}
-              onChange={e => {
-                setHexInput(e.target.value)
-                if (/^#[0-9a-f]{6}$/i.test(e.target.value)) update({ accent: e.target.value })
-              }}
-              placeholder="#8a1538"
-              style={{ flex: 1, padding: '9px 12px', borderRadius: 9, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-primary)', fontSize: 13, outline: 'none', fontFamily: 'monospace' }}
-            />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button onClick={resetTheme} title="Reset to default"
+              style={{ padding: '5px 12px', borderRadius: 99, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.45)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Reset</button>
+            <button onClick={() => setMinimized(true)} title="Minimize"
+              style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.5)', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>−</button>
+            <button onClick={onCancel}
+              style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.5)', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
           </div>
         </div>
 
-        {/* ── Banner Background ── */}
-        <div style={{ marginBottom: 26 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>Banner Background</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
-            {Object.entries(CLUB_BG_THEMES).map(([key, t]) => {
-              const active = editTheme.bg === key
+        {/* Tab switcher */}
+        <div style={{ display: 'flex', gap: 5, marginBottom: 22, background: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: 4 }}>
+          {tabBtn('presets', '✨ Presets')}
+          {tabBtn('colors', '🎨 Colors')}
+          {tabBtn('layout', '⚙️ Layout')}
+        </div>
+
+        {/* ══ PRESETS TAB ══ */}
+        {tab === 'presets' && (<>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.38)', marginBottom: 16 }}>
+            Pick a preset to instantly apply a full theme. You can fine-tune it in Colors afterwards.
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+            {CLUB_THEME_PRESETS.map(p => {
+              const bgBase = CLUB_BG_THEMES[p.bg]?.base ?? '#0b0210'
+              const [ar, ag, ab] = hexToRgbClub(p.accent)
+              const isActive = editTheme.accent === p.accent && editTheme.bg === p.bg && editTheme.pageBg === p.pageBg
               return (
                 <button
-                  key={key}
-                  onClick={() => update({ bg: key })}
+                  key={p.name}
+                  onClick={() => applyPreset(p)}
                   style={{
-                    borderRadius: 12, overflow: 'hidden', cursor: 'pointer',
-                    border: active ? `2px solid ${previewAccent}` : '2px solid rgba(255,255,255,0.07)',
-                    padding: 0, outline: 'none', background: 'transparent',
-                    boxShadow: active ? `0 0 12px ${pa(0.4)}` : 'none',
+                    border: isActive ? `2px solid ${p.accent}` : '2px solid rgba(255,255,255,0.08)',
+                    borderRadius: 14, padding: 0, cursor: 'pointer', background: 'transparent', outline: 'none',
+                    boxShadow: isActive ? `0 0 16px rgba(${ar},${ag},${ab},0.45)` : 'none',
                     transition: 'border-color 0.15s, box-shadow 0.15s',
+                    overflow: 'hidden',
                   }}
                 >
+                  {/* Mini preview */}
                   <div style={{
-                    height: 52,
-                    backgroundColor: t.base,
+                    height: 64, position: 'relative', overflow: 'hidden',
+                    backgroundColor: p.pageBg,
                     backgroundImage: [
-                      `radial-gradient(ellipse 80% 140% at 30% 60%, ${previewAccent}aa 0%, transparent 60%)`,
-                      `radial-gradient(ellipse 60% 90% at 80% 20%, ${previewAccent}66 0%, transparent 55%)`,
+                      `radial-gradient(ellipse 90% 120% at 20% 80%, rgba(${ar},${ag},${ab},0.55) 0%, transparent 55%)`,
+                      `radial-gradient(ellipse 60% 80% at 85% 15%, rgba(${ar},${ag},${ab},0.3) 0%, transparent 50%)`,
+                      `radial-gradient(circle at 50% 50%, ${bgBase}cc 0%, transparent 80%)`,
                     ].join(','),
-                    display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: '0 0 6px',
                   }}>
-                    <span style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>{BG_THEME_LABELS[key]}</span>
+                    {/* Simulated cards */}
+                    <div style={{ position: 'absolute', bottom: 8, left: 8, right: 8, display: 'flex', gap: 4 }}>
+                      {[0,1,2].map(i => (
+                        <div key={i} style={{ flex: 1, height: 18, borderRadius: 4, background: `rgba(255,255,255,0.07)`, border: p.glow ? `1px solid rgba(${ar},${ag},${ab},0.3)` : '1px solid rgba(255,255,255,0.08)', boxShadow: p.glow ? `0 0 6px rgba(${ar},${ag},${ab},0.25)` : 'none' }} />
+                      ))}
+                    </div>
+                    {/* Accent dot */}
+                    <div style={{ position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: '50%', background: p.accent, boxShadow: `0 0 6px ${p.accent}` }} />
+                  </div>
+                  {/* Label */}
+                  <div style={{
+                    padding: '7px 8px',
+                    background: 'rgba(255,255,255,0.04)',
+                    borderTop: `1px solid rgba(255,255,255,0.06)`,
+                    fontSize: 11, fontWeight: 700, color: isActive ? p.accent : 'rgba(255,255,255,0.6)',
+                    textAlign: 'center', letterSpacing: '0.03em',
+                  }}>
+                    {p.name}
                   </div>
                 </button>
               )
             })}
           </div>
-        </div>
+          <div style={{ marginTop: 16, padding: '11px 14px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, fontSize: 12, color: 'rgba(255,255,255,0.38)', lineHeight: 1.5 }}>
+            Switch to <strong style={{ color: 'rgba(255,255,255,0.6)' }}>Colors</strong> to change any individual color, or <strong style={{ color: 'rgba(255,255,255,0.6)' }}>Layout</strong> to reorder sections.
+          </div>
+        </>)}
 
-        {/* ── Card Glow ── */}
-        <div style={{ marginBottom: 28 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>Card Glow</div>
-          <button
-            onClick={() => update({ glow: !editTheme.glow })}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '12px 16px', borderRadius: 12, cursor: 'pointer',
-              background: editTheme.glow ? pa(0.12) : 'rgba(255,255,255,0.04)',
-              border: editTheme.glow ? `1px solid ${pa(0.35)}` : '1px solid rgba(255,255,255,0.09)',
-              color: editTheme.glow ? previewAccent : 'rgba(255,255,255,0.4)',
-              fontSize: 13, fontWeight: 600, transition: 'all 0.15s', width: '100%', textAlign: 'left',
-              boxShadow: editTheme.glow ? `0 0 20px ${pa(0.18)}` : 'none',
-            }}
-          >
-            <div style={{
-              width: 18, height: 18, borderRadius: '50%',
-              background: editTheme.glow ? previewAccent : 'rgba(255,255,255,0.12)',
-              boxShadow: editTheme.glow ? `0 0 10px ${pa(0.6)}` : 'none',
-              transition: 'all 0.2s', flexShrink: 0,
-            }}/>
-            {editTheme.glow ? 'Glow On — cards have an accent border glow' : 'Glow Off — standard flat card borders'}
-          </button>
-        </div>
+        {/* ══ COLORS TAB ══ */}
+        {tab === 'colors' && (<>
 
-        {/* ── Actions ── */}
-        <div style={{ display: 'flex', gap: 10 }}>
+          {/* Accent Color */}
+          <div style={{ marginBottom: 26 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>Accent Color</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+              <button onClick={() => { update({ accent: '' }); setHexInput('') }} title="Auto (category color)"
+                style={{ width: 42, height: 42, borderRadius: '50%', background: catColor, border: !editTheme.accent ? '3px solid #fff' : '3px solid transparent', cursor: 'pointer', outline: 'none', flexShrink: 0, boxShadow: !editTheme.accent ? `0 0 0 2px ${catColor}` : 'none', position: 'relative' }}>
+                <span style={{ position: 'absolute', bottom: -16, left: '50%', transform: 'translateX(-50%)', fontSize: 8, color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap', fontWeight: 600 }}>AUTO</span>
+              </button>
+              {CLUB_ACCENT_PRESETS.map(hex => (
+                <button key={hex} onClick={() => { update({ accent: hex }); setHexInput(hex) }}
+                  style={{ width: 42, height: 42, borderRadius: '50%', background: hex, border: editTheme.accent === hex ? '3px solid #fff' : '3px solid transparent', cursor: 'pointer', outline: 'none', flexShrink: 0, boxShadow: editTheme.accent === hex ? `0 0 0 2px ${hex}` : 'none', transition: 'transform 0.12s, box-shadow 0.12s' }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.12)' }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
+                />
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 18 }}>
+              <div style={{ width: 28, height: 28, borderRadius: 8, background: previewAccent, flexShrink: 0, border: '1px solid rgba(255,255,255,0.1)' }}/>
+              <input value={hexInput} onChange={e => { setHexInput(e.target.value); if (/^#[0-9a-f]{6}$/i.test(e.target.value)) update({ accent: e.target.value }) }} placeholder="#8a1538"
+                style={{ flex: 1, padding: '9px 12px', borderRadius: 9, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-primary)', fontSize: 13, outline: 'none', fontFamily: 'monospace' }}
+              />
+            </div>
+          </div>
+
+          {/* Page Background Color */}
+          <div style={{ marginBottom: 26 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>Page Background Color</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <input type="color" value={editTheme.pageBg || '#0b0210'} onChange={e => update({ pageBg: e.target.value })}
+                style={{ width: 48, height: 40, borderRadius: 10, border: '2px solid rgba(255,255,255,0.15)', cursor: 'pointer', background: 'none', padding: 2 }}
+              />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, color: '#fff', fontWeight: 600 }}>{editTheme.pageBg || 'Default dark'}</div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>Background color for the whole club page</div>
+              </div>
+              {editTheme.pageBg && (
+                <button onClick={() => update({ pageBg: undefined })} style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>Reset</button>
+              )}
+            </div>
+          </div>
+
+          {/* Banner Background */}
+          <div style={{ marginBottom: 26 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>Banner Background</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
+              {Object.entries(CLUB_BG_THEMES).map(([key, t]) => {
+                const active = editTheme.bg === key
+                return (
+                  <button key={key} onClick={() => update({ bg: key })}
+                    style={{ borderRadius: 12, overflow: 'hidden', cursor: 'pointer', border: active ? `2px solid ${previewAccent}` : '2px solid rgba(255,255,255,0.07)', padding: 0, outline: 'none', background: 'transparent', boxShadow: active ? `0 0 12px ${pa(0.4)}` : 'none', transition: 'border-color 0.15s, box-shadow 0.15s' }}>
+                    <div style={{ height: 52, backgroundColor: t.base, backgroundImage: [`radial-gradient(ellipse 80% 140% at 30% 60%, ${previewAccent}aa 0%, transparent 60%)`, `radial-gradient(ellipse 60% 90% at 80% 20%, ${previewAccent}66 0%, transparent 55%)`].join(','), display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: '0 0 6px' }}>
+                      <span style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>{BG_THEME_LABELS[key]}</span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Card Glow */}
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>Card Glow</div>
+            <button onClick={() => update({ glow: !editTheme.glow })}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderRadius: 12, cursor: 'pointer', background: editTheme.glow ? pa(0.12) : 'rgba(255,255,255,0.04)', border: editTheme.glow ? `1px solid ${pa(0.35)}` : '1px solid rgba(255,255,255,0.09)', color: editTheme.glow ? previewAccent : 'rgba(255,255,255,0.4)', fontSize: 13, fontWeight: 600, transition: 'all 0.15s', width: '100%', textAlign: 'left', boxShadow: editTheme.glow ? `0 0 20px ${pa(0.18)}` : 'none' }}>
+              <div style={{ width: 18, height: 18, borderRadius: '50%', background: editTheme.glow ? previewAccent : 'rgba(255,255,255,0.12)', boxShadow: editTheme.glow ? `0 0 10px ${pa(0.6)}` : 'none', transition: 'all 0.2s', flexShrink: 0 }}/>
+              {editTheme.glow ? 'Glow On — cards have an accent border glow' : 'Glow Off — standard flat card borders'}
+            </button>
+          </div>
+
+        </>)}
+
+        {/* ══ LAYOUT TAB ══ */}
+        {tab === 'layout' && (<>
+
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 14, lineHeight: 1.5 }}>
+            Close this panel and drag the sections directly on the page to reorder them. Use the options below to resize or hide sections.
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {sections.map(sec => (
+              <div key={sec.id} style={{ borderRadius: 12, border: `1px solid ${sec.hidden ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.1)'}`, background: sec.hidden ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.04)', padding: '11px 14px', opacity: sec.hidden ? 0.5 : 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: sec.hidden ? 'rgba(255,255,255,0.3)' : '#fff', flex: 1 }}>
+                    {SECTION_LABELS[sec.id]}
+                  </div>
+                  <button onClick={() => toggleSectionHidden(sec.id)}
+                    style={{ padding: '4px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: sec.hidden ? previewAccent : 'rgba(255,255,255,0.4)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                    {sec.hidden ? 'Show' : 'Hide'}
+                  </button>
+                </div>
+                {sec.id === 'stats' && !sec.hidden && (
+                  <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                    {(['compact','normal','large'] as const).map(sz => (
+                      <button key={sz} onClick={() => setSectionSize('stats', sz)}
+                        style={{ flex: 1, padding: '7px 4px', borderRadius: 9, border: `1px solid ${(sec.size ?? 'normal') === sz ? previewAccent : 'rgba(255,255,255,0.1)'}`, background: (sec.size ?? 'normal') === sz ? pa(0.2) : 'transparent', color: (sec.size ?? 'normal') === sz ? previewAccent : 'rgba(255,255,255,0.45)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        {STAT_SIZE_LABELS[sz]}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+        </>)}
+
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
           <button onClick={onCancel} style={{ flex: 1, padding: '12px', borderRadius: 12, background: 'transparent', border: '1px solid rgba(255,255,255,0.09)', color: 'rgba(255,255,255,0.45)', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
             Cancel
           </button>

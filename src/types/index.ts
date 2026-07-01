@@ -43,6 +43,7 @@ export interface Club {
   president_id: string | null
   member_count: number
   created_at: string
+  club_theme?: { accent: string; bg: string; glow: boolean } | null
   university?: University
 }
 
