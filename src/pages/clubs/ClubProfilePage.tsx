@@ -46,7 +46,7 @@ interface EventRow {
 }
 
 interface MemberRow {
-  id: string; role: 'member' | 'officer' | 'president'; joined_at: string; custom_role?: string | null
+  id: string; user_id: string; role: 'member' | 'officer' | 'president'; joined_at: string; custom_role?: string | null
   profile?: { id: string; full_name: string | null; school: string | null; skills: string[] } | null
 }
 
@@ -263,7 +263,7 @@ export default function ClubProfilePage() {
       supabase.from('clubs').select('*, social_links, club_theme, university:universities(name,short_name)').eq('id', clubId).single(),
       supabase.from('events').select('*').eq('club_id', clubId).order('start_time', { ascending: true }),
       supabase.from('club_memberships')
-        .select('id,role,custom_role,joined_at,profile:profiles(id,full_name,school,skills)')
+        .select('id,user_id,role,custom_role,joined_at,profile:profiles(id,full_name,school,skills)')
         .eq('club_id', clubId),
       supabase.from('event_attendees').select('event_id').eq('user_id', user.id),
       supabase.from('club_threads')
@@ -339,8 +339,8 @@ export default function ClubProfilePage() {
   const upcomingEvents = events.filter(isUpcoming)
   const pastEvents     = events.filter(isPast)
   const shownEvents    = eventFilter === 'live' ? liveEvents : eventFilter === 'past' ? pastEvents : upcomingEvents
-  const myMember   = members.find(m => m.profile?.id === user?.id)
-  const canPost    = myMember?.role === 'president' || authProfile?.role === 'admin' || club.president_id === user?.id
+  const myMember   = members.find(m => m.user_id === user?.id)
+  const canPost    = myMember?.role === 'president' || authProfile?.role === 'admin' || club?.president_id === user?.id
   const presidents       = members.filter(m => m.role === 'president')
   const officers         = members.filter(m => m.role === 'officer')
   const assignedMembers  = members.filter(m => m.role === 'member' && !!m.custom_role)
@@ -1202,13 +1202,13 @@ function AnnouncementsSection({
   }
 
   const getRoleLabel = (userId: string): string => {
-    const m = members.find(m => m.profile?.id === userId)
+    const m = members.find(m => m.user_id === userId)
     if (!m) return 'Admin'
     return m.role === 'president' ? 'President' : m.role === 'officer' ? 'Officer' : 'Admin'
   }
 
   const getRoleStyle = (userId: string) => {
-    const m = members.find(m => m.profile?.id === userId)
+    const m = members.find(m => m.user_id === userId)
     if (!m || m.role === 'officer') return ROLE_STYLES.officer
     if (m.role === 'president') return ROLE_STYLES.president
     return { bg: 'rgba(99,102,241,0.12)', color: '#a5b4fc', label: 'Admin' }
