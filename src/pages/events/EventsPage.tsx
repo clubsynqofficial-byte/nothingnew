@@ -121,7 +121,7 @@ export default function EventsPage() {
       .lt('start_time', new Date().toISOString())
       .order('start_time', { ascending: false })
       .limit(50)
-    setPastEvents(data ?? [])
+    setPastEvents((data as unknown as PastEvent[]) ?? [])
     setPastLoading(false)
   }, [])
 
