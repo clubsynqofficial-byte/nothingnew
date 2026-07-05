@@ -267,6 +267,14 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
   const [deletingClub, setDeletingClub] = useState(false)
   const [deleteError, setDeleteError] = useState('')
 
+  // Event photo gallery state
+  const [photoUploadEvent, setPhotoUploadEvent] = useState<Event | null>(null)
+  const [photoFiles, setPhotoFiles] = useState<File[]>([])
+  const [photoPreviews, setPhotoPreviews] = useState<string[]>([])
+  const [uploadingPhotos, setUploadingPhotos] = useState(false)
+  const [photoUploadMsg, setPhotoUploadMsg] = useState('')
+  const [existingPhotos, setExistingPhotos] = useState<Array<{ id: string; url: string; caption: string | null }>>([])
+
   // Meeting notes state
   const [notes, setNotes] = useState<NoteRow[]>([])
   const [noteTitle, setNoteTitle] = useState('')
@@ -1436,6 +1444,7 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
                             </button>
                           )}
                           {isCompleted && <button onClick={() => setCertEvent(ev)} style={{ padding:'4px 11px', borderRadius:9999, border:'1px solid rgba(233,193,118,0.35)', background:'rgba(233,193,118,0.08)', color:'var(--gold)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>🎓 Send Certs</button>}
+                          {isCompleted && <button onClick={async () => { setPhotoUploadEvent(ev); setPhotoFiles([]); setPhotoPreviews([]); setPhotoUploadMsg(''); const { data } = await supabase.from('event_images').select('id, url, caption').eq('event_id', ev.id).order('created_at'); setExistingPhotos(data ?? []) }} style={{ padding:'4px 11px', borderRadius:9999, border:'1px solid rgba(99,202,183,0.35)', background:'rgba(99,202,183,0.08)', color:'#6bcab7', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>📷 Photos</button>}
                           {ev.is_live && <button onClick={() => handleOpenEventAnn(ev)} style={{ padding:'4px 11px', borderRadius:9999, border:'1px solid rgba(255,180,171,0.35)', background:'rgba(255,180,171,0.08)', color:'var(--live-red)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>📢 Announce</button>}
                           {(!isCompleted || ev.is_live) && (
                             <button onClick={() => toggleLive(ev)} style={{ padding:'4px 12px', borderRadius:9999, border:ev.is_live?'1px solid rgba(255,180,171,0.4)':'1px solid rgba(87,65,68,0.3)', background:ev.is_live?'rgba(255,180,171,0.1)':'transparent', color:ev.is_live?'var(--live-red)':'var(--text-muted)', fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
@@ -3239,6 +3248,108 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
       {bannerCropFile && <BannerCropModal file={bannerCropFile} onSave={handleBannerCropSave} onClose={() => setBannerCropFile(null)} />}
       {qrEvent && <QRModal event={qrEvent} onClose={() => setQrEvent(null)} />}
       {certEvent && <CertificateModal event={certEvent} club={club} members={teamMembers} onClose={() => setCertEvent(null)} />}
+      {photoUploadEvent && createPortal(
+        <div onClick={() => setPhotoUploadEvent(null)} style={{ position:'fixed', inset:0, zIndex:9999, background:'rgba(0,0,0,0.85)', backdropFilter:'blur(10px)', display:'flex', alignItems:'center', justifyContent:'center', padding:'20px 16px' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:'var(--bg-card)', border:'1px solid rgba(99,202,183,0.2)', borderRadius:24, width:'100%', maxWidth:560, maxHeight:'88vh', display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 32px 80px rgba(0,0,0,0.7)' }}>
+            <div style={{ height:3, background:'linear-gradient(90deg,#6bcab7cc,#6bcab744,transparent)', flexShrink:0 }}/>
+            <div style={{ padding:'20px 24px 0', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
+              <div>
+                <div style={{ fontSize:15, fontWeight:800, color:'#fff' }}>Event Photos</div>
+                <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:2 }}>{photoUploadEvent.title}</div>
+              </div>
+              <button onClick={() => setPhotoUploadEvent(null)} style={{ width:32, height:32, borderRadius:'50%', background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.1)', color:'rgba(255,255,255,0.5)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div style={{ flex:1, overflowY:'auto', padding:'16px 24px 24px' }}>
+              {/* Upload area */}
+              <label style={{ display:'block', border:'2px dashed rgba(99,202,183,0.3)', borderRadius:16, padding:'28px 20px', textAlign:'center', cursor:'pointer', background:'rgba(99,202,183,0.03)', transition:'border-color .15s', marginBottom:16 }}
+                onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor='rgba(99,202,183,0.65)' }}
+                onDragLeave={e => { e.currentTarget.style.borderColor='rgba(99,202,183,0.3)' }}
+                onDrop={e => {
+                  e.preventDefault(); e.currentTarget.style.borderColor='rgba(99,202,183,0.3)'
+                  const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'))
+                  setPhotoFiles(prev => [...prev, ...files])
+                  setPhotoPreviews(prev => [...prev, ...files.map(f => URL.createObjectURL(f))])
+                }}>
+                <input type="file" accept="image/*" multiple style={{ display:'none' }} onChange={e => {
+                  const files = Array.from(e.target.files ?? [])
+                  setPhotoFiles(prev => [...prev, ...files])
+                  setPhotoPreviews(prev => [...prev, ...files.map(f => URL.createObjectURL(f))])
+                  e.target.value = ''
+                }}/>
+                <div style={{ fontSize:28, marginBottom:8 }}>📷</div>
+                <div style={{ fontSize:13, fontWeight:600, color:'#6bcab7', marginBottom:4 }}>Drop photos here or click to select</div>
+                <div style={{ fontSize:11, color:'var(--text-muted)' }}>JPG, PNG, WebP · Multiple files supported</div>
+              </label>
+
+              {/* Selected previews */}
+              {photoPreviews.length > 0 && (
+                <div style={{ marginBottom:16 }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:10 }}>Selected ({photoPreviews.length})</div>
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:8 }}>
+                    {photoPreviews.map((src, i) => (
+                      <div key={i} style={{ position:'relative', aspectRatio:'1', borderRadius:10, overflow:'hidden', background:'rgba(255,255,255,0.04)' }}>
+                        <img src={src} alt="" style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }}/>
+                        <button onClick={() => { setPhotoFiles(prev => prev.filter((_,j) => j !== i)); setPhotoPreviews(prev => prev.filter((_,j) => j !== i)) }}
+                          style={{ position:'absolute', top:4, right:4, width:20, height:20, borderRadius:'50%', background:'rgba(0,0,0,0.7)', border:'none', color:'#fff', fontSize:12, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', lineHeight:1 }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Existing photos */}
+              {existingPhotos.length > 0 && (
+                <div style={{ marginBottom:16 }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:10 }}>Uploaded ({existingPhotos.length})</div>
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:8 }}>
+                    {existingPhotos.map(img => (
+                      <div key={img.id} style={{ position:'relative', aspectRatio:'1', borderRadius:10, overflow:'hidden', background:'rgba(255,255,255,0.04)' }}>
+                        <img src={img.url} alt={img.caption ?? ''} style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }}/>
+                        <button onClick={async () => {
+                          await supabase.from('event_images').delete().eq('id', img.id)
+                          setExistingPhotos(prev => prev.filter(p => p.id !== img.id))
+                        }} style={{ position:'absolute', top:4, right:4, width:20, height:20, borderRadius:'50%', background:'rgba(239,68,68,0.8)', border:'none', color:'#fff', fontSize:12, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', lineHeight:1 }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {photoUploadMsg && <div style={{ fontSize:12, color: photoUploadMsg.startsWith('✓') ? '#4ade80' : '#f87171', marginBottom:12 }}>{photoUploadMsg}</div>}
+
+              <button
+                disabled={uploadingPhotos || photoFiles.length === 0}
+                onClick={async () => {
+                  if (!user || photoFiles.length === 0) return
+                  setUploadingPhotos(true)
+                  setPhotoUploadMsg('')
+                  const uploaded: Array<{ id: string; url: string; caption: string | null }> = []
+                  for (const file of photoFiles) {
+                    const ext = file.name.split('.').pop()
+                    const path = `${photoUploadEvent.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+                    const { error: upErr } = await supabase.storage.from('event-media').upload(path, file)
+                    if (upErr) continue
+                    const { data: { publicUrl } } = supabase.storage.from('event-media').getPublicUrl(path)
+                    const { data: row } = await supabase.from('event_images').insert({ event_id: photoUploadEvent.id, url: publicUrl, uploaded_by: user.id }).select('id, url, caption').single()
+                    if (row) uploaded.push(row)
+                  }
+                  setExistingPhotos(prev => [...prev, ...uploaded])
+                  setPhotoFiles([])
+                  setPhotoPreviews([])
+                  setUploadingPhotos(false)
+                  setPhotoUploadMsg(`✓ ${uploaded.length} photo${uploaded.length !== 1 ? 's' : ''} uploaded`)
+                }}
+                style={{ width:'100%', padding:'11px', background: photoFiles.length === 0 ? 'rgba(99,202,183,0.1)' : 'linear-gradient(135deg,#2a8a7a,#3bbba8)', border:'1px solid rgba(99,202,183,0.3)', borderRadius:12, color: photoFiles.length === 0 ? 'rgba(107,202,183,0.4)' : '#fff', fontSize:14, fontWeight:700, cursor: photoFiles.length === 0 || uploadingPhotos ? 'default' : 'pointer', fontFamily:'inherit', transition:'all .2s' }}
+              >
+                {uploadingPhotos ? 'Uploading…' : photoFiles.length === 0 ? 'Select photos to upload' : `Upload ${photoFiles.length} photo${photoFiles.length !== 1 ? 's' : ''}`}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
       {lightboxSrc && createPortal(
         <div onClick={() => setLightboxSrc(null)} style={{ position:'fixed', inset:0, zIndex:9999, background:'rgba(0,0,0,0.93)', backdropFilter:'blur(18px)', display:'flex', alignItems:'center', justifyContent:'center', padding:20, cursor:'zoom-out' }}>
           <img src={lightboxSrc} alt="" onClick={e => e.stopPropagation()} style={{ maxWidth:'92vw', maxHeight:'88vh', objectFit:'contain', borderRadius:14, boxShadow:'0 32px 80px rgba(0,0,0,0.7)', cursor:'default' }} />

@@ -872,7 +872,7 @@ export default function TournamentDetailPage() {
               </div>
             </div>
             <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 10 }}>
-              {tournament.sport} · {tournament.format === 'single_elimination' ? 'Single Elimination' : 'Round Robin'}
+              {tournament.sport}
               {tournament.club && <> · <span style={{ color: 'var(--text-primary)', opacity: 0.8 }}>{tournament.club.name}</span></>}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>

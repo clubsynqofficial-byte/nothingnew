@@ -27,6 +27,24 @@ interface EventRow {
 
 type Filter = 'all' | 'live' | 'today' | 'week'
 
+interface PastEvent {
+  id: string
+  title: string
+  start_time: string | null
+  end_time: string | null
+  location: string | null
+  attendee_count: number
+  karak_points_reward: number
+  category: string | null
+  club?: { id: string; name: string; logo_url: string | null; category: string | null } | null
+}
+
+interface EventImage {
+  id: string
+  url: string
+  caption: string | null
+}
+
 const CATEGORY_COLORS: Record<string, string> = {
   Technology: '#0ea5e9',
   'Arts & Culture': '#a855f7',
@@ -72,6 +90,12 @@ export default function EventsPage() {
   const [selectedEvent, setSelectedEvent] = useState<EventRow | null>(null)
   const [registrationQR, setRegistrationQR] = useState<EventRow | null>(null)
   const [applyClub, setApplyClub] = useState<{ id: string; name: string } | null>(null)
+  const [pastEvents, setPastEvents] = useState<PastEvent[]>([])
+  const [pastLoading, setPastLoading] = useState(false)
+  const [galleryEvent, setGalleryEvent] = useState<PastEvent | null>(null)
+  const [galleryImages, setGalleryImages] = useState<EventImage[]>([])
+  const [galleryLoading, setGalleryLoading] = useState(false)
+  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null)
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => { const t = setTimeout(() => setMounted(true), 30); return () => clearTimeout(t) }, [])
@@ -88,6 +112,33 @@ export default function EventsPage() {
     setRegisteredEventIds(new Set((regs ?? []).map((r: any) => r.event_id)))
   }, [user])
 
+  const fetchPastEvents = useCallback(async () => {
+    setPastLoading(true)
+    const { data } = await supabase
+      .from('events')
+      .select('id, title, start_time, end_time, location, attendee_count, karak_points_reward, category, club:clubs(id, name, logo_url, category)')
+      .eq('is_live', false)
+      .lt('start_time', new Date().toISOString())
+      .order('start_time', { ascending: false })
+      .limit(50)
+    setPastEvents(data ?? [])
+    setPastLoading(false)
+  }, [])
+
+  const openGallery = async (ev: PastEvent) => {
+    setGalleryEvent(ev)
+    setGalleryImages([])
+    setLightboxIdx(null)
+    setGalleryLoading(true)
+    const { data } = await supabase
+      .from('event_images')
+      .select('id, url, caption')
+      .eq('event_id', ev.id)
+      .order('created_at', { ascending: true })
+    setGalleryImages(data ?? [])
+    setGalleryLoading(false)
+  }
+
   const fetchEvents = useCallback(async () => {
     if (!user) return
     setLoading(true)
@@ -101,7 +152,7 @@ export default function EventsPage() {
     setLoading(false)
   }, [user])
 
-  useEffect(() => { fetchEvents(); fetchMemberships() }, [fetchEvents, fetchMemberships])
+  useEffect(() => { fetchEvents(); fetchMemberships(); fetchPastEvents() }, [fetchEvents, fetchMemberships, fetchPastEvents])
 
   const handleJoin = async (clubId: string, clubName: string) => {
     if (!user || joiningId) return
@@ -181,6 +232,25 @@ export default function EventsPage() {
         @keyframes cornerPulse { 0%,100%{opacity:.5} 50%{opacity:1} }
         @keyframes glowOrb     { 0%,100%{transform:scale(1);opacity:.18} 50%{transform:scale(1.2);opacity:.28} }
         @keyframes regPop      { 0%{transform:scale(0);opacity:0} 60%{transform:scale(1.15);opacity:1} 100%{transform:scale(1);opacity:1} }
+        @keyframes hallIn      { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:none} }
+        @keyframes trophyBob   { 0%,100%{transform:translateY(0) rotate(-4deg)} 50%{transform:translateY(-5px) rotate(4deg)} }
+        @keyframes hallRowIn   { 0%{opacity:0;transform:translateX(-12px)} to{opacity:1;transform:none} }
+        @keyframes galleryIn   { 0%{opacity:0;transform:translateY(100%)} 100%{opacity:1;transform:translateY(0)} }
+        @keyframes imgFadeIn   { from{opacity:0;transform:scale(.92)} to{opacity:1;transform:scale(1)} }
+        @keyframes lbIn        { from{opacity:0;transform:scale(.88)} to{opacity:1;transform:scale(1)} }
+        @keyframes lbSlideL    { from{opacity:0;transform:translateX(60px) scale(.96)} to{opacity:1;transform:none} }
+        @keyframes lbSlideR    { from{opacity:0;transform:translateX(-60px) scale(.96)} to{opacity:1;transform:none} }
+        @keyframes thumbIn     { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:none} }
+        .hall-row { transition: background .15s, transform .18s; cursor: pointer; }
+        .hall-row:hover { background: rgba(233,193,118,0.06) !important; transform: translateX(3px); }
+        .gal-thumb { transition: transform .2s cubic-bezier(.22,1,.36,1), opacity .2s, box-shadow .2s; cursor: pointer; }
+        .gal-thumb:hover { transform: scale(1.06) translateY(-2px); opacity: 1 !important; box-shadow: 0 8px 28px rgba(0,0,0,.6) !important; }
+        .gal-cell { transition: transform .22s cubic-bezier(.22,1,.36,1), box-shadow .22s; cursor: pointer; overflow: hidden; }
+        .gal-cell:hover { transform: scale(1.025); z-index: 2; }
+        .gal-cell:hover img { transform: scale(1.06); }
+        .gal-cell img { transition: transform .4s cubic-bezier(.22,1,.36,1); }
+        .lb-nav { transition: background .15s, transform .2s; }
+        .lb-nav:hover { background: rgba(255,255,255,0.18) !important; transform: translateY(-50%) scale(1.1) !important; }
 
         .ev-row {
           transition: background .18s, transform .22s cubic-bezier(.22,1,.36,1), box-shadow .22s, border-color .18s;
@@ -325,6 +395,266 @@ export default function EventsPage() {
         </div>
       )}
 
+      {/* Hall of Events */}
+      <div style={{ marginTop: 56, animation: mounted ? 'hallIn .5s ease .3s both' : 'none' }}>
+        {/* Section header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+          <span style={{ fontSize: 28, animation: mounted ? 'trophyBob 3.5s ease-in-out infinite' : 'none', display: 'inline-block' }}>🏆</span>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900, letterSpacing: '-0.4px', background: 'linear-gradient(90deg,#e9c176,#f5d78e,#c9a44a)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+              Hall of Events
+            </h2>
+            <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
+              {pastEvents.length} events conducted
+            </p>
+          </div>
+          <div style={{ flex: 1, height: 1, background: 'linear-gradient(90deg,rgba(233,193,118,.35),transparent)', marginLeft: 4 }}/>
+        </div>
+
+        {pastLoading ? (
+          <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)', fontSize: 13 }}>
+            <div style={{ position: 'relative', width: 36, height: 36, margin: '0 auto 12px' }}>
+              <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '3px solid rgba(233,193,118,.15)' }}/>
+              <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '3px solid transparent', borderTopColor: '#e9c176', animation: 'spin .8s linear infinite' }}/>
+            </div>
+            Loading history…
+          </div>
+        ) : pastEvents.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)', fontSize: 13 }}>
+            No events have been conducted yet.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {pastEvents.map((ev, i) => {
+              const catColor = CATEGORY_COLORS[ev.club?.category ?? ''] ?? '#e9c176'
+              const d = ev.start_time ? new Date(ev.start_time) : null
+              return (
+                <div key={ev.id} className="hall-row" onClick={() => openGallery(ev)} style={{
+                  display: 'flex', alignItems: 'center', gap: 14,
+                  padding: '12px 16px', borderRadius: 12,
+                  background: 'rgba(255,255,255,0.02)',
+                  border: '1px solid rgba(233,193,118,0.06)',
+                  animation: mounted ? `hallRowIn .35s ease ${Math.min(i * 0.04, 0.6)}s both` : 'none',
+                }}>
+                  {/* Position badge */}
+                  <div style={{ flexShrink: 0, width: 32, height: 32, borderRadius: 8, background: 'rgba(233,193,118,0.07)', border: '1px solid rgba(233,193,118,0.15)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                    {d ? (
+                      <>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: '#e9c176', lineHeight: 1 }}>{d.getDate()}</div>
+                        <div style={{ fontSize: 8, fontWeight: 600, color: 'rgba(233,193,118,0.6)', letterSpacing: '0.05em' }}>{d.toLocaleString('en-US', { month: 'short' }).toUpperCase()}</div>
+                      </>
+                    ) : (
+                      <div style={{ fontSize: 8, color: 'rgba(233,193,118,0.5)' }}>TBA</div>
+                    )}
+                  </div>
+
+                  {/* Club logo */}
+                  <div style={{ flexShrink: 0, width: 22, height: 22, borderRadius: 6, background: ev.club?.logo_url ? 'transparent' : `${catColor}18`, border: `1px solid ${catColor}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: catColor, overflow: 'hidden' }}>
+                    {ev.club?.logo_url ? <img src={ev.club.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/> : (ev.club?.name?.[0] ?? '?')}
+                  </div>
+
+                  {/* Info */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.title}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+                      {ev.club?.name ?? 'Unknown Club'}
+                    </div>
+                  </div>
+
+                  {/* Stats */}
+                  <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {ev.karak_points_reward > 0 && (
+                      <span style={{ fontSize: 10, fontWeight: 700, color: '#c9a44a' }}>+{ev.karak_points_reward} pts</span>
+                    )}
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(233,193,118,0.4)" strokeWidth="1.8" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Gallery modal */}
+      {galleryEvent && (
+        <div onClick={() => { setGalleryEvent(null); setLightboxIdx(null) }} style={{ position:'fixed', inset:0, zIndex:9998, background:'rgba(0,0,0,0.75)', backdropFilter:'blur(12px)', display:'flex', alignItems:'flex-end', justifyContent:'center', animation:'evOverlayIn .2s ease both' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:'#0e0a12', borderTop:'1px solid rgba(255,255,255,0.08)', borderRadius:'28px 28px 0 0', width:'100%', maxWidth:800, maxHeight:'92vh', display:'flex', flexDirection:'column', animation:'galleryIn .38s cubic-bezier(.22,1,.36,1) both', boxShadow:'0 -32px 100px rgba(0,0,0,0.8)', overflow:'hidden' }}>
+
+            {/* Handle */}
+            <div style={{ display:'flex', justifyContent:'center', paddingTop:12, paddingBottom:4, flexShrink:0 }}>
+              <div style={{ width:36, height:4, borderRadius:99, background:'rgba(255,255,255,0.12)' }}/>
+            </div>
+
+            {/* Header */}
+            <div style={{ padding:'10px 22px 16px', display:'flex', alignItems:'center', gap:14, flexShrink:0 }}>
+              {galleryEvent.club?.logo_url ? (
+                <img src={galleryEvent.club.logo_url} alt="" style={{ width:40, height:40, borderRadius:12, objectFit:'cover', border:'1px solid rgba(255,255,255,0.1)', flexShrink:0 }}/>
+              ) : (
+                <div style={{ width:40, height:40, borderRadius:12, background:'rgba(233,193,118,0.12)', border:'1px solid rgba(233,193,118,0.2)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, fontWeight:800, color:'#e9c176', flexShrink:0 }}>
+                  {galleryEvent.club?.name?.[0] ?? '?'}
+                </div>
+              )}
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:17, fontWeight:800, color:'#fff', letterSpacing:'-0.3px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{galleryEvent.title}</div>
+                <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:3 }}>
+                  <span style={{ fontSize:12, color:'rgba(233,193,118,0.7)', fontWeight:600 }}>{galleryEvent.club?.name ?? ''}</span>
+                  {galleryEvent.start_time && <>
+                    <span style={{ width:3, height:3, borderRadius:'50%', background:'rgba(255,255,255,0.2)', flexShrink:0, display:'inline-block' }}/>
+                    <span style={{ fontSize:12, color:'rgba(255,255,255,0.35)' }}>{new Date(galleryEvent.start_time).toLocaleDateString('en-US', { day:'numeric', month:'short', year:'numeric' })}</span>
+                  </>}
+                  {!galleryLoading && galleryImages.length > 0 && (
+                    <span style={{ fontSize:11, fontWeight:700, color:'rgba(233,193,118,0.6)', background:'rgba(233,193,118,0.08)', border:'1px solid rgba(233,193,118,0.15)', borderRadius:99, padding:'1px 8px' }}>{galleryImages.length} photos</span>
+                  )}
+                </div>
+              </div>
+              <button onClick={() => { setGalleryEvent(null); setLightboxIdx(null) }} style={{ width:36, height:36, borderRadius:'50%', background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.1)', color:'rgba(255,255,255,0.5)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0, transition:'background .15s' }}
+                onMouseEnter={e => e.currentTarget.style.background='rgba(255,255,255,0.12)'}
+                onMouseLeave={e => e.currentTarget.style.background='rgba(255,255,255,0.06)'}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ flex:1, overflowY:'auto', padding:'0 18px 36px' }}>
+              {galleryLoading ? (
+                <div style={{ display:'flex', justifyContent:'center', alignItems:'center', padding:'70px 0', flexDirection:'column', gap:16 }}>
+                  <div style={{ position:'relative', width:40, height:40 }}>
+                    <div style={{ position:'absolute', inset:0, borderRadius:'50%', border:'3px solid rgba(233,193,118,.1)' }}/>
+                    <div style={{ position:'absolute', inset:0, borderRadius:'50%', border:'3px solid transparent', borderTopColor:'#e9c176', animation:'spin .8s linear infinite' }}/>
+                  </div>
+                  <span style={{ fontSize:13, color:'var(--text-muted)' }}>Loading photos…</span>
+                </div>
+              ) : galleryImages.length === 0 ? (
+                <div style={{ textAlign:'center', padding:'70px 20px' }}>
+                  <div style={{ fontSize:48, marginBottom:16, filter:'grayscale(0.3)' }}>📷</div>
+                  <div style={{ fontSize:16, fontWeight:700, color:'var(--text-primary)', marginBottom:8 }}>No photos yet</div>
+                  <div style={{ fontSize:13, color:'var(--text-muted)', lineHeight:1.6 }}>Club admins can upload event photos<br/>from the Command Center.</div>
+                </div>
+              ) : galleryImages.length === 1 ? (
+                /* Single image — full width featured */
+                <div className="gal-cell" onClick={() => setLightboxIdx(0)} style={{ borderRadius:18, overflow:'hidden', position:'relative', boxShadow:'0 8px 40px rgba(0,0,0,0.5)', animation:'imgFadeIn .4s ease both' }}>
+                  <img src={galleryImages[0].url} alt="" style={{ width:'100%', maxHeight:420, objectFit:'cover', display:'block' }}/>
+                  <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.55) 0%,transparent 50%)' }}/>
+                  <div style={{ position:'absolute', bottom:16, right:16, background:'rgba(0,0,0,0.55)', border:'1px solid rgba(255,255,255,0.15)', backdropFilter:'blur(8px)', borderRadius:9999, padding:'5px 12px', fontSize:11, color:'rgba(255,255,255,0.8)', display:'flex', alignItems:'center', gap:5 }}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    View full
+                  </div>
+                  {galleryImages[0].caption && <div style={{ position:'absolute', bottom:16, left:16, fontSize:13, color:'rgba(255,255,255,0.85)', fontWeight:600, maxWidth:'70%', textShadow:'0 1px 8px rgba(0,0,0,0.8)' }}>{galleryImages[0].caption}</div>}
+                </div>
+              ) : galleryImages.length === 2 ? (
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
+                  {galleryImages.map((img, idx) => (
+                    <div key={img.id} className="gal-cell" onClick={() => setLightboxIdx(idx)} style={{ borderRadius:16, overflow:'hidden', position:'relative', aspectRatio:'3/4', boxShadow:'0 4px 20px rgba(0,0,0,0.4)', animation:`imgFadeIn .35s ease ${idx * 0.08}s both` }}>
+                      <img src={img.url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }}/>
+                      <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.4) 0%,transparent 60%)' }}/>
+                      {img.caption && <div style={{ position:'absolute', bottom:10, left:10, right:10, fontSize:11, color:'rgba(255,255,255,0.85)', fontWeight:600, textShadow:'0 1px 6px rgba(0,0,0,0.8)' }}>{img.caption}</div>}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                /* 3+ images — hero + masonry grid */
+                <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                  {/* Hero row */}
+                  <div style={{ display:'grid', gridTemplateColumns: galleryImages.length >= 3 ? '2fr 1fr' : '1fr', gap:6 }}>
+                    <div className="gal-cell" onClick={() => setLightboxIdx(0)} style={{ borderRadius:18, overflow:'hidden', position:'relative', aspectRatio:'16/10', boxShadow:'0 8px 32px rgba(0,0,0,0.5)', animation:'imgFadeIn .35s ease both' }}>
+                      <img src={galleryImages[0].url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }}/>
+                      <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.5) 0%,transparent 55%)' }}/>
+                      {galleryImages[0].caption && <div style={{ position:'absolute', bottom:12, left:14, fontSize:12, color:'rgba(255,255,255,0.9)', fontWeight:600, textShadow:'0 1px 8px rgba(0,0,0,0.8)' }}>{galleryImages[0].caption}</div>}
+                    </div>
+                    {galleryImages.length >= 3 && (
+                      <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                        {[1, 2].map(idx => idx < galleryImages.length && (
+                          <div key={galleryImages[idx].id} className="gal-cell" onClick={() => setLightboxIdx(idx)} style={{ borderRadius:14, overflow:'hidden', position:'relative', flex:1, boxShadow:'0 4px 16px rgba(0,0,0,0.4)', animation:`imgFadeIn .35s ease ${idx * 0.08}s both` }}>
+                            <img src={galleryImages[idx].url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover', display:'block', minHeight:0 }}/>
+                            <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.4) 0%,transparent 60%)' }}/>
+                            {idx === 2 && galleryImages.length > 3 && (
+                              <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.55)', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:4 }}>
+                                <span style={{ fontSize:22, fontWeight:900, color:'#fff' }}>+{galleryImages.length - 3}</span>
+                                <span style={{ fontSize:11, color:'rgba(255,255,255,0.7)' }}>more</span>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {/* Remaining grid */}
+                  {galleryImages.length > 3 && (
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:6 }}>
+                      {galleryImages.slice(3).map((img, i) => (
+                        <div key={img.id} className="gal-cell" onClick={() => setLightboxIdx(i + 3)} style={{ borderRadius:12, overflow:'hidden', position:'relative', aspectRatio:'1', boxShadow:'0 3px 12px rgba(0,0,0,0.4)', animation:`imgFadeIn .3s ease ${(i + 3) * 0.04}s both` }}>
+                          <img src={img.url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }}/>
+                          <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.35) 0%,transparent 55%)' }}/>
+                          {img.caption && <div style={{ position:'absolute', bottom:6, left:6, right:6, fontSize:9, color:'rgba(255,255,255,0.8)', fontWeight:600, textShadow:'0 1px 4px rgba(0,0,0,0.8)', lineHeight:1.3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{img.caption}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox */}
+      {galleryEvent && lightboxIdx !== null && galleryImages.length > 0 && (() => {
+        const img = galleryImages[lightboxIdx]
+        return (
+          <div onClick={() => setLightboxIdx(null)} style={{ position:'fixed', inset:0, zIndex:10001, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', animation:'evOverlayIn .18s ease both' }}>
+            {/* Blurred ambient bg */}
+            <div style={{ position:'absolute', inset:0, overflow:'hidden' }}>
+              <img src={img.url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover', filter:'blur(40px) brightness(0.22) saturate(1.4)', transform:'scale(1.1)' }}/>
+              <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.55)' }}/>
+            </div>
+
+            {/* Top bar */}
+            <div style={{ position:'relative', zIndex:2, width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'16px 20px', flexShrink:0 }}>
+              <div style={{ fontSize:13, fontWeight:700, color:'rgba(255,255,255,0.5)', background:'rgba(0,0,0,0.35)', backdropFilter:'blur(8px)', borderRadius:99, padding:'5px 14px', border:'1px solid rgba(255,255,255,0.1)' }}>
+                {lightboxIdx + 1} <span style={{ color:'rgba(255,255,255,0.25)' }}>/</span> {galleryImages.length}
+              </div>
+              <button onClick={e => { e.stopPropagation(); setLightboxIdx(null) }} className="lb-nav" style={{ width:38, height:38, borderRadius:'50%', background:'rgba(0,0,0,0.4)', backdropFilter:'blur(8px)', border:'1px solid rgba(255,255,255,0.12)', color:'rgba(255,255,255,0.7)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+
+            {/* Main image */}
+            <div onClick={e => e.stopPropagation()} style={{ position:'relative', zIndex:2, flex:1, display:'flex', alignItems:'center', justifyContent:'center', width:'100%', padding:'0 70px', minHeight:0 }}>
+              <img key={lightboxIdx} src={img.url} alt="" style={{ maxWidth:'100%', maxHeight:'100%', objectFit:'contain', borderRadius:16, boxShadow:'0 32px 100px rgba(0,0,0,0.7)', display:'block', animation:'lbIn .28s cubic-bezier(.22,1,.36,1) both' }}/>
+            </div>
+
+            {/* Prev / Next arrows */}
+            {lightboxIdx > 0 && (
+              <button onClick={e => { e.stopPropagation(); setLightboxIdx(i => i! - 1) }} className="lb-nav" style={{ position:'fixed', left:14, top:'50%', transform:'translateY(-50%)', width:48, height:48, borderRadius:'50%', background:'rgba(0,0,0,0.45)', backdropFilter:'blur(8px)', border:'1px solid rgba(255,255,255,0.14)', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', zIndex:10002 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+              </button>
+            )}
+            {lightboxIdx < galleryImages.length - 1 && (
+              <button onClick={e => { e.stopPropagation(); setLightboxIdx(i => i! + 1) }} className="lb-nav" style={{ position:'fixed', right:14, top:'50%', transform:'translateY(-50%)', width:48, height:48, borderRadius:'50%', background:'rgba(0,0,0,0.45)', backdropFilter:'blur(8px)', border:'1px solid rgba(255,255,255,0.14)', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', zIndex:10002 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+            )}
+
+            {/* Caption + thumbnail strip */}
+            <div style={{ position:'relative', zIndex:2, width:'100%', flexShrink:0, padding:'12px 20px 24px' }}>
+              {img.caption && (
+                <div style={{ textAlign:'center', marginBottom:14, fontSize:14, fontWeight:600, color:'rgba(255,255,255,0.85)', textShadow:'0 1px 8px rgba(0,0,0,0.8)' }}>{img.caption}</div>
+              )}
+              {/* Thumbnail strip — only show if >1 image */}
+              {galleryImages.length > 1 && (
+                <div style={{ display:'flex', gap:6, justifyContent:'center', overflowX:'auto', paddingBottom:4 }}>
+                  {galleryImages.map((t, ti) => (
+                    <div key={t.id} className="gal-thumb" onClick={e => { e.stopPropagation(); setLightboxIdx(ti) }} style={{ width:52, height:52, borderRadius:10, overflow:'hidden', flexShrink:0, border: ti === lightboxIdx ? '2px solid #fff' : '2px solid rgba(255,255,255,0.1)', opacity: ti === lightboxIdx ? 1 : 0.45, boxShadow: ti === lightboxIdx ? '0 0 0 2px rgba(255,255,255,0.2)' : 'none', animation:`thumbIn .3s ease ${ti * 0.03}s both` }}>
+                      <img src={t.url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }}/>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Event detail modal */}
       {selectedEvent && (() => {
         const ev = selectedEvent
@@ -378,7 +708,7 @@ export default function EventsPage() {
                 {ev.description && (
                   <div style={{ background:'rgba(255,255,255,0.03)', border:`1px solid ${catColor}18`, borderRadius:14, padding:'16px 18px' }}>
                     <div style={{ fontSize:11, fontWeight:700, color:catColor, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:10 }}>About</div>
-                    <p style={{ fontSize:14, color:'var(--text-secondary)', lineHeight:1.75, margin:0, whiteSpace:'pre-wrap' }}>{ev.description}</p>
+                    <p style={{ fontSize:14, color:'var(--text-secondary)', lineHeight:1.75, margin:0, whiteSpace:'pre-wrap', overflowWrap:'break-word', wordBreak:'break-word' }}>{ev.description}</p>
                   </div>
                 )}
               </div>
@@ -533,7 +863,7 @@ function EventCard({
         </div>
 
         {event.description && (
-          <p style={{ fontSize:13, color:'var(--text-muted)', lineHeight:1.55, margin:'0 0 8px', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>
+          <p style={{ fontSize:13, color:'var(--text-muted)', lineHeight:1.55, margin:'0 0 8px', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', wordBreak:'break-word' }}>
             {event.description}
           </p>
         )}
