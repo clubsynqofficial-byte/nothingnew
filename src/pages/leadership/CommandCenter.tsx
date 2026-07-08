@@ -8,6 +8,8 @@ import { useAuth } from '../../contexts/AuthContext'
 import type { Club, Event } from '../../types'
 import { filterText, validateImage } from '../../lib/contentFilter'
 import AnnouncementMedia from '../../components/AnnouncementMedia'
+import Lightbox, { type LightboxMedia } from '../../components/Lightbox'
+import TruncatedCaption from '../../components/TruncatedCaption'
 import ClubFormBuilder from './ClubFormBuilder'
 import ClubPositions from './ClubPositions'
 
@@ -243,7 +245,7 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
   const [annImageFile, setAnnImageFile] = useState<File | null>(null)
   const [annImagePreview, setAnnImagePreview] = useState<string | null>(null)
   const annImgRef = useRef<HTMLInputElement>(null)
-  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
+  const [lightbox, setLightbox] = useState<LightboxMedia | null>(null)
 
   // AI state
   const [showAnnAI, setShowAnnAI] = useState(false)
@@ -1968,13 +1970,19 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
                       <span style={{ fontSize:13, fontWeight:600, color:'var(--text-secondary)' }}>{ann.profile?.full_name ?? 'Unknown'}</span>
                       <span style={{ fontSize:11, color:'var(--text-muted)', marginLeft:'auto' }}>{new Date(ann.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}</span>
                     </div>
-                    {ann.content && <p style={{ fontSize:14, color:'var(--text-primary)', lineHeight:1.65, margin:0, whiteSpace:'pre-wrap' }}>{ann.content}</p>}
+                    {ann.content && (
+                      <TruncatedCaption
+                        content={ann.content}
+                        truncate={!!(ann.video_url || ann.image_url)}
+                        style={{ fontSize:14, color:'var(--text-primary)', lineHeight:1.65 }}
+                      />
+                    )}
                     {(ann.video_url || ann.image_url) && (
                       <div style={{ position:'relative', marginTop:ann.content?12:0, marginLeft:-16, marginRight:-16, marginBottom:-13, overflow:'hidden' }}>
                         <AnnouncementMedia
                           imageUrls={ann.image_urls?.length ? ann.image_urls : (ann.image_url ? [ann.image_url] : [])}
                           videoUrl={ann.video_url}
-                          onImageClick={setLightboxSrc}
+                          onExpand={setLightbox}
                         />
                       </div>
                     )}
@@ -3413,13 +3421,7 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
         </div>,
         document.body
       )}
-      {lightboxSrc && createPortal(
-        <div onClick={() => setLightboxSrc(null)} style={{ position:'fixed', inset:0, zIndex:9999, background:'rgba(0,0,0,0.93)', backdropFilter:'blur(18px)', display:'flex', alignItems:'center', justifyContent:'center', padding:20, cursor:'zoom-out' }}>
-          <img src={lightboxSrc} alt="" onClick={e => e.stopPropagation()} style={{ maxWidth:'92vw', maxHeight:'88vh', objectFit:'contain', borderRadius:14, boxShadow:'0 32px 80px rgba(0,0,0,0.7)', cursor:'default' }} />
-          <button onClick={() => setLightboxSrc(null)} style={{ position:'absolute', top:18, right:18, width:38, height:38, borderRadius:'50%', background:'rgba(255,255,255,0.1)', border:'1px solid rgba(255,255,255,0.2)', color:'#fff', fontSize:18, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit' }}>✕</button>
-        </div>,
-        document.body
-      )}
+      <Lightbox media={lightbox} onClose={() => setLightbox(null)} />
       {evtAnnEvent && <EventAnnouncementModal event={evtAnnEvent} announcements={evtAnnouncements} content={evtAnnContent} posting={postingEvtAnn} onContentChange={setEvtAnnContent} onPost={handlePostEventAnn} onClose={() => setEvtAnnEvent(null)} />}
 
       {/* Club Theme Customizer */}

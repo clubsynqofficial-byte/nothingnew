@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { filterText } from '../../lib/contentFilter'
 import AnnouncementMedia from '../../components/AnnouncementMedia'
+import Lightbox, { type LightboxMedia } from '../../components/Lightbox'
+import TruncatedCaption from '../../components/TruncatedCaption'
 function linkify(text: string) {
   const re = /https?:\/\/[^\s<>"]+|www\.[^\s<>"]+/g
   const nodes: ReactNode[] = []
@@ -1240,7 +1241,7 @@ function AnnouncementsSection({
   const [content,  setContent]     = useState('')
   const [posting,  setPosting]     = useState(false)
   const [postError, setPostError]  = useState('')
-  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
+  const [lightbox, setLightbox] = useState<LightboxMedia | null>(null)
   const [pinning, setPinning] = useState<string | null>(null)
 
   const togglePin = async (ann: AnnouncementRow) => {
@@ -1413,9 +1414,12 @@ function AnnouncementsSection({
                 </div>
                 {/* Content */}
                 {ann.content && (
-                  <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.75, margin: 0, whiteSpace: 'pre-wrap' }}>
-                    {linkify(ann.content)}
-                  </p>
+                  <TruncatedCaption
+                    content={ann.content}
+                    truncate={!!(ann.video_url || ann.image_url)}
+                    style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.75 }}
+                    render={linkify}
+                  />
                 )}
                 {(ann.video_url || ann.image_url) && (
                   <div
@@ -1430,7 +1434,7 @@ function AnnouncementsSection({
                     <AnnouncementMedia
                       imageUrls={ann.image_urls?.length ? ann.image_urls : (ann.image_url ? [ann.image_url] : [])}
                       videoUrl={ann.video_url}
-                      onImageClick={setLightboxSrc}
+                      onExpand={setLightbox}
                     />
                   </div>
                 )}
@@ -1440,41 +1444,7 @@ function AnnouncementsSection({
         </div>
       )}
 
-      {/* Lightbox */}
-      {lightboxSrc && createPortal(
-        <div
-          onClick={() => setLightboxSrc(null)}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 9999,
-            background: 'rgba(0,0,0,0.93)', backdropFilter: 'blur(18px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: 20, cursor: 'zoom-out',
-          }}
-        >
-          <img
-            src={lightboxSrc}
-            alt=""
-            onClick={e => e.stopPropagation()}
-            style={{
-              maxWidth: '92vw', maxHeight: '88vh',
-              objectFit: 'contain', borderRadius: 14,
-              boxShadow: '0 32px 80px rgba(0,0,0,0.7)',
-              cursor: 'default',
-            }}
-          />
-          <button
-            onClick={() => setLightboxSrc(null)}
-            style={{
-              position: 'absolute', top: 18, right: 18,
-              width: 38, height: 38, borderRadius: '50%',
-              background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)',
-              color: '#fff', fontSize: 18, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-          >✕</button>
-        </div>,
-        document.body
-      )}
+      <Lightbox media={lightbox} onClose={() => setLightbox(null)} />
     </div>
   )
 }

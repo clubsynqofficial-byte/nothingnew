@@ -4,6 +4,9 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { parseTS } from '../../lib/time'
 import { useAuth } from '../../contexts/AuthContext'
+import AnnouncementMedia from '../../components/AnnouncementMedia'
+import Lightbox, { type LightboxMedia } from '../../components/Lightbox'
+import TruncatedCaption from '../../components/TruncatedCaption'
 
 function linkify(text: string) {
   const re = /https?:\/\/[^\s<>"]+|www\.[^\s<>"]+/g
@@ -31,6 +34,7 @@ interface FeedPost extends PostRow {
 }
 interface AnnouncementRow {
   id: string; content: string | null; image_url: string | null
+  image_urls: string[] | null; video_url: string | null
   created_at: string; club_id: string
   club: { id: string; name: string; logo_url: string | null } | null
   profile: { full_name: string | null; avatar_url: string | null } | null
@@ -214,9 +218,9 @@ export default function HomePage() {
       setUserClubIds(clubIds)
       const { data: annData } = await supabase
         .from('club_announcements')
-        .select('id,content,image_url,created_at,club_id,club:clubs(id,name,logo_url),profile:profiles!user_id(full_name,avatar_url)')
+        .select('id,content,image_url,image_urls,video_url,created_at,club_id,club:clubs(id,name,logo_url),profile:profiles!user_id(full_name,avatar_url)')
         .order('created_at', { ascending: false })
-        .limit(30)
+        .limit(150)
       setAnnouncements((annData ?? []) as unknown as AnnouncementRow[])
 
       // Sidebar: upcoming events + suggested clubs
@@ -1085,6 +1089,7 @@ function AnnouncementCard({ ann, userId, userClubIds, onJoined }: {
   onJoined: (clubId: string) => void
 }) {
   const [joining, setJoining] = useState(false)
+  const [lightbox, setLightbox] = useState<LightboxMedia | null>(null)
   const navigate = useNavigate()
   const isMember = userClubIds.includes(ann.club_id)
 
@@ -1137,16 +1142,24 @@ function AnnouncementCard({ ann, userId, userClubIds, onJoined }: {
       {/* Content */}
       <div style={{ padding: '12px 16px 14px' }}>
         {ann.content && (
-          <div style={{ fontSize: 14.5, lineHeight: 1.6, color: 'var(--text-primary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-            {linkify(ann.content)}
-          </div>
+          <TruncatedCaption
+            content={ann.content}
+            truncate={!!(ann.video_url || ann.image_url)}
+            style={{ fontSize: 14.5, lineHeight: 1.6, color: 'var(--text-primary)', wordBreak: 'break-word' }}
+            render={linkify}
+          />
         )}
-        {ann.image_url && (
+        {(ann.video_url || ann.image_url) && (
           <div style={{ marginTop: 10, borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.07)' }}>
-            <img src={ann.image_url} alt="" style={{ width: '100%', display: 'block', maxHeight: 400, objectFit: 'cover' }} />
+            <AnnouncementMedia
+              imageUrls={ann.image_urls?.length ? ann.image_urls : (ann.image_url ? [ann.image_url] : [])}
+              videoUrl={ann.video_url}
+              onExpand={setLightbox}
+            />
           </div>
         )}
       </div>
+      <Lightbox media={lightbox} onClose={() => setLightbox(null)} />
 
       {/* Footer: join button */}
       {userId && (
