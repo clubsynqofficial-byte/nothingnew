@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { filterText } from '../../lib/contentFilter'
+import AnnouncementMedia from '../../components/AnnouncementMedia'
 function linkify(text: string) {
   const re = /https?:\/\/[^\s<>"]+|www\.[^\s<>"]+/g
   const nodes: ReactNode[] = []
@@ -64,7 +65,7 @@ interface ReplyRow {
 
 interface AnnouncementRow {
   id: string; club_id: string; user_id: string
-  content: string | null; image_url: string | null; created_at: string
+  content: string | null; image_url: string | null; image_urls: string[] | null; video_url: string | null; created_at: string
   pinned: boolean
   profile?: { full_name: string | null } | null
 }
@@ -723,7 +724,6 @@ export default function ClubProfilePage() {
           {tab === 'announcements' && (
             <div className="cp-panel"><AnnouncementsSection
               clubId={clubId!}
-              clubName={club?.name ?? ''}
               announcements={announcements}
               members={members}
               canPost={canPost}
@@ -1226,17 +1226,16 @@ function LinksSection({ club, canEdit, onSaved }: {
 // ─────────────────────── AnnouncementsSection ───────
 
 function AnnouncementsSection({
-  clubId, clubName, announcements, members, canPost, onRefresh,
+  clubId, announcements, members, canPost, onRefresh,
 }: {
   clubId: string
-  clubName: string
   announcements: AnnouncementRow[]
   members: MemberRow[]
   canPost: boolean
   onRefresh: () => void
 }) {
   const navigate = useNavigate()
-  const { user, profile } = useAuth()
+  const { user } = useAuth()
   const [showForm, setShowForm]     = useState(false)
   const [content,  setContent]     = useState('')
   const [posting,  setPosting]     = useState(false)
@@ -1262,15 +1261,6 @@ function AnnouncementsSection({
     await supabase.from('club_announcements').insert({
       club_id: clubId, user_id: user.id, content: trimmed,
     })
-    // Fire-and-forget — don't block the UI on email delivery
-    supabase.functions.invoke('send-announcement-email', {
-      body: {
-        clubId,
-        clubName,
-        content: trimmed,
-        posterName: profile?.full_name ?? 'Club Admin',
-      },
-    }).catch(() => {})
     setContent('')
     setShowForm(false)
     setPosting(false)
@@ -1427,36 +1417,21 @@ function AnnouncementsSection({
                     {linkify(ann.content)}
                   </p>
                 )}
-                {ann.image_url && (
+                {(ann.video_url || ann.image_url) && (
                   <div
-                    onClick={() => setLightboxSrc(ann.image_url!)}
                     style={{
                       position: 'relative',
                       marginTop: ann.content ? 12 : 0,
                       marginLeft: -20, marginRight: -20,
                       marginBottom: -18,
-                      borderRadius: '0 0 13px 0',
                       overflow: 'hidden',
-                      cursor: 'pointer',
-                      lineHeight: 0,
                     }}
                   >
-                    <img
-                      src={ann.image_url}
-                      alt=""
-                      style={{ maxWidth: '100%', height: 'auto', display: 'block', margin: '0 auto' }}
+                    <AnnouncementMedia
+                      imageUrls={ann.image_urls?.length ? ann.image_urls : (ann.image_url ? [ann.image_url] : [])}
+                      videoUrl={ann.video_url}
+                      onImageClick={setLightboxSrc}
                     />
-                    <div style={{
-                      position: 'absolute', bottom: 10, right: 10,
-                      background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)',
-                      border: '1px solid rgba(255,255,255,0.18)',
-                      borderRadius: 8, padding: '5px 10px',
-                      display: 'flex', alignItems: 'center', gap: 5,
-                      fontSize: 11, fontWeight: 600, color: '#fff',
-                      pointerEvents: 'none',
-                    }}>
-                      <span style={{ fontSize: 13 }}>⛶</span> View full
-                    </div>
                   </div>
                 )}
               </div>

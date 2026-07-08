@@ -7,6 +7,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import type { Club, Event } from '../../types'
 import { filterText, validateImage } from '../../lib/contentFilter'
+import AnnouncementMedia from '../../components/AnnouncementMedia'
 import ClubFormBuilder from './ClubFormBuilder'
 import ClubPositions from './ClubPositions'
 
@@ -60,6 +61,8 @@ interface AnnouncementRow {
   id: string
   content: string | null
   image_url: string | null
+  image_urls: string[] | null
+  video_url: string | null
   created_at: string
   profile: { full_name: string | null; role: string | null } | null
 }
@@ -160,7 +163,7 @@ interface Props {
 }
 
 export default function CommandCenter({ club, onDeleted, userPermissions, clubSwitcher }: Props) {
-  const { user, profile } = useAuth()
+  const { user } = useAuth()
   const navigate = useNavigate()
   const isPresident = userPermissions === undefined
   const canDo = (perm: string) => isPresident || (userPermissions ?? []).includes(perm)
@@ -226,6 +229,12 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
   const [checkedInCountByEvent, setCheckedInCountByEvent] = useState<Record<string, number>>({})
   const [sendingConfirmation, setSendingConfirmation] = useState<string | null>(null)
   const [confirmationResult, setConfirmationResult] = useState<Record<string, string>>({})
+
+  // Instagram auto-post state
+  const [igUsername, setIgUsername] = useState('')
+  const [igSavedUsername, setIgSavedUsername] = useState<string | null>(null)
+  const [igSaving, setIgSaving] = useState(false)
+  const [igMsg, setIgMsg] = useState('')
 
   // Announcement state
   const [annContent, setAnnContent] = useState('')
@@ -352,6 +361,14 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
 
   useEffect(() => { fetchAll() }, [club.id])
 
+  useEffect(() => {
+    supabase.from('club_instagram_handles').select('ig_username').eq('club_id', club.id).maybeSingle()
+      .then(({ data }) => {
+        setIgSavedUsername(data?.ig_username ?? null)
+        setIgUsername(data?.ig_username ?? '')
+      })
+  }, [club.id])
+
   // Live attendee count — increments the matching event when anyone checks in via QR
   useEffect(() => {
     const channel = supabase
@@ -381,7 +398,7 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
       supabase.from('club_threads').select('id', { count: 'exact' }).eq('club_id', club.id),
       supabase.from('club_memberships').select('id', { count: 'exact' }).eq('club_id', club.id).gte('joined_at', thirtyDaysAgo.toISOString()),
       supabase.from('club_announcements')
-        .select('id, content, created_at, profile:profiles(full_name, role)')
+        .select('id, content, image_url, image_urls, video_url, created_at, profile:profiles(full_name, role)')
         .eq('club_id', club.id)
         .order('created_at', { ascending: false })
         .limit(20),
@@ -684,19 +701,36 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
       content: annContent.trim() || null,
       image_url: imageUrl,
     })
-    // Fire-and-forget email to all members
-    supabase.functions.invoke('send-announcement-email', {
-      body: {
-        clubId: club.id,
-        clubName: club.name,
-        content: annContent.trim() || '[image]',
-        posterName: profile?.full_name ?? 'Club Admin',
-      },
-    }).catch(() => {})
     setAnnContent('')
     clearAnnImage()
     setPostingAnn(false)
     fetchAll()
+  }
+
+  async function handleSaveIgUsername() {
+    const clean = igUsername.trim()
+      .replace(/^https?:\/\/(www\.)?instagram\.com\//i, '')
+      .replace(/^@/, '')
+      .replace(/\/.*$/, '')
+    if (!clean) return
+    setIgSaving(true)
+    setIgMsg('')
+    const { error } = await supabase.from('club_instagram_handles')
+      .upsert({ club_id: club.id, ig_username: clean, last_post_id: null }, { onConflict: 'club_id' })
+    setIgSaving(false)
+    if (error) { setIgMsg('Failed to save: ' + error.message); return }
+    setIgSavedUsername(clean)
+    setIgUsername(clean)
+    setIgMsg('Connected! New Instagram posts will be checked every ~30 min.')
+  }
+
+  async function handleDisconnectIg() {
+    setIgSaving(true)
+    await supabase.from('club_instagram_handles').delete().eq('club_id', club.id)
+    setIgSaving(false)
+    setIgSavedUsername(null)
+    setIgUsername('')
+    setIgMsg('')
   }
 
   async function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -1801,6 +1835,34 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
             </div>
             <span style={{ background:'rgba(233,193,118,0.12)', border:'1px solid rgba(233,193,118,0.3)', borderRadius:9999, padding:'3px 10px', fontSize:10, fontWeight:700, color:'var(--gold)', letterSpacing:'0.06em', flexShrink:0 }}>PRESIDENT</span>
           </div>
+
+          <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:12, padding:16, marginBottom:16 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+              <span style={{ fontSize:15 }}>📸</span>
+              <span style={{ fontSize:13, fontWeight:700, color:'var(--text-primary)' }}>Instagram auto-post</span>
+              {igSavedUsername && <span style={{ fontSize:10, fontWeight:700, color:'#4ade80', background:'rgba(74,222,128,0.12)', border:'1px solid rgba(74,222,128,0.3)', borderRadius:9999, padding:'2px 8px' }}>CONNECTED</span>}
+            </div>
+            {igSavedUsername ? (
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, flexWrap:'wrap' }}>
+                <p style={{ fontSize:12, color:'var(--text-muted)', margin:0 }}>
+                  New public posts from <strong style={{ color:'var(--text-primary)' }}>@{igSavedUsername}</strong> are checked every ~30 min and posted here automatically.
+                </p>
+                <button onClick={handleDisconnectIg} disabled={igSaving} style={{ padding:'6px 12px', borderRadius:7, background:'transparent', border:'1px solid rgba(255,255,255,0.12)', color:'var(--text-muted)', fontSize:12, cursor:'pointer', fontFamily:'inherit', flexShrink:0 }}>
+                  Disconnect
+                </button>
+              </div>
+            ) : (
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                <input value={igUsername} onChange={e => setIgUsername(e.target.value)} placeholder="@your.club.handle" style={{ ...fi, flex:'1 1 200px', background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.07)' }} />
+                <button onClick={handleSaveIgUsername} disabled={igSaving || !igUsername.trim()} style={{ padding:'8px 16px', borderRadius:7, background:'var(--accent)', border:'none', color:'#fff', fontSize:12, fontWeight:700, cursor:igSaving?'default':'pointer', fontFamily:'inherit', opacity:igSaving?0.7:1 }}>
+                  {igSaving ? 'Connecting…' : 'Connect'}
+                </button>
+              </div>
+            )}
+            {igMsg && <p style={{ fontSize:11.5, color: igMsg.startsWith('Failed') ? '#f87171' : '#4ade80', margin:'8px 0 0' }}>{igMsg}</p>}
+            <p style={{ fontSize:10.5, color:'var(--text-muted)', opacity:0.7, margin:'8px 0 0' }}>Account must be public. Only works for future posts — existing posts aren't backfilled.</p>
+          </div>
+
           <div style={{ background:'rgba(41,28,30,0.5)', border:'1px solid rgba(138,21,56,0.2)', borderRadius:12, padding:16, marginBottom:20 }}>
             <textarea value={annContent} onChange={e => setAnnContent(e.target.value)} placeholder="Share an update, reminder, or important news with your members…" rows={3} maxLength={600} style={{ ...fi, resize:'vertical', marginBottom:10, lineHeight:1.65, background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.07)' }} />
             {annImagePreview && (
@@ -1907,12 +1969,13 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
                       <span style={{ fontSize:11, color:'var(--text-muted)', marginLeft:'auto' }}>{new Date(ann.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}</span>
                     </div>
                     {ann.content && <p style={{ fontSize:14, color:'var(--text-primary)', lineHeight:1.65, margin:0, whiteSpace:'pre-wrap' }}>{ann.content}</p>}
-                    {ann.image_url && (
-                      <div onClick={() => setLightboxSrc(ann.image_url!)} style={{ position:'relative', marginTop:ann.content?12:0, marginLeft:-16, marginRight:-16, marginBottom:-13, borderRadius:'0 0 9px 0', overflow:'hidden', cursor:'pointer', lineHeight:0 }}>
-                        <img src={ann.image_url} alt="" style={{ maxWidth:'100%', height:'auto', display:'block', margin:'0 auto' }} />
-                        <div style={{ position:'absolute', bottom:10, right:10, background:'rgba(0,0,0,0.55)', backdropFilter:'blur(6px)', border:'1px solid rgba(255,255,255,0.18)', borderRadius:8, padding:'5px 10px', display:'flex', alignItems:'center', gap:5, fontSize:11, fontWeight:600, color:'#fff', pointerEvents:'none' }}>
-                          <span style={{ fontSize:13 }}>⛶</span> View full
-                        </div>
+                    {(ann.video_url || ann.image_url) && (
+                      <div style={{ position:'relative', marginTop:ann.content?12:0, marginLeft:-16, marginRight:-16, marginBottom:-13, overflow:'hidden' }}>
+                        <AnnouncementMedia
+                          imageUrls={ann.image_urls?.length ? ann.image_urls : (ann.image_url ? [ann.image_url] : [])}
+                          videoUrl={ann.video_url}
+                          onImageClick={setLightboxSrc}
+                        />
                       </div>
                     )}
                   </div>
