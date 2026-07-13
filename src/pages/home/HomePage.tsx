@@ -91,8 +91,10 @@ export default function HomePage() {
   const [userClubIds, setUserClubIds] = useState<string[]>([])
   const [loading, setLoading]       = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [sidebarEvents, setSidebarEvents]         = useState<{id:string;title:string;start_time:string;location:string|null;category:string|null;club:{name:string;logo_url:string|null}|null}[]>([])
+  const [sidebarEvents, setSidebarEvents]         = useState<{id:string;title:string;start_time:string;location:string|null;category:string|null;club_id:string;attendee_count:number;max_attendees:number|null;registration_closed:boolean;karak_points_reward:number;club:{name:string;logo_url:string|null}|null}[]>([])
   const [suggestedClubs, setSuggestedClubs]       = useState<{id:string;name:string;category:string|null;logo_url:string|null;member_count:number;is_verified:boolean}[]>([])
+  const [registeredEventIds, setRegisteredEventIds] = useState<Set<string>>(new Set())
+  const [homeRegistering, setHomeRegistering]     = useState<string | null>(null)
 
   const [txt, setTxt]               = useState('')
   const [imgs, setImgs]             = useState<File[]>([])
@@ -226,7 +228,7 @@ export default function HomePage() {
       // Sidebar: upcoming events + suggested clubs
       const [{ data: evData }, { data: clubData }] = await Promise.all([
         supabase.from('events')
-          .select('id,title,start_time,location,category,club:clubs!club_id(name,logo_url)')
+          .select('id,title,start_time,location,category,club_id,attendee_count,max_attendees,registration_closed,karak_points_reward,club:clubs!club_id(name,logo_url)')
           .gte('start_time', new Date().toISOString())
           .order('start_time', { ascending: true })
           .limit(3),
@@ -238,9 +240,59 @@ export default function HomePage() {
       ])
       setSidebarEvents((evData ?? []) as any)
       setSuggestedClubs((clubData ?? []) as any)
+
+      const eventIds = (evData ?? []).map((e: { id: string }) => e.id)
+      if (eventIds.length) {
+        const { data: regs } = await supabase.from('event_attendees').select('event_id').eq('user_id', user.id).in('event_id', eventIds)
+        setRegisteredEventIds(new Set((regs ?? []).map((r: { event_id: string }) => r.event_id)))
+      }
     }
 
     setLoading(false)
+  }
+
+  async function handleHomeRegister(ev: { id: string; attendee_count: number }) {
+    if (!user || homeRegistering || registeredEventIds.has(ev.id)) return
+    setHomeRegistering(ev.id)
+    await supabase.from('event_attendees').insert({ event_id: ev.id, user_id: user.id, checked_in_at: null })
+    await supabase.from('events').update({ attendee_count: ev.attendee_count + 1 }).eq('id', ev.id)
+    setRegisteredEventIds(prev => new Set([...prev, ev.id]))
+    setSidebarEvents(prev => prev.map(e => e.id === ev.id ? { ...e, attendee_count: e.attendee_count + 1 } : e))
+    setHomeRegistering(null)
+  }
+
+  function renderEventAction(ev: (typeof sidebarEvents)[number]) {
+    const isMember = userClubIds.includes(ev.club_id)
+    const isRegistered = registeredEventIds.has(ev.id)
+    const isFull = ev.max_attendees !== null && ev.attendee_count >= ev.max_attendees
+    if (isRegistered) {
+      return (
+        <span style={{ flexShrink:0, display:'flex', alignItems:'center', gap:4, padding:'5px 10px', borderRadius:9, border:'1px solid rgba(74,222,128,.3)', background:'rgba(74,222,128,.1)', color:'#4ade80', fontSize:11, fontWeight:700, whiteSpace:'nowrap' }}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+          Registered
+        </span>
+      )
+    }
+    if (!isMember) {
+      return (
+        <button onClick={e=>{e.stopPropagation(); nav(`/clubs/${ev.club_id}`)}} style={{ flexShrink:0, padding:'5px 11px', borderRadius:9, background:'transparent', border:'1px solid rgba(255,255,255,.15)', color:'var(--text-muted)', fontSize:11, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap', fontFamily:'inherit' }}>
+          Join to Register
+        </button>
+      )
+    }
+    if (ev.registration_closed || isFull) {
+      return (
+        <span style={{ flexShrink:0, padding:'5px 10px', borderRadius:9, border:'1px solid rgba(245,158,11,.3)', background:'rgba(245,158,11,.08)', color:'#f59e0b', fontSize:11, fontWeight:700, whiteSpace:'nowrap' }}>
+          {isFull ? 'Full' : 'Closed'}
+        </span>
+      )
+    }
+    const registering = homeRegistering === ev.id
+    return (
+      <button onClick={e=>{e.stopPropagation(); handleHomeRegister(ev)}} disabled={registering} style={{ flexShrink:0, padding:'5px 13px', borderRadius:9, background:'var(--accent)', border:'1px solid rgba(138,21,56,.5)', color:'#fff', fontSize:11, fontWeight:700, cursor:registering?'default':'pointer', opacity:registering?0.6:1, whiteSpace:'nowrap', fontFamily:'inherit' }}>
+        {registering ? '…' : 'Register'}
+      </button>
+    )
   }
 
   function onTaChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
@@ -453,7 +505,8 @@ export default function HomePage() {
       .ai-use:hover { opacity:0.9!important; transform:translateY(-1px); }
       .hgrid { display:grid; grid-template-columns:1fr 300px; gap:22px; align-items:start }
       .mob-nudge { display:none }
-      @media(max-width:860px){ .hgrid{grid-template-columns:1fr} .sidebar{display:none!important} .mob-nudge{display:flex!important} }
+      .mob-events { display:none }
+      @media(max-width:860px){ .hgrid{grid-template-columns:1fr} .sidebar{display:none!important} .mob-nudge{display:flex!important} .mob-events{display:block!important} }
       .card { background:#231518; border:1px solid rgba(255,255,255,0.08); border-radius:18px; overflow:hidden }
       .pcard { background:linear-gradient(145deg,#231518,#1e1214); border:1px solid rgba(255,255,255,0.07); border-radius:18px; overflow:hidden; transition:border-color .2s,box-shadow .2s,transform .18s }
       .pcard:hover { border-color:rgba(255,255,255,0.14); box-shadow:0 8px 36px rgba(0,0,0,.6); transform:translateY(-2px) }
@@ -582,6 +635,40 @@ export default function HomePage() {
               </div>
             )}
           </div>
+
+          {/* Upcoming Events — mobile only (desktop shows this in the sidebar) */}
+          {sidebarEvents.length > 0 && (
+            <div className="mob-events card" style={{ padding:'16px 18px', marginBottom:14 }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+                <span style={{ fontSize:12, fontWeight:800, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-muted)' }}>Upcoming Events</span>
+                <button onClick={()=>nav('/events')} style={{ background:'none', border:'none', color:'var(--accent)', fontSize:11, fontWeight:700, cursor:'pointer', padding:0 }}>See all →</button>
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                {sidebarEvents.map(ev => {
+                  const d = new Date(ev.start_time)
+                  const month = d.toLocaleString('en', { month:'short' }).toUpperCase()
+                  const day   = d.getDate()
+                  const time  = d.toLocaleString('en', { hour:'numeric', minute:'2-digit' })
+                  return (
+                    <div key={ev.id} onClick={()=>nav('/events')} style={{ display:'flex', gap:10, alignItems:'center', cursor:'pointer', borderRadius:10, padding:'8px 10px' }}>
+                      <div style={{ flexShrink:0, width:36, background:'rgba(138,21,56,.15)', border:'1px solid rgba(138,21,56,.25)', borderRadius:8, textAlign:'center', padding:'4px 2px' }}>
+                        <div style={{ fontSize:9, fontWeight:800, color:'var(--accent)', letterSpacing:'.05em' }}>{month}</div>
+                        <div style={{ fontSize:16, fontWeight:900, color:'var(--text-primary)', lineHeight:1 }}>{day}</div>
+                      </div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:13, fontWeight:600, color:'var(--text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ev.title}</div>
+                        <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:2 }}>
+                          {time}{ev.location ? ` · ${ev.location.length > 22 ? ev.location.slice(0,22)+'…' : ev.location}` : ''}
+                        </div>
+                        {ev.club && <div style={{ fontSize:10.5, color:'rgba(255,255,255,.3)', marginTop:1 }}>{(ev.club as any).name}</div>}
+                      </div>
+                      {renderEventAction(ev)}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Compose card */}
           <div className="card" style={{
@@ -931,20 +1018,25 @@ export default function HomePage() {
                   const day   = d.getDate()
                   const time  = d.toLocaleString('en', { hour:'numeric', minute:'2-digit' })
                   return (
-                    <div key={ev.id} onClick={()=>nav('/events')} style={{ display:'flex', gap:10, alignItems:'flex-start', cursor:'pointer', borderRadius:10, padding:'8px 10px', transition:'background .15s' }}
+                    <div key={ev.id} onClick={()=>nav('/events')} style={{ display:'flex', flexDirection:'column', gap:8, cursor:'pointer', borderRadius:10, padding:'8px 10px', transition:'background .15s' }}
                       onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,.04)'}
                       onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                      {/* Date pill */}
-                      <div style={{ flexShrink:0, width:36, background:'rgba(138,21,56,.15)', border:'1px solid rgba(138,21,56,.25)', borderRadius:8, textAlign:'center', padding:'4px 2px' }}>
-                        <div style={{ fontSize:9, fontWeight:800, color:'var(--accent)', letterSpacing:'.05em' }}>{month}</div>
-                        <div style={{ fontSize:16, fontWeight:900, color:'var(--text-primary)', lineHeight:1 }}>{day}</div>
-                      </div>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:13, fontWeight:600, color:'var(--text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ev.title}</div>
-                        <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:2 }}>
-                          {time}{ev.location ? ` · ${ev.location.length > 22 ? ev.location.slice(0,22)+'…' : ev.location}` : ''}
+                      <div style={{ display:'flex', gap:10, alignItems:'flex-start' }}>
+                        {/* Date pill */}
+                        <div style={{ flexShrink:0, width:36, background:'rgba(138,21,56,.15)', border:'1px solid rgba(138,21,56,.25)', borderRadius:8, textAlign:'center', padding:'4px 2px' }}>
+                          <div style={{ fontSize:9, fontWeight:800, color:'var(--accent)', letterSpacing:'.05em' }}>{month}</div>
+                          <div style={{ fontSize:16, fontWeight:900, color:'var(--text-primary)', lineHeight:1 }}>{day}</div>
                         </div>
-                        {ev.club && <div style={{ fontSize:10.5, color:'rgba(255,255,255,.3)', marginTop:1 }}>{(ev.club as any).name}</div>}
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:13, fontWeight:600, color:'var(--text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ev.title}</div>
+                          <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:2 }}>
+                            {time}{ev.location ? ` · ${ev.location.length > 22 ? ev.location.slice(0,22)+'…' : ev.location}` : ''}
+                          </div>
+                          {ev.club && <div style={{ fontSize:10.5, color:'rgba(255,255,255,.3)', marginTop:1 }}>{(ev.club as any).name}</div>}
+                        </div>
+                      </div>
+                      <div style={{ display:'flex', justifyContent:'flex-end' }}>
+                        {renderEventAction(ev)}
                       </div>
                     </div>
                   )

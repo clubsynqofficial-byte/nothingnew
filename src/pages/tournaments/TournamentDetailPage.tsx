@@ -19,7 +19,8 @@ interface Tournament {
   min_team_size: number
   max_team_size: number
   status: 'registration_open' | 'registration_closed' | 'ongoing' | 'completed' | 'cancelled'
-  format: 'single_elimination' | 'round_robin'
+  format: 'single_elimination' | 'round_robin' | 'group_knockout'
+  advance_per_group: number | null
   prize_description: string | null
   prizes: Array<{ place: string; description: string }> | null
   registration_fields: Array<{ id: string; label: string; type: string; options?: string[] }> | null
@@ -64,6 +65,7 @@ interface Match {
   scheduled_at: string | null
   location: string | null
   notes: string | null
+  stage: 'group' | 'knockout' | null
 }
 
 interface TournamentTeamMember {
@@ -103,6 +105,21 @@ function fmt(iso: string | null) {
 
 type Tab = 'info' | 'teams' | 'bracket' | 'register'
 type TeamFilter = 'pending' | 'accepted' | 'declined'
+
+// Points-based standings (3/1/0) for one group, scoped to completed group-stage matches.
+function computeGroupStandings(groupName: string, allTeams: Team[], groupMatches: Match[]) {
+  const groupTeams = allTeams.filter(t => t.status === 'accepted' && t.section === groupName)
+  return groupTeams.map(team => {
+    const played = groupMatches.filter(m => (m.team1_id === team.id || m.team2_id === team.id) && m.status === 'completed')
+    const wins = played.filter(m => m.winner_id === team.id).length
+    const losses = played.filter(m => m.winner_id && m.winner_id !== team.id).length
+    const draws = played.length - wins - losses
+    const gf = played.reduce((s, m) => s + (m.team1_id === team.id ? m.score1 : m.score2), 0)
+    const ga = played.reduce((s, m) => s + (m.team1_id === team.id ? m.score2 : m.score1), 0)
+    const pts = wins * 3 + draws
+    return { team, played: played.length, wins, draws, losses, gf, ga, pts }
+  }).sort((a, b) => b.pts - a.pts || b.wins - a.wins || (b.gf - b.ga) - (a.gf - a.ga))
+}
 
 export default function TournamentDetailPage() {
   const { tournamentId } = useParams<{ tournamentId: string }>()
@@ -175,8 +192,12 @@ export default function TournamentDetailPage() {
   const [savingMatch, setSavingMatch] = useState(false)
   const [generatingBracket, setGeneratingBracket] = useState(false)
   const [assigningSlot, setAssigningSlot] = useState<{ matchId: string; slot: 'team1_id' | 'team2_id' } | null>(null)
-  const [scoreboardFlow, setScoreboardFlow] = useState<null | 'sport' | 'template'>(null)
+  const [scoreboardFlow, setScoreboardFlow] = useState<null | 'sport' | 'format' | 'groups' | 'template'>(null)
   const [scoreboardSport, setScoreboardSport] = useState<string>('basketball')
+  const [scoreboardFormat, setScoreboardFormat] = useState<'single_elimination' | 'round_robin' | 'group_knockout' | null>(null)
+  const [groupCount, setGroupCount] = useState('4')
+  const [advancePerGroupInput, setAdvancePerGroupInput] = useState('2')
+  const [generatingKnockout, setGeneratingKnockout] = useState(false)
   const [bracketActiveSection, setBracketActiveSection] = useState('')
   const [standingsPaused, setStandingsPaused] = useState(false)
   const standingsPausedRef = useRef(false)
@@ -455,7 +476,7 @@ export default function TournamentDetailPage() {
       winner_id: winnerId ?? null,
       status: isCompleted ? 'completed' : 'live',
     }).eq('id', matchId)
-    if (winnerId && m && tournament?.format === 'single_elimination') {
+    if (winnerId && m && (tournament?.format === 'single_elimination' || (tournament?.format === 'group_knockout' && m.stage === 'knockout'))) {
       await advanceWinner({ ...m, winner_id: winnerId, status: 'completed', score1: s1, score2: s2 }, matches)
     }
     await fetchAll()
@@ -476,7 +497,7 @@ export default function TournamentDetailPage() {
     const nextRound = completedMatch.round + 1
     const nextMatchNum = Math.ceil(completedMatch.match_number / 2)
     const slot = completedMatch.match_number % 2 === 1 ? 'team1_id' : 'team2_id'
-    const nextMatch = currentMatches.find(m => m.round === nextRound && m.match_number === nextMatchNum)
+    const nextMatch = currentMatches.find(m => m.round === nextRound && m.match_number === nextMatchNum && m.stage === completedMatch.stage)
     if (!nextMatch) return
     await supabase.from('tournament_matches').update({ [slot]: completedMatch.winner_id }).eq('id', nextMatch.id)
   }
@@ -691,6 +712,136 @@ export default function TournamentDetailPage() {
     await fetchAll()
     setGeneratingBracket(false)
     setTab('bracket')
+  }
+
+  // Split accepted teams into N groups, persist the groups as tournament sections,
+  // and generate a round-robin schedule within each group (stage: 'group').
+  async function generateGroupStage() {
+    if (!tournament) return
+    const accepted = teams.filter(t => t.status === 'accepted')
+    if (accepted.length < 2) return
+    setGeneratingBracket(true)
+
+    const numGroups = Math.max(1, Math.min(parseInt(groupCount) || 4, accepted.length))
+    const advance = Math.max(1, parseInt(advancePerGroupInput) || 2)
+    const groupNames = Array.from({ length: numGroups }, (_, i) => `Group ${String.fromCharCode(65 + i)}`)
+    const newSections = groupNames.map((name, i) => ({ id: `grp-${i}`, name, maxTeams: null as number | null }))
+
+    // Distribute teams evenly across groups
+    const groupOf: Record<string, string> = {}
+    accepted.forEach((team, i) => { groupOf[team.id] = groupNames[i % numGroups] })
+
+    await Promise.all(accepted.map(team =>
+      supabase.from('tournament_teams').update({ section: groupOf[team.id] }).eq('id', team.id)
+    ))
+
+    await supabase.from('tournament_matches').delete().eq('tournament_id', tournament.id)
+
+    let matchNum = 1
+    const newMatches: object[] = []
+    for (const gName of groupNames) {
+      const groupTeams = accepted.filter(t => groupOf[t.id] === gName)
+      for (let i = 0; i < groupTeams.length; i++) {
+        for (let j = i + 1; j < groupTeams.length; j++) {
+          newMatches.push({
+            tournament_id: tournament.id,
+            team1_id: groupTeams[i].id,
+            team2_id: groupTeams[j].id,
+            round: 1,
+            match_number: matchNum++,
+            status: 'scheduled',
+            score1: 0,
+            score2: 0,
+            stage: 'group',
+          })
+        }
+      }
+    }
+    if (newMatches.length > 0) await supabase.from('tournament_matches').insert(newMatches)
+    await supabase.from('tournaments').update({ format: 'group_knockout', sections: newSections, advance_per_group: advance }).eq('id', tournament.id)
+    setTournament(prev => prev ? { ...prev, format: 'group_knockout', sections: newSections, advance_per_group: advance } : prev)
+    await fetchAll()
+    setGeneratingBracket(false)
+    setTab('bracket')
+    navigate(`/tournaments/${tournament.id}/scoreboard/football`)
+  }
+
+  // Take the top `advance_per_group` teams from each group and seed them into a
+  // single-elimination knockout bracket (stage: 'knockout'), interleaved by rank
+  // so group-mates avoid meeting in the first round where possible.
+  async function generateKnockoutFromGroups() {
+    if (!tournament) return
+    setGeneratingKnockout(true)
+    const groupMatches = matches.filter(m => m.stage === 'group')
+    const sections = tournament.sections ?? []
+    const advance = tournament.advance_per_group ?? 2
+
+    const byRank: Team[][] = []
+    for (let r = 0; r < advance; r++) {
+      for (const sec of sections) {
+        const standings = computeGroupStandings(sec.name, teams, groupMatches)
+        if (standings[r]) {
+          if (!byRank[r]) byRank[r] = []
+          byRank[r].push(standings[r].team)
+        }
+      }
+    }
+    const seeded = byRank.flat()
+    if (seeded.length < 2) { setGeneratingKnockout(false); return }
+
+    await supabase.from('tournament_matches').delete().eq('tournament_id', tournament.id).eq('stage', 'knockout')
+
+    const n = seeded.length
+    const roundsN = Math.ceil(Math.log2(n))
+    const slots = Math.pow(2, roundsN)
+    while (seeded.length < slots) seeded.push(null as unknown as Team)
+
+    const newMatches: object[] = []
+    for (let i = 0; i < slots / 2; i++) {
+      const t1 = seeded[i * 2]
+      const t2 = seeded[i * 2 + 1]
+      newMatches.push({
+        tournament_id: tournament.id,
+        team1_id: t1?.id ?? null,
+        team2_id: t2?.id ?? null,
+        round: 1,
+        match_number: i + 1,
+        status: (!t1 || !t2) ? 'completed' : 'scheduled',
+        winner_id: !t1 ? t2?.id ?? null : !t2 ? t1?.id ?? null : null,
+        score1: 0,
+        score2: 0,
+        stage: 'knockout',
+      })
+    }
+    for (let r = 2; r <= roundsN; r++) {
+      const matchesInRound = slots / Math.pow(2, r)
+      for (let i = 0; i < matchesInRound; i++) {
+        newMatches.push({
+          tournament_id: tournament.id,
+          team1_id: null,
+          team2_id: null,
+          round: r,
+          match_number: i + 1,
+          status: 'scheduled',
+          score1: 0,
+          score2: 0,
+          stage: 'knockout',
+        })
+      }
+    }
+    await supabase.from('tournament_matches').insert(newMatches)
+    const { data: createdMatches } = await supabase
+      .from('tournament_matches').select('*')
+      .eq('tournament_id', tournament.id)
+      .order('round').order('match_number')
+    if (createdMatches) {
+      const byeMatches = createdMatches.filter(m => m.stage === 'knockout' && m.status === 'completed' && m.winner_id)
+      for (const bye of byeMatches) {
+        await advanceWinner(bye, createdMatches)
+      }
+    }
+    await fetchAll()
+    setGeneratingKnockout(false)
   }
 
   if (loading) return (
@@ -1279,7 +1430,31 @@ export default function TournamentDetailPage() {
               scoreboardFlow === 'sport' ? (
                 <ScoreboardSportPicker
                   onBack={() => setScoreboardFlow(null)}
-                  onSelect={(sport: string) => { setScoreboardSport(sport); setScoreboardFlow('template') }}
+                  onSelect={(sport: string) => { setScoreboardSport(sport); setScoreboardFlow(sport === 'football' ? 'format' : 'template') }}
+                />
+              ) : scoreboardFlow === 'format' ? (
+                <ScoreboardFormatPicker
+                  onBack={() => setScoreboardFlow('sport')}
+                  onSelect={(fmt) => {
+                    setScoreboardFormat(fmt)
+                    setScoreboardTemplate('Football Scoreboard Template')
+                    if (fmt === 'group_knockout') {
+                      // Default to ~4 teams per group (standard group-stage size), capped so every
+                      // group still has at least 2 teams to actually play a round-robin.
+                      const n = acceptedTeams.length
+                      const defaultGroups = n >= 2 ? Math.max(1, Math.min(Math.round(n / 4), Math.floor(n / 2))) : 1
+                      setGroupCount(String(defaultGroups))
+                    }
+                    setScoreboardFlow(fmt === 'group_knockout' ? 'groups' : null)
+                  }}
+                />
+              ) : scoreboardFlow === 'groups' ? (
+                <ScoreboardGroupsSetup
+                  teamCount={acceptedTeams.length}
+                  groupCount={groupCount} setGroupCount={setGroupCount}
+                  advancePerGroup={advancePerGroupInput} setAdvancePerGroup={setAdvancePerGroupInput}
+                  onBack={() => setScoreboardFlow('format')}
+                  onConfirm={() => setScoreboardFlow(null)}
                 />
               ) : scoreboardFlow === 'template' ? (
                 <ScoreboardTemplatePicker
@@ -1302,16 +1477,21 @@ export default function TournamentDetailPage() {
                       <div>
                         <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)' }}>{scoreboardTemplate}</div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                          {scoreboardTemplate === 'Round Robin Standings' ? 'Round Robin · Selected template' : scoreboardTemplate === 'Football Scoreboard Template' ? 'Football · Selected template' : 'Basketball · Selected template'}
+                          {scoreboardTemplate === 'Round Robin Standings' ? 'Round Robin · Selected template'
+                            : scoreboardTemplate === 'Football Scoreboard Template'
+                            ? `Football · ${scoreboardFormat === 'round_robin' ? 'Round Robin' : scoreboardFormat === 'group_knockout' ? 'Group Stages + Knockouts' : 'Single Elimination'}`
+                            : 'Basketball · Selected template'}
                         </div>
                       </div>
                     </div>
-                    <button onClick={() => setScoreboardTemplate(null)} style={{ padding: '5px 11px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 7, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11.5, fontFamily: 'inherit' }}>Change</button>
+                    <button onClick={() => { setScoreboardTemplate(null); setScoreboardFormat(null) }} style={{ padding: '5px 11px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 7, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11.5, fontFamily: 'inherit' }}>Change</button>
                   </div>
 
                   <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
-                    {scoreboardTemplate === 'Round Robin Standings'
+                    {scoreboardTemplate === 'Round Robin Standings' || scoreboardFormat === 'round_robin'
                       ? 'Every team plays every other team once. Add teams, then generate the full schedule.'
+                      : scoreboardFormat === 'group_knockout'
+                      ? `Teams will be split into ${groupCount} groups for round-robin play. The top ${advancePerGroupInput} from each group advance to a knockout bracket.`
                       : scoreboardTemplate === 'Basketball Scoreboard Template' || scoreboardTemplate === 'Football Scoreboard Template'
                       ? 'Add the teams below, then hit Generate — you\'ll be taken straight to the live scoreboard.'
                       : 'Add all participating teams, then generate the scoreboard to create matchups.'}
@@ -1358,13 +1538,19 @@ export default function TournamentDetailPage() {
                     </div>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <button
-                        onClick={scoreboardTemplate === 'Round Robin Standings' ? generateRoundRobinSchedule : generateBracket}
+                        onClick={
+                          scoreboardTemplate === 'Round Robin Standings' || scoreboardFormat === 'round_robin' ? generateRoundRobinSchedule
+                          : scoreboardFormat === 'group_knockout' ? generateGroupStage
+                          : generateBracket
+                        }
                         disabled={generatingBracket || acceptedTeams.length < 2}
                         style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 22px', background: acceptedTeams.length < 2 ? 'rgba(255,255,255,0.04)' : 'var(--accent)', border: 'none', borderRadius: 12, color: '#fff', cursor: acceptedTeams.length < 2 ? 'default' : 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit', opacity: acceptedTeams.length < 2 ? 0.4 : 1, boxShadow: acceptedTeams.length >= 2 && !generatingBracket ? '0 4px 18px rgba(138,21,56,0.4)' : 'none' }}
                       >
                         {generatingBracket
                           ? <><div style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />Generating…</>
-                          : scoreboardTemplate === 'Round Robin Standings' ? 'Generate Schedule →' : 'Generate Scoreboard →'}
+                          : scoreboardTemplate === 'Round Robin Standings' || scoreboardFormat === 'round_robin' ? 'Generate Schedule →'
+                          : scoreboardFormat === 'group_knockout' ? 'Generate Groups →'
+                          : 'Generate Scoreboard →'}
                       </button>
                       {matches.length > 0 && scoreboardTemplate === 'Basketball Scoreboard Template' && (
                         <button onClick={() => navigate(`/tournaments/${tournament.id}/scoreboard/basketball`)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '11px 20px', background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 12, color: '#4ade80', cursor: 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit' }}>
@@ -1609,6 +1795,22 @@ export default function TournamentDetailPage() {
                     </>
                   )}
                 </>
+              ) : tournament.format === 'group_knockout' ? (
+                <GroupKnockoutView
+                  tournament={tournament} teams={acceptedTeams} matches={matches} teamMap={teamMap} isAdmin={isAdmin}
+                  editMatch={editMatch} editScore1={editScore1} editScore2={editScore2} savingMatch={savingMatch}
+                  onEdit={(matchId) => { setEditMatch(matchId); const m = matches.find(mm => mm.id === matchId); setEditScore1(String(m?.score1 ?? 0)); setEditScore2(String(m?.score2 ?? 0)) }}
+                  onCancelEdit={() => setEditMatch(null)}
+                  onSave={(matchId, wid) => handleSaveScore(matchId, wid)}
+                  onSetLive={(matchId) => handleSetMatchLive(matchId)}
+                  onScore1Change={setEditScore1} onScore2Change={setEditScore2}
+                  onAssignTeam1={(matchId) => setAssigningSlot({ matchId, slot: 'team1_id' })}
+                  onAssignTeam2={(matchId) => setAssigningSlot({ matchId, slot: 'team2_id' })}
+                  onClearTeam1={(matchId) => clearMatchSlot(matchId, 'team1_id')}
+                  onClearTeam2={(matchId) => clearMatchSlot(matchId, 'team2_id')}
+                  onGenerateKnockout={generateKnockoutFromGroups}
+                  generatingKnockout={generatingKnockout}
+                />
               ) : (
                 <>
                   {tournament.sections && tournament.sections.length > 0 ? (
@@ -2605,6 +2807,150 @@ function RoundRobinStandings({ teams, matches, sections, activeSection }: {
   )
 }
 
+// ─── Group Stages + Knockouts view ───────────────────────────────────────────
+function GroupKnockoutView({ tournament, teams, matches, teamMap, isAdmin, editMatch, editScore1, editScore2, savingMatch, onEdit, onCancelEdit, onSave, onSetLive, onScore1Change, onScore2Change, onAssignTeam1, onAssignTeam2, onClearTeam1, onClearTeam2, onGenerateKnockout, generatingKnockout }: {
+  tournament: Tournament
+  teams: Team[]
+  matches: Match[]
+  teamMap: Record<string, Team>
+  isAdmin: boolean
+  editMatch: string | null; editScore1: string; editScore2: string; savingMatch: boolean
+  onEdit: (matchId: string) => void; onCancelEdit: () => void
+  onSave: (matchId: string, w: string | null) => void; onSetLive: (matchId: string) => void
+  onScore1Change: (v: string) => void; onScore2Change: (v: string) => void
+  onAssignTeam1: (matchId: string) => void; onAssignTeam2: (matchId: string) => void
+  onClearTeam1: (matchId: string) => void; onClearTeam2: (matchId: string) => void
+  onGenerateKnockout: () => void; generatingKnockout: boolean
+}) {
+  const sections = tournament.sections ?? []
+  const groupMatches = matches.filter(m => m.stage === 'group')
+  const knockoutMatches = matches.filter(m => m.stage === 'knockout')
+  const allGroupsComplete = groupMatches.length > 0 && groupMatches.every(m => m.status === 'completed')
+  const koRounds = [...new Set(knockoutMatches.map(m => m.round))].sort((a, b) => a - b)
+  const koMaxRound = Math.max(...koRounds, 0)
+
+  function matchCardProps(match: Match) {
+    return {
+      match, teamMap, isAdmin,
+      isEditing: editMatch === match.id, editScore1, editScore2, savingMatch,
+      onEdit: () => onEdit(match.id), onCancelEdit,
+      onSave: (wid: string | null) => onSave(match.id, wid), onSetLive: () => onSetLive(match.id),
+      onScore1Change, onScore2Change,
+      onAssignTeam1: isAdmin ? () => onAssignTeam1(match.id) : undefined,
+      onAssignTeam2: isAdmin ? () => onAssignTeam2(match.id) : undefined,
+      onClearTeam1: isAdmin ? () => onClearTeam1(match.id) : undefined,
+      onClearTeam2: isAdmin ? () => onClearTeam2(match.id) : undefined,
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+      {/* Group standings + matches */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Group Stage</span>
+          <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
+        </div>
+        <div style={{ display: 'grid', gap: 24, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+          {sections.map(sec => {
+            const secMatches = groupMatches.filter(m => {
+              const s1 = m.team1_id ? teamMap[m.team1_id]?.section ?? null : null
+              const s2 = m.team2_id ? teamMap[m.team2_id]?.section ?? null : null
+              return (s1 && s1 === sec.name) || (s2 && s2 === sec.name)
+            })
+            const standings = computeGroupStandings(sec.name, teams, groupMatches)
+            return (
+              <div key={sec.id} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{sec.name}</span>
+                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 14, overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                    <thead>
+                      <tr style={{ color: 'var(--text-muted)', fontSize: 10.5 }}>
+                        <th style={{ textAlign: 'left', padding: '2px 6px', fontWeight: 600 }}>Team</th>
+                        <th style={{ textAlign: 'center', padding: '2px 6px' }}>P</th>
+                        <th style={{ textAlign: 'center', padding: '2px 6px' }}>W</th>
+                        <th style={{ textAlign: 'center', padding: '2px 6px' }}>D</th>
+                        <th style={{ textAlign: 'center', padding: '2px 6px' }}>L</th>
+                        <th style={{ textAlign: 'center', padding: '2px 6px' }}>Pts</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {standings.map((row, i) => (
+                        <tr key={row.team.id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)', background: i < (tournament.advance_per_group ?? 2) ? 'rgba(74,222,128,0.05)' : 'transparent' }}>
+                          <td style={{ padding: '6px 6px', color: i < (tournament.advance_per_group ?? 2) ? '#4ade80' : 'var(--text-primary)', fontWeight: i === 0 ? 700 : 500 }}>{row.team.team_name}</td>
+                          <td style={{ padding: '6px 6px', textAlign: 'center', color: 'var(--text-muted)' }}>{row.played}</td>
+                          <td style={{ padding: '6px 6px', textAlign: 'center', color: '#4ade80', fontWeight: 700 }}>{row.wins}</td>
+                          <td style={{ padding: '6px 6px', textAlign: 'center', color: '#f59e0b' }}>{row.draws}</td>
+                          <td style={{ padding: '6px 6px', textAlign: 'center', color: '#f87171' }}>{row.losses}</td>
+                          <td style={{ padding: '6px 6px', textAlign: 'center', color: 'var(--text-primary)', fontWeight: 800 }}>{row.pts}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {secMatches.map(match => <MatchCard key={match.id} {...matchCardProps(match)} />)}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Knockout bracket */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Knockout Bracket</span>
+          <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
+          {isAdmin && knockoutMatches.length > 0 && (
+            <button onClick={onGenerateKnockout} disabled={generatingKnockout} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 9, color: 'var(--text-muted)', cursor: generatingKnockout ? 'default' : 'pointer', fontSize: 11.5, fontWeight: 600, fontFamily: 'inherit', flexShrink: 0 }}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.36"/></svg>
+              {generatingKnockout ? 'Generating…' : 'Re-generate from Standings'}
+            </button>
+          )}
+        </div>
+        {knockoutMatches.length === 0 ? (
+          isAdmin ? (
+            <div style={{ padding: 16, background: 'rgba(138,21,56,0.08)', border: '1px solid rgba(138,21,56,0.2)', borderRadius: 14 }}>
+              <p style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 12 }}>
+                {allGroupsComplete
+                  ? `Group stage complete. Generate the knockout bracket with the top ${tournament.advance_per_group ?? 2} team(s) from each group.`
+                  : `Group stage still in progress — you can generate the bracket early, but standings may still change.`}
+              </p>
+              <button onClick={onGenerateKnockout} disabled={generatingKnockout} style={{
+                padding: '10px 20px', background: generatingKnockout ? 'rgba(138,21,56,0.4)' : 'var(--accent)',
+                border: 'none', borderRadius: 10, color: '#fff', cursor: generatingKnockout ? 'default' : 'pointer',
+                fontWeight: 700, fontSize: 13, fontFamily: 'inherit',
+              }}>
+                {generatingKnockout ? 'Generating…' : 'Generate Knockout Bracket'}
+              </button>
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '24px', fontSize: 13, color: 'var(--text-muted)' }}>Knockout bracket hasn't been generated yet.</div>
+          )
+        ) : (
+          <div style={{ overflowX: 'auto', paddingBottom: 12 }}>
+            <div style={{ display: 'flex', gap: 12, minWidth: Math.max(koRounds.length * 240, 400) }}>
+              {koRounds.map(round => (
+                <div key={round} style={{ flex: 1, minWidth: 220 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12, textAlign: 'center', color: round === koMaxRound ? '#e9c176' : 'var(--text-muted)' }}>
+                    {round === koMaxRound ? '🏆 Final' : round === koMaxRound - 1 && koRounds.length > 2 ? 'Semi-finals' : `Round ${round}`}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {knockoutMatches.filter(m => m.round === round && (m.team1_id || m.team2_id)).map(match => (
+                      <MatchCard key={match.id} {...matchCardProps(match)} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Scoreboard Create CTA ───────────────────────────────────────────────────
 function ScoreboardCreateCTA({ onStart }: { onStart: () => void }) {
   return (
@@ -2704,6 +3050,105 @@ function ScoreboardSportPicker({ onBack, onSelect }: { onBack: () => void; onSel
             )}
           </button>
         ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Scoreboard Format Picker (Football) ─────────────────────────────────────
+const FORMAT_OPTIONS = [
+  {
+    key: 'round_robin' as const,
+    label: 'Round Robin',
+    emoji: '🏆',
+    desc: 'Every team plays every other team once. Standings decide the winner.',
+  },
+  {
+    key: 'single_elimination' as const,
+    label: 'Single Elimination',
+    emoji: '⚔️',
+    desc: 'Straight knockout bracket. Lose once and you\'re out.',
+  },
+  {
+    key: 'group_knockout' as const,
+    label: 'Group Stages + Knockouts',
+    emoji: '🏟️',
+    desc: 'Teams are split into groups for round-robin play, then top teams advance to a knockout bracket.',
+  },
+]
+
+function ScoreboardFormatPicker({ onBack, onSelect }: { onBack: () => void; onSelect: (format: 'round_robin' | 'single_elimination' | 'group_knockout') => void }) {
+  return (
+    <div style={{ animation: 'td-in 0.25s ease both' }}>
+      <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0, fontSize: 13, fontFamily: 'inherit', marginBottom: 24 }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+        Back to Sports
+      </button>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <span style={{ fontSize: 18 }}>⚽</span>
+          <h2 style={{ fontSize: 20, fontWeight: 900, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>Football — Choose a Format</h2>
+        </div>
+        <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>Pick how the tournament decides its winner</p>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14 }}>
+        {FORMAT_OPTIONS.map(f => (
+          <button
+            key={f.key}
+            onClick={() => onSelect(f.key)}
+            style={{ display: 'flex', flexDirection: 'column', textAlign: 'left', gap: 10, background: 'rgba(255,255,255,0.03)', border: '1.5px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: 18, cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(138,21,56,0.1)'; e.currentTarget.style.borderColor = 'rgba(138,21,56,0.4)'; e.currentTarget.style.transform = 'translateY(-3px)'; e.currentTarget.style.boxShadow = '0 8px 28px rgba(0,0,0,0.4)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none' }}
+          >
+            <span style={{ fontSize: 26 }}>{f.emoji}</span>
+            <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)' }}>{f.label}</span>
+            <span style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.5 }}>{f.desc}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Group Stage Setup (Football → Group Stages + Knockouts) ────────────────
+function ScoreboardGroupsSetup({ teamCount, groupCount, setGroupCount, advancePerGroup, setAdvancePerGroup, onBack, onConfirm }: {
+  teamCount: number
+  groupCount: string; setGroupCount: (v: string) => void
+  advancePerGroup: string; setAdvancePerGroup: (v: string) => void
+  onBack: () => void; onConfirm: () => void
+}) {
+  const numGroups = Math.max(1, parseInt(groupCount) || 1)
+  const numAdvance = Math.max(1, parseInt(advancePerGroup) || 1)
+  const perGroup = numGroups > 0 ? Math.ceil(teamCount / numGroups) : 0
+  return (
+    <div style={{ maxWidth: 480, animation: 'td-in 0.25s ease both' }}>
+      <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0, fontSize: 13, fontFamily: 'inherit', marginBottom: 24 }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+        Back to Formats
+      </button>
+      <div style={{ marginBottom: 24 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 900, color: 'var(--text-primary)', marginBottom: 4, letterSpacing: '-0.02em' }}>Set Up Groups</h2>
+        <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+          {teamCount > 0 ? `${teamCount} teams accepted so far — you can still add more before generating.` : 'Add teams first, then come back to generate — groups will be filled in evenly.'}
+        </p>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div>
+          <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8 }}>Number of groups</label>
+          <input type="number" min={1} value={groupCount} onChange={e => setGroupCount(e.target.value)} style={{ width: '100%', padding: '11px 14px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, color: 'var(--text-primary)', fontSize: 14, outline: 'none', fontFamily: 'inherit' }} />
+          {teamCount > 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>~{perGroup} team{perGroup !== 1 ? 's' : ''} per group</div>}
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8 }}>Teams advancing per group</label>
+          <input type="number" min={1} value={advancePerGroup} onChange={e => setAdvancePerGroup(e.target.value)} style={{ width: '100%', padding: '11px 14px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, color: 'var(--text-primary)', fontSize: 14, outline: 'none', fontFamily: 'inherit' }} />
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>Top {numAdvance} from each group move on to the knockout bracket ({numGroups * numAdvance} teams total)</div>
+        </div>
+        <button
+          onClick={onConfirm}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 22px', background: 'var(--accent)', border: 'none', borderRadius: 12, color: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit', boxShadow: '0 4px 18px rgba(138,21,56,0.4)' }}
+        >
+          Continue →
+        </button>
       </div>
     </div>
   )

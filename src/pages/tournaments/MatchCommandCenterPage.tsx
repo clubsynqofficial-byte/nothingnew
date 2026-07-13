@@ -14,6 +14,7 @@ interface Match {
   timeouts1: number; timeouts2: number
   live_stats: Record<string, unknown> | null
   round: number; match_number: number; winner_id: string | null
+  potm_voting_enabled: boolean; potm_voting_closes_at: string | null
 }
 
 interface Team { id: string; team_name: string; logo_url: string | null }
@@ -561,6 +562,12 @@ export default function MatchCommandCenterPage() {
     const m = matchRef.current; if (!m) return
     const existing = (m.live_stats as Record<string, unknown>) ?? {}
     await supabase.from('tournament_matches').update({ live_stats: { ...existing, config: newCfg } }).eq('id', m.id)
+  }
+
+  async function savePotmSettings(patch: { potm_voting_enabled?: boolean; potm_voting_closes_at?: string | null }) {
+    const m = matchRef.current; if (!m) return
+    setMatch(prev => prev ? { ...prev, ...patch } : prev)
+    await supabase.from('tournament_matches').update(patch).eq('id', m.id)
   }
 
   function shareLink() {
@@ -1171,6 +1178,39 @@ export default function MatchCommandCenterPage() {
                 ))}
               </div>
             </div>
+
+            {/* Player of the Match voting */}
+            {match && (
+              <div style={{ borderRadius: 18, padding: '20px 22px', ...glass }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Player of the Match Voting</div>
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 999, color: !match.potm_voting_enabled ? 'rgba(255,255,255,0.3)' : (match.potm_voting_closes_at && new Date(match.potm_voting_closes_at) < new Date()) ? '#f87171' : '#4ade80', background: !match.potm_voting_enabled ? 'rgba(255,255,255,0.05)' : (match.potm_voting_closes_at && new Date(match.potm_voting_closes_at) < new Date()) ? 'rgba(239,68,68,0.12)' : 'rgba(74,222,128,0.12)' }}>
+                    {!match.potm_voting_enabled ? 'Off' : (match.potm_voting_closes_at && new Date(match.potm_voting_closes_at) < new Date()) ? 'Closed' : 'Open'}
+                  </span>
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: match.potm_voting_enabled ? 16 : 0, cursor: 'pointer' }}>
+                  <Toggle on={match.potm_voting_enabled} onChange={() => savePotmSettings({ potm_voting_enabled: !match.potm_voting_enabled })} />
+                  <span style={{ fontSize: 13, color: match.potm_voting_enabled ? 'var(--text-primary)' : 'rgba(255,255,255,0.4)' }}>Let fans vote for this match on the public scoreboard</span>
+                </label>
+                {match.potm_voting_enabled && (
+                  <>
+                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>Voting closes</div>
+                    <input
+                      type="datetime-local"
+                      value={match.potm_voting_closes_at ? new Date(match.potm_voting_closes_at).toISOString().slice(0, 16) : ''}
+                      onChange={e => savePotmSettings({ potm_voting_closes_at: e.target.value ? new Date(e.target.value).toISOString() : null })}
+                      style={{ width: '100%', padding: '9px 12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, color: '#fff', fontSize: 13, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 10, colorScheme: 'dark' }}
+                    />
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {[{ l: '+1 hour', ms: 3600_000 }, { l: '+6 hours', ms: 6 * 3600_000 }, { l: '+24 hours', ms: 24 * 3600_000 }].map(b => (
+                        <button key={b.l} className="cc-btn" onClick={() => savePotmSettings({ potm_voting_closes_at: new Date(Date.now() + b.ms).toISOString() })} style={{ padding: '5px 13px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 8, color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 600 }}>{b.l}</button>
+                      ))}
+                      <button className="cc-btn" onClick={() => savePotmSettings({ potm_voting_closes_at: null })} style={{ padding: '5px 13px', background: !match.potm_voting_closes_at ? 'rgba(138,21,56,0.3)' : 'rgba(255,255,255,0.05)', border: `1px solid ${!match.potm_voting_closes_at ? 'rgba(138,21,56,0.6)' : 'rgba(255,255,255,0.09)'}`, borderRadius: 8, color: !match.potm_voting_closes_at ? 'var(--accent)' : 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 600 }}>No limit</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px,1fr))', gap: 14 }}>
               {/* Timer settings */}

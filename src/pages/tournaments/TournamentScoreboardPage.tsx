@@ -2,6 +2,7 @@ import React from 'react'
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
 
 const SPORT_EMOJIS: Record<string, string> = { Basketball:'🏀', Football:'⚽', Volleyball:'🏐', Tennis:'🎾', Badminton:'🏸', Cricket:'🏏', Swimming:'🏊', Athletics:'🏃', Chess:'♟️', Gaming:'🎮', 'Table Tennis':'🏓', Rugby:'🏉', Baseball:'⚾', Hockey:'🏑' }
 
@@ -69,8 +70,9 @@ function StandingsTable({ rows, maxPts }: { rows: StandingsRow[]; maxPts: number
   )
 }
 
-interface Match { id: string; tournament_id: string; team1_id: string | null; team2_id: string | null; score1: number; score2: number; winner_id: string | null; round: number; match_number: number; status: 'scheduled' | 'live' | 'completed' }
-interface Team { id: string; team_name: string; logo_url: string | null; section: string | null }
+interface Match { id: string; tournament_id: string; team1_id: string | null; team2_id: string | null; score1: number; score2: number; winner_id: string | null; round: number; match_number: number; status: 'scheduled' | 'live' | 'completed'; stage: 'group' | 'knockout' | null; potm_voting_enabled: boolean; potm_voting_closes_at: string | null }
+interface PotmVote { id: string; match_id: string; voter_id: string; team_id: string; player_name: string }
+interface Team { id: string; team_name: string; logo_url: string | null; section: string | null; player_names: string[]; players: Array<{ name: string; role: string }> | null }
 
 function BracketGrid({ matches, rounds, maxRound, teamMap }: { matches: Match[]; rounds: number[]; maxRound: number; teamMap: Record<string, Team> }) {
   return (
@@ -122,7 +124,8 @@ function BracketGrid({ matches, rounds, maxRound, teamMap }: { matches: Match[];
 
 interface Tournament {
   id: string; name: string; sport: string; status: string
-  format: 'single_elimination' | 'round_robin'
+  format: 'single_elimination' | 'round_robin' | 'group_knockout'
+  advance_per_group: number | null
   logo_url: string | null; location: string | null
   prizes: Array<{ place: string; description: string }> | null
   sections: Array<{ id: string; name: string; maxTeams?: number | null }> | null
@@ -145,6 +148,93 @@ function Logo({ team, size }: { team: Team | null | undefined; size: number }) {
   )
 }
 
+function PotmVoting({ matchId, closesAt, t1, t2, votes, userId, isOpen, onToggle, casting, onVote }: {
+  matchId: string
+  closesAt: string | null
+  t1: Team | null | undefined; t2: Team | null | undefined
+  votes: PotmVote[]
+  userId: string | undefined
+  isOpen: boolean; onToggle: () => void
+  casting: boolean; onVote: (teamId: string, playerName: string) => void
+}) {
+  const votingClosed = !!closesAt && new Date(closesAt) < new Date()
+  const matchVotes = votes.filter(v => v.match_id === matchId)
+  const myVote = userId ? matchVotes.find(v => v.voter_id === userId) : undefined
+
+  function candidatesFor(team: Team | null | undefined) {
+    if (!team) return []
+    const names = team.players?.length ? team.players.map(p => p.name) : team.player_names
+    return names.filter(Boolean)
+  }
+
+  const groups = [
+    { team: t1, names: candidatesFor(t1) },
+    { team: t2, names: candidatesFor(t2) },
+  ].filter(g => g.team && g.names.length > 0)
+
+  const totalVotes = matchVotes.length
+  const voteCounts: Record<string, number> = {}
+  for (const v of matchVotes) {
+    const key = `${v.team_id}::${v.player_name}`
+    voteCounts[key] = (voteCounts[key] ?? 0) + 1
+  }
+  const maxVotes = Math.max(1, ...Object.values(voteCounts))
+
+  if (groups.length === 0) return null
+
+  return (
+    <div style={{ marginTop: 6 }}>
+      <button onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', padding: '4px 0', fontSize: 11.5, fontWeight: 600, fontFamily: 'inherit' }}>
+        🏅 Player of the Match {totalVotes > 0 ? `(${totalVotes} vote${totalVotes !== 1 ? 's' : ''})` : ''} {votingClosed && <span style={{ color: '#f87171' }}>· Closed</span>}
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      {isOpen && (
+        <div style={{ display: 'grid', gridTemplateColumns: groups.length > 1 ? '1fr 1fr' : '1fr', gap: 14, marginTop: 8, padding: '12px 14px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12 }}>
+          {groups.map((g, gi) => (
+            <div key={gi} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{g.team!.team_name}</span>
+              {g.names.map(name => {
+                const count = voteCounts[`${g.team!.id}::${name}`] ?? 0
+                const isMine = myVote?.team_id === g.team!.id && myVote?.player_name === name
+                const isLeader = count > 0 && count === maxVotes
+                const pct = totalVotes > 0 ? (count / maxVotes) * 100 : 0
+                return (
+                  <button
+                    key={name}
+                    disabled={!userId || casting || votingClosed}
+                    onClick={() => onVote(g.team!.id, name)}
+                    style={{
+                      position: 'relative', overflow: 'hidden', textAlign: 'left',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                      padding: '7px 10px', borderRadius: 8, fontFamily: 'inherit', fontSize: 12.5,
+                      background: isMine ? 'rgba(74,222,128,0.1)' : 'rgba(255,255,255,0.03)',
+                      border: `1px solid ${isMine ? 'rgba(74,222,128,0.35)' : 'rgba(255,255,255,0.08)'}`,
+                      color: isMine ? '#4ade80' : 'rgba(255,255,255,0.75)',
+                      cursor: userId && !casting && !votingClosed ? 'pointer' : 'default',
+                      fontWeight: isMine ? 700 : 500,
+                    }}
+                  >
+                    <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, background: isLeader ? 'rgba(233,193,118,0.1)' : 'rgba(255,255,255,0.04)', zIndex: 0 }} />
+                    <span style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {isLeader && '👑'} {name} {isMine && '✓'}
+                    </span>
+                    <span style={{ position: 'relative', zIndex: 1, fontSize: 11, color: 'rgba(255,255,255,0.35)', flexShrink: 0 }}>{count}</span>
+                  </button>
+                )
+              })}
+            </div>
+          ))}
+          {votingClosed ? (
+            <div style={{ gridColumn: '1 / -1', fontSize: 11, color: '#f87171', textAlign: 'center' }}>Voting has closed for this match</div>
+          ) : !userId && (
+            <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'rgba(255,255,255,0.3)', textAlign: 'center' }}>Log in to vote</div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
@@ -157,9 +247,13 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 export default function TournamentScoreboardPage() {
   const { tournamentId } = useParams<{ tournamentId: string }>()
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [tournament, setTournament] = useState<Tournament | null>(null)
   const [teams, setTeams] = useState<Team[]>([])
   const [matches, setMatches] = useState<Match[]>([])
+  const [votes, setVotes] = useState<PotmVote[]>([])
+  const [openVoteMatch, setOpenVoteMatch] = useState<string | null>(null)
+  const [castingVote, setCastingVote] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
   const [, setLastUpdated] = useState(new Date())
@@ -167,19 +261,45 @@ export default function TournamentScoreboardPage() {
 
   const fetchData = useCallback(async () => {
     if (!tournamentId) return
-    const [tRes, teamsRes, matchesRes] = await Promise.all([
-      supabase.from('tournaments').select('id,name,sport,status,format,logo_url,location,prizes,sections,standings_paused,club:clubs(name)').eq('id', tournamentId).single(),
-      supabase.from('tournament_teams').select('id,team_name,logo_url,section').eq('tournament_id', tournamentId).eq('status', 'accepted'),
+    const [tRes, teamsRes, matchesRes, votesRes] = await Promise.all([
+      supabase.from('tournaments').select('id,name,sport,status,format,advance_per_group,logo_url,location,prizes,sections,standings_paused,club:clubs(name)').eq('id', tournamentId).single(),
+      supabase.from('tournament_teams').select('id,team_name,logo_url,section,player_names,players').eq('tournament_id', tournamentId).eq('status', 'accepted'),
       supabase.from('tournament_matches').select('*').eq('tournament_id', tournamentId).order('round').order('match_number'),
+      supabase.from('match_potm_votes').select('id,match_id,voter_id,team_id,player_name,tournament_matches!inner(tournament_id)').eq('tournament_matches.tournament_id', tournamentId),
     ])
     if (tRes.data) setTournament(tRes.data as unknown as Tournament)
     if (teamsRes.data) setTeams(teamsRes.data)
     if (matchesRes.data) setMatches(matchesRes.data)
+    if (votesRes.data) setVotes(votesRes.data as unknown as PotmVote[])
     setLoading(false)
     setLastUpdated(new Date())
   }, [tournamentId])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  useEffect(() => {
+    if (!tournamentId) return
+    const ch = supabase.channel(`potm-votes-${tournamentId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'match_potm_votes' }, () => { fetchData() })
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [tournamentId, fetchData])
+
+  async function castVote(matchId: string, teamId: string, playerName: string) {
+    if (!user) return
+    setCastingVote(matchId)
+    const { error } = await supabase.from('match_potm_votes').upsert(
+      { match_id: matchId, voter_id: user.id, team_id: teamId, player_name: playerName },
+      { onConflict: 'match_id,voter_id' },
+    )
+    if (!error) {
+      setVotes(prev => [
+        ...prev.filter(v => !(v.match_id === matchId && v.voter_id === user.id)),
+        { id: `${matchId}-${user.id}`, match_id: matchId, voter_id: user.id, team_id: teamId, player_name: playerName },
+      ])
+    }
+    setCastingVote(null)
+  }
 
   useEffect(() => {
     if (!tournamentId) return
@@ -220,9 +340,9 @@ export default function TournamentScoreboardPage() {
   const hasSections = (tournament?.sections?.length ?? 0) > 0
   const activeSec = hasSections ? (activeSectionName || tournament!.sections![0].name) : ''
 
-  function buildStandings(teamList: Team[]) {
+  function buildStandings(teamList: Team[], matchPool: Match[] = matches) {
     return teamList.map(team => {
-      const played = matches.filter(m => (m.team1_id === team.id || m.team2_id === team.id) && m.status === 'completed')
+      const played = matchPool.filter(m => (m.team1_id === team.id || m.team2_id === team.id) && m.status === 'completed')
       const wins = played.filter(m => m.winner_id === team.id).length
       const losses = played.filter(m => m.winner_id && m.winner_id !== team.id).length
       const draws = played.length - wins - losses
@@ -324,8 +444,8 @@ export default function TournamentScoreboardPage() {
                 {tournament.name}
               </h1>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', padding: '4px 10px', background: tournament.format === 'round_robin' ? 'rgba(99,102,241,0.2)' : 'rgba(245,158,11,0.2)', border: `1px solid ${tournament.format === 'round_robin' ? 'rgba(99,102,241,0.4)' : 'rgba(245,158,11,0.4)'}`, borderRadius: 6, color: tournament.format === 'round_robin' ? '#818cf8' : '#f59e0b' }}>
-                  {tournament.format === 'round_robin' ? 'Round Robin' : 'Single Elimination'}
+                <span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', padding: '4px 10px', background: tournament.format === 'round_robin' ? 'rgba(99,102,241,0.2)' : tournament.format === 'group_knockout' ? 'rgba(56,189,248,0.2)' : 'rgba(245,158,11,0.2)', border: `1px solid ${tournament.format === 'round_robin' ? 'rgba(99,102,241,0.4)' : tournament.format === 'group_knockout' ? 'rgba(56,189,248,0.4)' : 'rgba(245,158,11,0.4)'}`, borderRadius: 6, color: tournament.format === 'round_robin' ? '#818cf8' : tournament.format === 'group_knockout' ? '#38bdf8' : '#f59e0b' }}>
+                  {tournament.format === 'round_robin' ? 'Round Robin' : tournament.format === 'group_knockout' ? 'Group Stages + Knockouts' : 'Single Elimination'}
                 </span>
                 <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', fontWeight: 500 }}>{tournament.sport}</span>
                 {tournament.location && (
@@ -479,6 +599,40 @@ export default function TournamentScoreboardPage() {
           </div>
         )}
 
+        {/* ── Group Standings + Knockout Bracket (group_knockout) ── */}
+        {tournament.format === 'group_knockout' && (() => {
+          const groupMatches = matches.filter(m => m.stage === 'group')
+          const knockoutMatches = matches.filter(m => m.stage === 'knockout')
+          const koRounds = [...new Set(knockoutMatches.map(m => m.round))].sort((a, b) => a - b)
+          const koMaxRound = Math.max(...koRounds, 0)
+          return (
+            <>
+              {groupMatches.length > 0 && (
+                <div style={{ marginBottom: 52, animation: 'sb-in 0.5s ease both' }}>
+                  <SectionLabel>Group Standings</SectionLabel>
+                  {hasSections ? (() => {
+                    const secTeams = teams.filter(t => t.section === activeSec)
+                    const secGroupMatches = groupMatches.filter(m => matchSection(m) === activeSec)
+                    const secStandings = buildStandings(secTeams, secGroupMatches)
+                    const secMaxPts = secStandings[0]?.pts || 1
+                    return secTeams.length === 0
+                      ? <div style={{ textAlign: 'center', padding: '32px', color: 'rgba(255,255,255,0.2)', fontSize: 13 }}>No teams registered for {activeSec} yet.</div>
+                      : <StandingsTable rows={secStandings} maxPts={secMaxPts} />
+                  })() : (
+                    <StandingsTable rows={buildStandings(teams, groupMatches)} maxPts={buildStandings(teams, groupMatches)[0]?.pts || 1} />
+                  )}
+                </div>
+              )}
+              {knockoutMatches.length > 0 && (
+                <div style={{ marginBottom: 52, animation: 'sb-in 0.55s ease both' }}>
+                  <SectionLabel>Knockout Bracket</SectionLabel>
+                  <BracketGrid matches={knockoutMatches} rounds={koRounds} maxRound={koMaxRound} teamMap={teamMap} />
+                </div>
+              )}
+            </>
+          )
+        })()}
+
         {/* ── Results ── */}
         {(hasSections ? completedMatches.filter(m => matchSection(m) === activeSec && (m.team1_id && m.team2_id)) : completedMatches.filter(m => m.team1_id && m.team2_id)).length > 0 && (
           <div style={{ marginBottom: 52, animation: 'sb-in 0.55s ease both' }}>
@@ -490,29 +644,40 @@ export default function TournamentScoreboardPage() {
                 const t1w = match.winner_id === match.team1_id
                 const t2w = match.winner_id === match.team2_id
                 return (
-                  <div key={match.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 12, background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: '11px 18px', animation: `row-in 0.3s ${i * 0.03}s ease both` }}>
-                    {/* Team 1 */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <Logo team={t1} size={26} />
-                      <span style={{ fontSize: t1w ? 14 : 13, fontWeight: t1w ? 800 : 400, color: t1w ? '#fff' : 'rgba(255,255,255,0.25)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {t1?.team_name ?? 'TBD'}
-                      </span>
-                      {t1w && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12"/></svg>}
+                  <div key={match.id} style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: '11px 18px', animation: `row-in 0.3s ${i * 0.03}s ease both` }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 12 }}>
+                      {/* Team 1 */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <Logo team={t1} size={26} />
+                        <span style={{ fontSize: t1w ? 14 : 13, fontWeight: t1w ? 800 : 400, color: t1w ? '#fff' : 'rgba(255,255,255,0.25)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {t1?.team_name ?? 'TBD'}
+                        </span>
+                        {t1w && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12"/></svg>}
+                      </div>
+                      {/* Score */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                        <span style={{ fontSize: 24, fontWeight: 900, minWidth: 28, textAlign: 'center', fontVariantNumeric: 'tabular-nums', color: t1w ? '#fff' : 'rgba(255,255,255,0.2)' }}>{match.score1}</span>
+                        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.15)', fontWeight: 600 }}>—</span>
+                        <span style={{ fontSize: 24, fontWeight: 900, minWidth: 28, textAlign: 'center', fontVariantNumeric: 'tabular-nums', color: t2w ? '#fff' : 'rgba(255,255,255,0.2)' }}>{match.score2}</span>
+                      </div>
+                      {/* Team 2 */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'flex-end' }}>
+                        {t2w && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12"/></svg>}
+                        <span style={{ fontSize: t2w ? 14 : 13, fontWeight: t2w ? 800 : 400, color: t2w ? '#fff' : 'rgba(255,255,255,0.25)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {t2?.team_name ?? 'TBD'}
+                        </span>
+                        <Logo team={t2} size={26} />
+                      </div>
                     </div>
-                    {/* Score */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                      <span style={{ fontSize: 24, fontWeight: 900, minWidth: 28, textAlign: 'center', fontVariantNumeric: 'tabular-nums', color: t1w ? '#fff' : 'rgba(255,255,255,0.2)' }}>{match.score1}</span>
-                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.15)', fontWeight: 600 }}>—</span>
-                      <span style={{ fontSize: 24, fontWeight: 900, minWidth: 28, textAlign: 'center', fontVariantNumeric: 'tabular-nums', color: t2w ? '#fff' : 'rgba(255,255,255,0.2)' }}>{match.score2}</span>
-                    </div>
-                    {/* Team 2 */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'flex-end' }}>
-                      {t2w && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12"/></svg>}
-                      <span style={{ fontSize: t2w ? 14 : 13, fontWeight: t2w ? 800 : 400, color: t2w ? '#fff' : 'rgba(255,255,255,0.25)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {t2?.team_name ?? 'TBD'}
-                      </span>
-                      <Logo team={t2} size={26} />
-                    </div>
+                    {match.potm_voting_enabled && (
+                      <PotmVoting
+                        matchId={match.id} closesAt={match.potm_voting_closes_at} t1={t1} t2={t2} votes={votes} userId={user?.id}
+                        isOpen={openVoteMatch === match.id}
+                        onToggle={() => setOpenVoteMatch(prev => prev === match.id ? null : match.id)}
+                        casting={castingVote === match.id}
+                        onVote={(teamId, playerName) => castVote(match.id, teamId, playerName)}
+                      />
+                    )}
                   </div>
                 )
               })}
