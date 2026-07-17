@@ -233,6 +233,13 @@ export default function TournamentDetailPage() {
   const [invitingUser, setInvitingUser] = useState<string | null>(null)
   const [rosterActionLoading, setRosterActionLoading] = useState<string | null>(null)
 
+  // Co-manager (tournament.admins) management
+  const [coAdminProfiles, setCoAdminProfiles] = useState<ProfileSearchResult[]>([])
+  const [coAdminSearch, setCoAdminSearch] = useState('')
+  const [coAdminResults, setCoAdminResults] = useState<ProfileSearchResult[]>([])
+  const [searchingCoAdmins, setSearchingCoAdmins] = useState(false)
+  const [coAdminActionLoading, setCoAdminActionLoading] = useState<string | null>(null)
+
   const fetchAll = useCallback(async () => {
     if (!tournamentId) return
     setLoading(true)
@@ -276,6 +283,49 @@ export default function TournamentDetailPage() {
   }, [tournamentId, user])
 
   useEffect(() => { fetchAll() }, [fetchAll])
+
+  // Resolve co-manager names whenever the tournament's admins list changes
+  useEffect(() => {
+    const ids = tournament?.admins ?? []
+    if (ids.length === 0) { setCoAdminProfiles([]); return }
+    supabase.from('profiles').select('id, full_name, avatar_url, school').in('id', ids)
+      .then(({ data }) => setCoAdminProfiles(data ?? []))
+  }, [tournament?.admins])
+
+  async function searchCoAdmins(q: string) {
+    if (q.trim().length < 2) { setCoAdminResults([]); return }
+    setSearchingCoAdmins(true)
+    const existingIds = new Set([tournament?.created_by, ...(tournament?.admins ?? [])])
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, full_name, avatar_url, school')
+      .ilike('full_name', `%${q.trim()}%`)
+      .limit(8)
+    setCoAdminResults((data ?? []).filter(p => !existingIds.has(p.id)))
+    setSearchingCoAdmins(false)
+  }
+
+  async function addCoAdmin(profileId: string) {
+    if (!tournament) return
+    setCoAdminActionLoading(profileId)
+    const nextAdmins = [...(tournament.admins ?? []), profileId]
+    const { error } = await supabase.from('tournaments').update({ admins: nextAdmins }).eq('id', tournament.id)
+    if (!error) {
+      setTournament(prev => prev ? { ...prev, admins: nextAdmins } : prev)
+      setCoAdminSearch('')
+      setCoAdminResults([])
+    }
+    setCoAdminActionLoading(null)
+  }
+
+  async function removeCoAdmin(profileId: string) {
+    if (!tournament) return
+    setCoAdminActionLoading(profileId)
+    const nextAdmins = (tournament.admins ?? []).filter(id => id !== profileId)
+    const { error } = await supabase.from('tournaments').update({ admins: nextAdmins }).eq('id', tournament.id)
+    if (!error) setTournament(prev => prev ? { ...prev, admins: nextAdmins } : prev)
+    setCoAdminActionLoading(null)
+  }
 
   // Keep ref in sync so the realtime callback can read the latest value
   useEffect(() => { standingsPausedRef.current = standingsPaused }, [standingsPaused])
@@ -1153,6 +1203,74 @@ export default function TournamentDetailPage() {
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
               {tournament.maintenance_mode ? 'Maintenance ON — click to go live' : 'Put under maintenance'}
             </button>
+
+            {/* Co-managers — only the original creator can grant/revoke, matching the DB permission model */}
+            {tournament.created_by === user?.id && (
+              <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Co-Managers</div>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
+                  Give other people full admin access to this tournament — including entering scores from the Command Center.
+                </p>
+                {coAdminProfiles.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+                    {coAdminProfiles.map(p => {
+                      const initials = (p.full_name ?? '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
+                      return (
+                        <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 9 }}>
+                          <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'rgba(138,21,56,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10.5, fontWeight: 700, color: 'var(--accent)', overflow: 'hidden', flexShrink: 0 }}>
+                            {p.avatar_url ? <img src={p.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
+                          </div>
+                          <span style={{ flex: 1, fontSize: 12.5, fontWeight: 600, color: 'var(--text-primary)' }}>{p.full_name ?? 'Unknown'}</span>
+                          <button
+                            disabled={coAdminActionLoading === p.id}
+                            onClick={() => removeCoAdmin(p.id)}
+                            style={{ padding: '4px 10px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 7, color: '#f87171', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit', flexShrink: 0 }}
+                          >
+                            {coAdminActionLoading === p.id ? '…' : 'Remove'}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+                <div style={{ position: 'relative' }}>
+                  <input
+                    value={coAdminSearch}
+                    onChange={e => { setCoAdminSearch(e.target.value); searchCoAdmins(e.target.value) }}
+                    placeholder="Search ClubSynq users by name…"
+                    style={{ width: '100%', padding: '9px 12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 9, color: 'var(--text-primary)', fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                  />
+                  {searchingCoAdmins && (
+                    <div style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, border: '2px solid rgba(255,255,255,0.2)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                  )}
+                </div>
+                {coAdminResults.length > 0 && (
+                  <div style={{ marginTop: 6, background: 'rgba(14,8,11,0.98)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, overflow: 'hidden' }}>
+                    {coAdminResults.map(p => {
+                      const initials = (p.full_name ?? '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
+                      return (
+                        <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                          <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(138,21,56,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'var(--accent)', overflow: 'hidden', flexShrink: 0 }}>
+                            {p.avatar_url ? <img src={p.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{p.full_name ?? 'Unknown'}</div>
+                            {p.school && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{p.school}</div>}
+                          </div>
+                          <button
+                            disabled={coAdminActionLoading === p.id}
+                            onClick={() => addCoAdmin(p.id)}
+                            style={{ padding: '5px 12px', background: 'rgba(138,21,56,0.2)', border: '1px solid rgba(138,21,56,0.4)', borderRadius: 7, color: 'var(--accent)', cursor: 'pointer', fontSize: 11, fontWeight: 700, fontFamily: 'inherit', flexShrink: 0 }}
+                          >
+                            {coAdminActionLoading === p.id ? '…' : 'Add'}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
