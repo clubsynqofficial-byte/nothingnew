@@ -25,7 +25,7 @@ interface TournamentRow {
 }
 
 const SPORT_EMOJIS: Record<string, string> = {
-  Basketball: '🏀', Football: '⚽', Volleyball: '🏐', Tennis: '🎾',
+  Basketball: '🏀', Football: '⚽', Bowling: '🎳', Volleyball: '🏐', Tennis: '🎾',
   Badminton: '🏸', Cricket: '🏏', Swimming: '🏊', Athletics: '🏃',
   Chess: '♟️', Gaming: '🎮', 'Table Tennis': '🏓', Rugby: '🏉',
   Baseball: '⚾', Hockey: '🏑', Other: '🏆',

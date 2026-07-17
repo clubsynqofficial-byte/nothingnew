@@ -173,8 +173,8 @@ export default function EventsPage() {
       return
     }
     setRegistering(event.id)
+    // attendee_count is maintained server-side by a DB trigger on event_attendees — do not update it from the client.
     await supabase.from('event_attendees').insert({ event_id: event.id, user_id: user.id, checked_in_at: null })
-    await supabase.from('events').update({ attendee_count: event.attendee_count + 1 }).eq('id', event.id)
     setRegisteredEventIds(prev => new Set([...prev, event.id]))
     setEvents(prev => prev.map(e => e.id === event.id ? { ...e, attendee_count: e.attendee_count + 1 } : e))
     setRegistering(null)

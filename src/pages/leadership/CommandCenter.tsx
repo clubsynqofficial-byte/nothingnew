@@ -2743,7 +2743,7 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
 
       {/* ── Tournaments tab ── */}
       {activeTab === 'tournaments' && (() => {
-        const SPORTS = ['Basketball', 'Football', 'Volleyball', 'Tennis', 'Badminton', 'Cricket', 'Swimming', 'Athletics', 'Chess', 'Gaming', 'Table Tennis', 'Rugby', 'Baseball', 'Hockey', 'Other']
+        const SPORTS = ['Basketball', 'Football', 'Bowling', 'Volleyball', 'Tennis', 'Badminton', 'Cricket', 'Swimming', 'Athletics', 'Chess', 'Gaming', 'Table Tennis', 'Rugby', 'Baseball', 'Hockey', 'Other']
         const STATUS_COLORS: Record<string, { color: string; bg: string; label: string }> = {
           registration_open: { color: '#4ade80', bg: 'rgba(74,222,128,0.12)', label: 'Open' },
           registration_closed: { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', label: 'Reg. Closed' },

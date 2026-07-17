@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 
-const SPORT_EMOJIS: Record<string, string> = { Basketball:'🏀', Football:'⚽', Volleyball:'🏐', Tennis:'🎾', Badminton:'🏸', Cricket:'🏏', Swimming:'🏊', Athletics:'🏃', Chess:'♟️', Gaming:'🎮', 'Table Tennis':'🏓', Rugby:'🏉', Baseball:'⚾', Hockey:'🏑' }
+const SPORT_EMOJIS: Record<string, string> = { Basketball:'🏀', Football:'⚽', Bowling:'🎳', Volleyball:'🏐', Tennis:'🎾', Badminton:'🏸', Cricket:'🏏', Swimming:'🏊', Athletics:'🏃', Chess:'♟️', Gaming:'🎮', 'Table Tennis':'🏓', Rugby:'🏉', Baseball:'⚾', Hockey:'🏑' }
 
 type StandingsRow = { team: Team; played: number; wins: number; draws: number; losses: number; pf: number; pa: number; pts: number }
 function StandingsTable({ rows, maxPts }: { rows: StandingsRow[]; maxPts: number }) {

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { computeGame } from '../../lib/bowling'
 
 interface Tournament {
   id: string
@@ -68,6 +69,18 @@ interface Match {
   stage: 'group' | 'knockout' | null
 }
 
+interface BowlingScorecard {
+  id: string
+  tournament_id: string
+  team_id: string
+  rolls: number[]
+  total_score: number
+  status: 'not_started' | 'in_progress' | 'completed'
+  lane: number | null
+}
+
+const BOWLERS_PER_LANE = 5
+
 interface TournamentTeamMember {
   id: string
   tournament_team_id: string
@@ -84,7 +97,7 @@ interface ProfileSearchResult {
 }
 
 const SPORT_EMOJIS: Record<string, string> = {
-  Basketball: '🏀', Football: '⚽', Volleyball: '🏐', Tennis: '🎾',
+  Basketball: '🏀', Football: '⚽', Bowling: '🎳', Volleyball: '🏐', Tennis: '🎾',
   Badminton: '🏸', Cricket: '🏏', Swimming: '🏊', Athletics: '🏃',
   Chess: '♟️', Gaming: '🎮', 'Table Tennis': '🏓', Rugby: '🏉',
   Baseball: '⚾', Hockey: '🏑', Other: '🏆',
@@ -129,6 +142,7 @@ export default function TournamentDetailPage() {
   const [tournament, setTournament] = useState<Tournament | null>(null)
   const [teams, setTeams] = useState<Team[]>([])
   const [matches, setMatches] = useState<Match[]>([])
+  const [bowlingScorecards, setBowlingScorecards] = useState<BowlingScorecard[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('info')
   const [isAdmin, setIsAdmin] = useState(false)
@@ -223,10 +237,11 @@ export default function TournamentDetailPage() {
     if (!tournamentId) return
     setLoading(true)
 
-    const [tournRes, teamsRes, matchesRes] = await Promise.all([
+    const [tournRes, teamsRes, matchesRes, bowlingRes] = await Promise.all([
       supabase.from('tournaments').select('*, club:clubs(id, name, logo_url)').eq('id', tournamentId).single(),
       supabase.from('tournament_teams').select('*, captain:profiles!captain_id(full_name, school)').eq('tournament_id', tournamentId).order('created_at'),
       supabase.from('tournament_matches').select('*').eq('tournament_id', tournamentId).order('round').order('match_number'),
+      supabase.from('bowling_scorecards').select('*').eq('tournament_id', tournamentId),
     ])
 
     if (tournRes.data) setTournament(tournRes.data)
@@ -238,6 +253,7 @@ export default function TournamentDetailPage() {
       }
     }
     if (matchesRes.data) setMatches(matchesRes.data)
+    if (bowlingRes.data) setBowlingScorecards(bowlingRes.data)
 
     // Check admin: creator, explicit admins array, or club president/officer
     if (user && tournRes.data) {
@@ -712,6 +728,40 @@ export default function TournamentDetailPage() {
     await fetchAll()
     setGeneratingBracket(false)
     setTab('bracket')
+  }
+
+  // Bowling has no matchups — every registered entry (bowler) gets its own independent
+  // 10-frame scorecard, so this just seeds one blank scorecard per accepted team.
+  async function generateBowlingScorecards() {
+    if (!tournament) return
+    const accepted = teams.filter(t => t.status === 'accepted')
+    if (accepted.length < 2) return
+    setGeneratingBracket(true)
+
+    // Assign lanes in registration order, BOWLERS_PER_LANE bowlers per lane — recomputed
+    // across everyone each time so newly-accepted bowlers slot in evenly rather than
+    // always starting a fresh lane of their own.
+    const laneOf = new Map(accepted.map((t, i) => [t.id, Math.floor(i / BOWLERS_PER_LANE) + 1]))
+    const existingByTeam = new Map(bowlingScorecards.map(c => [c.team_id, c]))
+
+    const toCreate = accepted.filter(t => !existingByTeam.has(t.id))
+    if (toCreate.length > 0) {
+      await supabase.from('bowling_scorecards').insert(
+        toCreate.map(t => ({ tournament_id: tournament.id, team_id: t.id, lane: laneOf.get(t.id) }))
+      )
+    }
+    const toRelane = accepted.filter(t => {
+      const existing = existingByTeam.get(t.id)
+      return existing && existing.lane !== laneOf.get(t.id)
+    })
+    await Promise.all(toRelane.map(t =>
+      supabase.from('bowling_scorecards').update({ lane: laneOf.get(t.id) }).eq('id', existingByTeam.get(t.id)!.id)
+    ))
+
+    await fetchAll()
+    setGeneratingBracket(false)
+    setTab('bracket')
+    navigate(`/tournaments/${tournament.id}/scoreboard/bowling`)
   }
 
   // Split accepted teams into N groups, persist the groups as tournament sections,
@@ -1425,7 +1475,7 @@ export default function TournamentDetailPage() {
       {/* ── Scoreboard tab ── */}
       {tab === 'bracket' && (
         <div style={{ animation: 'td-in 0.25s ease both' }}>
-          {matches.length === 0 ? (
+          {(matches.length === 0 && bowlingScorecards.length === 0) ? (
             isAdmin ? (
               scoreboardFlow === 'sport' ? (
                 <ScoreboardSportPicker
@@ -1472,7 +1522,7 @@ export default function TournamentDetailPage() {
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <div style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(138,21,56,0.18)', border: '1px solid rgba(138,21,56,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
-                        {scoreboardTemplate === 'Round Robin Standings' ? '🏆' : scoreboardTemplate === 'Football Scoreboard Template' ? '⚽' : '🏀'}
+                        {scoreboardTemplate === 'Round Robin Standings' ? '🏆' : scoreboardTemplate === 'Football Scoreboard Template' ? '⚽' : scoreboardTemplate === 'Bowling Scoreboard Template' ? '🎳' : '🏀'}
                       </div>
                       <div>
                         <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)' }}>{scoreboardTemplate}</div>
@@ -1480,6 +1530,8 @@ export default function TournamentDetailPage() {
                           {scoreboardTemplate === 'Round Robin Standings' ? 'Round Robin · Selected template'
                             : scoreboardTemplate === 'Football Scoreboard Template'
                             ? `Football · ${scoreboardFormat === 'round_robin' ? 'Round Robin' : scoreboardFormat === 'group_knockout' ? 'Group Stages + Knockouts' : 'Single Elimination'}`
+                            : scoreboardTemplate === 'Bowling Scoreboard Template'
+                            ? 'Bowling · Selected template'
                             : 'Basketball · Selected template'}
                         </div>
                       </div>
@@ -1492,6 +1544,8 @@ export default function TournamentDetailPage() {
                       ? 'Every team plays every other team once. Add teams, then generate the full schedule.'
                       : scoreboardFormat === 'group_knockout'
                       ? `Teams will be split into ${groupCount} groups for round-robin play. The top ${advancePerGroupInput} from each group advance to a knockout bracket.`
+                      : scoreboardTemplate === 'Bowling Scoreboard Template'
+                      ? 'Each bowler gets their own independent 10-frame scorecard — no matchups needed. Add every registered bowler, then generate.'
                       : scoreboardTemplate === 'Basketball Scoreboard Template' || scoreboardTemplate === 'Football Scoreboard Template'
                       ? 'Add the teams below, then hit Generate — you\'ll be taken straight to the live scoreboard.'
                       : 'Add all participating teams, then generate the scoreboard to create matchups.'}
@@ -1539,7 +1593,8 @@ export default function TournamentDetailPage() {
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <button
                         onClick={
-                          scoreboardTemplate === 'Round Robin Standings' || scoreboardFormat === 'round_robin' ? generateRoundRobinSchedule
+                          scoreboardTemplate === 'Bowling Scoreboard Template' ? generateBowlingScorecards
+                          : scoreboardTemplate === 'Round Robin Standings' || scoreboardFormat === 'round_robin' ? generateRoundRobinSchedule
                           : scoreboardFormat === 'group_knockout' ? generateGroupStage
                           : generateBracket
                         }
@@ -1548,6 +1603,7 @@ export default function TournamentDetailPage() {
                       >
                         {generatingBracket
                           ? <><div style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />Generating…</>
+                          : scoreboardTemplate === 'Bowling Scoreboard Template' ? 'Generate Scorecards →'
                           : scoreboardTemplate === 'Round Robin Standings' || scoreboardFormat === 'round_robin' ? 'Generate Schedule →'
                           : scoreboardFormat === 'group_knockout' ? 'Generate Groups →'
                           : 'Generate Scoreboard →'}
@@ -1560,6 +1616,11 @@ export default function TournamentDetailPage() {
                       {matches.length > 0 && scoreboardTemplate === 'Football Scoreboard Template' && (
                         <button onClick={() => navigate(`/tournaments/${tournament.id}/scoreboard/football`)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '11px 20px', background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 12, color: '#4ade80', cursor: 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit' }}>
                           ⚽ Launch Scoreboard
+                        </button>
+                      )}
+                      {bowlingScorecards.length > 0 && scoreboardTemplate === 'Bowling Scoreboard Template' && (
+                        <button onClick={() => navigate(`/tournaments/${tournament.id}/scoreboard/bowling`)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '11px 20px', background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 12, color: '#4ade80', cursor: 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit' }}>
+                          🎳 Launch Scoreboard
                         </button>
                       )}
                     </div>
@@ -1576,6 +1637,16 @@ export default function TournamentDetailPage() {
                 <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>The scoreboard will appear here once the admin sets it up.</div>
               </div>
             )
+          ) : bowlingScorecards.length > 0 ? (
+            <BowlingOverview
+              teams={acceptedTeams}
+              scorecards={bowlingScorecards}
+              isAdmin={isAdmin}
+              generating={generatingBracket}
+              onOpenControl={() => navigate(`/tournaments/${tournament.id}/scoreboard/bowling`)}
+              onOpenPublic={() => window.open(`/tournaments/${tournament.id}/scoreboard/bowling?view=public`, '_blank')}
+              onRefreshBowlers={generateBowlingScorecards}
+            />
           ) : (
             <>
               {/* Admin toolbar */}
@@ -2951,6 +3022,86 @@ function GroupKnockoutView({ tournament, teams, matches, teamMap, isAdmin, editM
   )
 }
 
+// ─── Bowling Overview ─────────────────────────────────────────────────────────
+// Bowling has no matchups — each accepted team is an independent bowler with their
+// own 10-frame scorecard, so this replaces the bracket/standings view entirely.
+function BowlingOverview({ teams, scorecards, isAdmin, generating, onOpenControl, onOpenPublic, onRefreshBowlers }: {
+  teams: Team[]
+  scorecards: BowlingScorecard[]
+  isAdmin: boolean
+  generating: boolean
+  onOpenControl: () => void
+  onOpenPublic: () => void
+  onRefreshBowlers: () => void
+}) {
+  const cardByTeam = Object.fromEntries(scorecards.map(c => [c.team_id, c]))
+  const rows = teams.map(t => {
+    const card = cardByTeam[t.id]
+    const game = computeGame(card?.rolls ?? [])
+    return { team: t, card, total: game.total }
+  })
+
+  const laneGroups = new Map<number | 'unassigned', typeof rows>()
+  for (const row of rows) {
+    const lane = row.card?.lane ?? 'unassigned'
+    if (!laneGroups.has(lane)) laneGroups.set(lane, [])
+    laneGroups.get(lane)!.push(row)
+  }
+  const sortedLanes = [...laneGroups.entries()].sort((a, b) => {
+    if (a[0] === 'unassigned') return 1
+    if (b[0] === 'unassigned') return -1
+    return a[0] - b[0]
+  })
+  for (const [, group] of sortedLanes) group.sort((a, b) => (b.total ?? -1) - (a.total ?? -1))
+
+  return (
+    <div>
+      {isAdmin && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+          <button onClick={onOpenControl} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 18px', background: 'var(--accent)', border: 'none', borderRadius: 11, color: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: 13, fontFamily: 'inherit' }}>
+            🎳 Open Bowling Command Center
+          </button>
+          <button onClick={onOpenPublic} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 16px', background: 'rgba(233,193,118,0.1)', border: '1px solid rgba(233,193,118,0.3)', borderRadius: 11, color: '#e9c176', cursor: 'pointer', fontWeight: 700, fontSize: 13, fontFamily: 'inherit' }}>
+            Public Leaderboard ↗
+          </button>
+          <button onClick={onRefreshBowlers} disabled={generating} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 16px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 11, color: 'var(--text-muted)', cursor: generating ? 'default' : 'pointer', fontWeight: 600, fontSize: 13, fontFamily: 'inherit', opacity: generating ? 0.5 : 1 }}>
+            {generating ? 'Checking…' : '+ Add newly accepted bowlers'}
+          </button>
+        </div>
+      )}
+
+      {sortedLanes.map(([lane, group]) => (
+        <div key={lane} style={{ marginBottom: 26 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              {lane === 'unassigned' ? 'Unassigned' : `Lane ${lane}`}
+            </span>
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>{group.length}/{BOWLERS_PER_LANE}</span>
+            <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {group.map((row, i) => (
+              <div key={row.team.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12 }}>
+                <span style={{ width: 22, textAlign: 'center', fontSize: 14, fontWeight: 900, color: i === 0 && row.total !== null ? '#e9c176' : i === 1 && row.total !== null ? '#94a3b8' : i === 2 && row.total !== null ? '#b87333' : 'rgba(255,255,255,0.25)' }}>
+                  {i + 1}
+                </span>
+                <div style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, overflow: 'hidden', flexShrink: 0 }}>
+                  {row.team.logo_url ? <img src={row.team.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : row.team.team_name[0]}
+                </div>
+                <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }}>{row.team.team_name}</span>
+                {row.card?.status === 'in_progress' && <span style={{ fontSize: 10, fontWeight: 800, color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Live</span>}
+                {row.card?.status === 'completed' && <span style={{ fontSize: 10, fontWeight: 800, color: '#4ade80', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Final</span>}
+                {(!row.card || row.card.status === 'not_started') && <span style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.25)' }}>Not started</span>}
+                <span style={{ fontSize: 16, fontWeight: 900, color: '#e9c176', minWidth: 32, textAlign: 'right' }}>{row.total ?? 0}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ─── Scoreboard Create CTA ───────────────────────────────────────────────────
 function ScoreboardCreateCTA({ onStart }: { onStart: () => void }) {
   return (
@@ -3000,6 +3151,7 @@ const SPORTS_LIST = [
   { key: 'football', label: 'Football', emoji: '⚽', locked: false },
   { key: 'baseball', label: 'Baseball', emoji: '⚾', locked: true },
   { key: 'basketball', label: 'Basketball', emoji: '🏀', locked: false },
+  { key: 'bowling', label: 'Bowling', emoji: '🎳', locked: false },
   { key: 'badminton', label: 'Badminton', emoji: '🏸', locked: true },
   { key: 'tennis', label: 'Tennis', emoji: '🎾', locked: true },
   { key: 'esports', label: 'Esports', emoji: '🎮', locked: true },
@@ -3354,11 +3506,35 @@ const FOOTBALL_TEMPLATES = [
   },
 ]
 
+const BOWLING_TEMPLATES = [
+  {
+    key: 'Bowling Scoreboard Template',
+    preview: (
+      <div style={{ width: '100%', padding: '10px 12px', fontFamily: 'inherit' }}>
+        <div style={{ display: 'flex', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, overflow: 'hidden' }}>
+          {[['X', '', 20], ['7', '/', 40], ['9', '-', 49]].map(([a, b, score], i) => (
+            <div key={i} style={{ flex: 1, borderRight: i < 2 ? '1px solid rgba(255,255,255,0.1)' : 'none' }}>
+              <div style={{ display: 'flex', height: 14 }}>
+                <span style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 800, color: '#fff', borderRight: '1px solid rgba(255,255,255,0.08)' }}>{a}</span>
+                <span style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 800, color: '#fff' }}>{b}</span>
+              </div>
+              <div style={{ height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.04)' }}>
+                <span style={{ fontSize: 9, fontWeight: 900, color: '#e9c176' }}>{score}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    ),
+  },
+]
+
 function ScoreboardTemplatePicker({ sport, onBack, onSelect }: { sport: string; onBack: () => void; onSelect: (t: string) => void }) {
   const isFootball = sport === 'football'
-  const templates = isFootball ? FOOTBALL_TEMPLATES : BASKETBALL_TEMPLATES
-  const emoji = isFootball ? '⚽' : '🏀'
-  const sportLabel = isFootball ? 'Football' : 'Basketball'
+  const isBowling = sport === 'bowling'
+  const templates = isFootball ? FOOTBALL_TEMPLATES : isBowling ? BOWLING_TEMPLATES : BASKETBALL_TEMPLATES
+  const emoji = isFootball ? '⚽' : isBowling ? '🎳' : '🏀'
+  const sportLabel = isFootball ? 'Football' : isBowling ? 'Bowling' : 'Basketball'
   return (
     <div style={{ animation: 'td-in 0.25s ease both' }}>
       <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0, fontSize: 13, fontFamily: 'inherit', marginBottom: 24 }}>

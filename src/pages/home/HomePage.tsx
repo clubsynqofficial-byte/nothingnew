@@ -254,8 +254,8 @@ export default function HomePage() {
   async function handleHomeRegister(ev: { id: string; attendee_count: number }) {
     if (!user || homeRegistering || registeredEventIds.has(ev.id)) return
     setHomeRegistering(ev.id)
+    // attendee_count is maintained server-side by a DB trigger on event_attendees — do not update it from the client.
     await supabase.from('event_attendees').insert({ event_id: ev.id, user_id: user.id, checked_in_at: null })
-    await supabase.from('events').update({ attendee_count: ev.attendee_count + 1 }).eq('id', ev.id)
     setRegisteredEventIds(prev => new Set([...prev, ev.id]))
     setSidebarEvents(prev => prev.map(e => e.id === ev.id ? { ...e, attendee_count: e.attendee_count + 1 } : e))
     setHomeRegistering(null)

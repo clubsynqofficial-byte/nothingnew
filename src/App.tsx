@@ -27,6 +27,7 @@ import TournamentDetailPage from './pages/tournaments/TournamentDetailPage'
 import TournamentScoreboardPage from './pages/tournaments/TournamentScoreboardPage'
 import BasketballScoreboardPage from './pages/tournaments/BasketballScoreboardPage'
 import FootballScoreboardPage from './pages/tournaments/FootballScoreboardPage'
+import BowlingScoreboardPage from './pages/tournaments/BowlingScoreboardPage'
 import MatchCommandCenterPage from './pages/tournaments/MatchCommandCenterPage'
 import MyTeamsPage from './pages/teams/MyTeamsPage'
 import MatchCenterPage from './pages/matches/MatchCenterPage'
@@ -120,6 +121,12 @@ function FootballScoreboardRoute() {
   return <ProtectedRoute><FootballScoreboardPage /></ProtectedRoute>
 }
 
+function BowlingScoreboardRoute() {
+  const [searchParams] = useSearchParams()
+  if (searchParams.get('view') === 'public') return <BowlingScoreboardPage />
+  return <ProtectedRoute><BowlingScoreboardPage /></ProtectedRoute>
+}
+
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
   if (loading) return <LoadingScreen />
@@ -187,6 +194,7 @@ function AppRoutes() {
       <Route path="/tournaments/:tournamentId/scoreboard" element={<TournamentScoreboardPage />} />
       <Route path="/tournaments/:tournamentId/scoreboard/basketball" element={<BasketballScoreboardRoute />} />
       <Route path="/tournaments/:tournamentId/scoreboard/football" element={<FootballScoreboardRoute />} />
+      <Route path="/tournaments/:tournamentId/scoreboard/bowling" element={<BowlingScoreboardRoute />} />
       <Route path="/tournaments/:tournamentId/control" element={<MatchCommandCenterPage />} />
       <Route path="/teams" element={<ProtectedRoute><MyTeamsPage /></ProtectedRoute>} />
       <Route path="/matches/:matchId" element={<ProtectedRoute><MatchCenterPage /></ProtectedRoute>} />
