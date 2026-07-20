@@ -160,11 +160,12 @@ interface Props {
   club: Club
   onDeleted?: () => void
   onPresidencyTransferred?: () => void
+  onClubUpdated?: (patch: Partial<Club>) => void
   userPermissions?: string[]
   clubSwitcher?: React.ReactNode
 }
 
-export default function CommandCenter({ club, onDeleted, userPermissions, clubSwitcher }: Props) {
+export default function CommandCenter({ club, onDeleted, onClubUpdated, userPermissions, clubSwitcher }: Props) {
   const { user } = useAuth()
   const navigate = useNavigate()
   const isPresident = userPermissions === undefined
@@ -252,6 +253,29 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
   const [annAiPrompt, setAnnAiPrompt] = useState('')
   const [annAiLoading, setAnnAiLoading] = useState(false)
   const [annAiResult, setAnnAiResult] = useState('')
+
+  // Club details state (name + about)
+  const [nameInput, setNameInput] = useState(club.name)
+  const [descInput, setDescInput] = useState(club.description ?? '')
+  const [savingDetails, setSavingDetails] = useState(false)
+  const [detailsMsg, setDetailsMsg] = useState('')
+  const detailsDirty = nameInput.trim() !== club.name || descInput.trim() !== (club.description ?? '')
+
+  async function saveClubDetails() {
+    const trimmedName = nameInput.trim()
+    if (!trimmedName) { setDetailsMsg('Club name cannot be empty'); return }
+    setSavingDetails(true)
+    setDetailsMsg('')
+    const patch = { name: trimmedName, description: descInput.trim() || null }
+    const { error } = await supabase.from('clubs').update(patch).eq('id', club.id)
+    setSavingDetails(false)
+    if (error) { setDetailsMsg('Failed to save changes'); return }
+    setNameInput(trimmedName)
+    setDescInput(patch.description ?? '')
+    setDetailsMsg('Saved')
+    onClubUpdated?.(patch)
+    setTimeout(() => setDetailsMsg(''), 2500)
+  }
 
   // Club appearance state
   const [logoPreview, setLogoPreview] = useState<string | null>(club.logo_url ?? null)
@@ -2004,6 +2028,30 @@ export default function CommandCenter({ club, onDeleted, userPermissions, clubSw
       {/* ── Settings tab ── */}
       {activeTab === 'settings' && (
         <div key="settings" className="cc-panel">
+          {/* Club Details */}
+          <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:16, padding:24, marginBottom:20 }}>
+            <div style={{ marginBottom:20 }}>
+              <h2 style={{ fontSize:16, fontWeight:700, color:'var(--text-primary)', marginBottom:3 }}>Club Details</h2>
+              <p style={{ fontSize:12, color:'var(--text-muted)' }}>Update your club's name and about section</p>
+            </div>
+            <div style={{ marginBottom:16 }}>
+              <div style={{ fontSize:11, fontWeight:600, color:'var(--text-muted)', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:8 }}>Club Name</div>
+              <input value={nameInput} onChange={e => setNameInput(e.target.value)} placeholder="Club name" style={fi} maxLength={80} />
+            </div>
+            <div style={{ marginBottom:16 }}>
+              <div style={{ fontSize:11, fontWeight:600, color:'var(--text-muted)', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:8 }}>About</div>
+              <textarea value={descInput} onChange={e => setDescInput(e.target.value)} placeholder="Tell people what your club is about…" rows={5} style={{ ...fi, resize:'vertical', lineHeight:1.6 }} maxLength={2000} />
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+              <button onClick={saveClubDetails} disabled={savingDetails || !detailsDirty} style={{ padding:'8px 18px', borderRadius:9, background:'rgba(138,21,56,0.15)', border:'1px solid rgba(138,21,56,0.3)', color:'var(--accent)', fontSize:13, fontWeight:700, cursor:(savingDetails||!detailsDirty)?'default':'pointer', opacity:(savingDetails||!detailsDirty)?0.5:1, fontFamily:'inherit' }}>
+                {savingDetails ? 'Saving…' : 'Save Changes'}
+              </button>
+              {detailsMsg && (
+                <span style={{ fontSize:12, fontWeight:600, color:detailsMsg==='Saved'?'#4ade80':'#ff6b6b' }}>{detailsMsg}</span>
+              )}
+            </div>
+          </div>
+
           {/* Club Appearance */}
           <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:16, padding:24, marginBottom:20 }}>
             <div style={{ marginBottom:20 }}>

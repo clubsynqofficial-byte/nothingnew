@@ -314,6 +314,30 @@ export default function TournamentScoreboardPage() {
     return () => { supabase.removeChannel(ch) }
   }, [tournamentId])
 
+  // Live team roster — new registrations, edits (name/logo/section), and accept/decline
+  // status changes should all reach viewers without a manual refresh.
+  useEffect(() => {
+    if (!tournamentId) return
+    const ch = supabase.channel(`sb-teams-${tournamentId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_teams', filter: `tournament_id=eq.${tournamentId}` },
+        p => {
+          if (p.eventType === 'DELETE') {
+            setTeams(prev => prev.filter(t => t.id !== (p.old as { id: string }).id))
+            return
+          }
+          const row = p.new as Team & { status: string }
+          setTeams(prev => {
+            const isAccepted = row.status === 'accepted'
+            const exists = prev.some(t => t.id === row.id)
+            if (!isAccepted) return exists ? prev.filter(t => t.id !== row.id) : prev
+            return exists ? prev.map(t => t.id === row.id ? row : t) : [...prev, row]
+          })
+          setLastUpdated(new Date())
+        })
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [tournamentId])
+
   // Instant pause/resume via broadcast — no DB round-trip needed
   useEffect(() => {
     if (!tournamentId) return
@@ -321,6 +345,16 @@ export default function TournamentScoreboardPage() {
       .on('broadcast', { event: 'pause-update' }, ({ payload }) => {
         setTournament(prev => prev ? { ...prev, standings_paused: payload.paused as boolean } : prev)
       })
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [tournamentId])
+
+  // Tournament-level changes — format switches, group/section edits, prizes, logo, etc.
+  useEffect(() => {
+    if (!tournamentId) return
+    const ch = supabase.channel(`sb-tournament-${tournamentId}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tournaments', filter: `id=eq.${tournamentId}` },
+        p => setTournament(prev => prev ? { ...prev, ...(p.new as Partial<Tournament>) } : prev))
       .subscribe()
     return () => { supabase.removeChannel(ch) }
   }, [tournamentId])

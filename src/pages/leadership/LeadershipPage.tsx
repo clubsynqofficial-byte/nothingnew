@@ -308,6 +308,11 @@ export default function LeadershipPage() {
 
   useEffect(() => { fetchClub() }, [user])
 
+  function handleClubUpdated(patch: Partial<Club>) {
+    setPresClubs(prev => prev?.map(c => c.id === selectedClubId ? { ...c, ...patch } : c))
+    setPermClubs(prev => prev.map(pc => pc.club.id === selectedClubId ? { ...pc, club: { ...pc.club, ...patch } } : pc))
+  }
+
   // ── Loading ──
   if (presClubs === undefined || request === undefined) {
     return (
@@ -377,6 +382,7 @@ export default function LeadershipPage() {
           userPermissions={active.permissions ?? selectedPerms}
           onDeleted={() => { setSelectedClubId(null); fetchClub() }}
           onPresidencyTransferred={() => { setSelectedClubId(null); fetchClub() }}
+          onClubUpdated={handleClubUpdated}
           clubSwitcher={backBtn}
         />
       )
