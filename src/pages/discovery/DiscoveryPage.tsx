@@ -163,7 +163,7 @@ interface ClubWithMeta extends Club {
 }
 
 export default function DiscoveryPage() {
-  const { user, refreshProfile } = useAuth()
+  const { user, profile, refreshProfile } = useAuth()
   const navigate = useNavigate()
   const [clubs, setClubs] = useState<ClubWithMeta[]>([])
   const [loading, setLoading] = useState(true)
@@ -181,6 +181,7 @@ export default function DiscoveryPage() {
       .select('*, university:universities(name, short_name)')
       .order('member_count', { ascending: false })
 
+    if (profile?.country) query = query.eq('country', profile.country)
     if (search) query = query.ilike('name', `%${search}%`)
     if (activeCategory !== 'All') query = query.eq('category', activeCategory)
 
@@ -207,7 +208,7 @@ export default function DiscoveryPage() {
       setClubs(clubsData.map(c => ({ ...c, has_form: formClubIds.has(c.id) })))
     }
     setLoading(false)
-  }, [search, activeCategory, user])
+  }, [search, activeCategory, user, profile?.country])
 
   useEffect(() => { fetchClubs() }, [fetchClubs])
 
@@ -539,7 +540,7 @@ export default function DiscoveryPage() {
               fontSize: 16, color: 'var(--text-secondary)', lineHeight: 1.65, maxWidth: 460,
               animation: 'fadeUp 0.55s 0.18s ease both',
             }}>
-              Explore student clubs and organizations across Qatar. Join, connect, and make an impact.
+              Explore student clubs and organizations{profile?.country ? ` across ${profile.country}` : ''}. Join, connect, and make an impact.
             </p>
           </div>
         </div>
@@ -934,7 +935,7 @@ function ClubCard({ club, index, onJoin, onOpen, joining, isPending, hasForm, in
           <div style={{
             fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.65,
             display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-            marginBottom: 14,
+            marginBottom: 14, whiteSpace: 'pre-wrap', overflowWrap: 'break-word',
           }}>
             {club.description}
           </div>

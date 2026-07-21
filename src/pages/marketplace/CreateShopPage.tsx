@@ -307,7 +307,7 @@ export default function CreateShopPage() {
             {description && (
               <div style={{ padding:'0 22px 18px' }}>
                 <div style={{ height:1, background:'rgba(255,255,255,0.05)', marginBottom:14 }}/>
-                <p style={{ fontSize:13.5, color:'rgba(255,255,255,0.45)', lineHeight:1.75, margin:0 }}>{description}</p>
+                <p style={{ fontSize:13.5, color:'rgba(255,255,255,0.45)', lineHeight:1.75, margin:0, whiteSpace:'pre-wrap', overflowWrap:'break-word' }}>{description}</p>
               </div>
             )}
           </div>
@@ -605,7 +605,7 @@ export default function CreateShopPage() {
             {/* Description */}
             <div style={{ padding:'14px 18px' }}>
               {description
-                ? <p style={{ fontSize:12.5, color:'rgba(255,255,255,0.45)', lineHeight:1.7, margin:0 }}>{description}</p>
+                ? <p style={{ fontSize:12.5, color:'rgba(255,255,255,0.45)', lineHeight:1.7, margin:0, whiteSpace:'pre-wrap', overflowWrap:'break-word' }}>{description}</p>
                 : <p style={{ fontSize:12.5, color:'rgba(255,255,255,0.12)', lineHeight:1.7, margin:0, fontStyle:'italic' }}>Your description will appear here…</p>
               }
             </div>

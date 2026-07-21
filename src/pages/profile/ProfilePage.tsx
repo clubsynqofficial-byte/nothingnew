@@ -892,7 +892,7 @@ export default function ProfilePage() {
               )}
 
               {dp?.bio && (
-                <p style={{ fontSize:14, color:'var(--text-secondary)', lineHeight:1.78, maxWidth:560, marginBottom:14 }}>
+                <p style={{ fontSize:14, color:'var(--text-secondary)', lineHeight:1.78, maxWidth:560, marginBottom:14, whiteSpace:'pre-wrap', overflowWrap:'break-word' }}>
                   {dp.bio}
                 </p>
               )}

@@ -553,7 +553,7 @@ export default function ClubProfilePage() {
                 {canDrag && <span style={{ position:'absolute', top:-10, left:14, zIndex:10, background: activeAccent, color:'#fff', fontSize:9, fontWeight:800, letterSpacing:'0.08em', padding:'2px 8px', borderRadius:5, pointerEvents:'none', textTransform:'uppercase' }}>⠿ About</span>}
                 <div className="cp-1" style={{ padding: '16px 20px', background: 'rgba(255,255,255,0.03)', border: `1px solid ${activeTheme.glow ? ta(0.16) : 'rgba(255,255,255,0.06)'}`, borderRadius: 14 }}>
                   <SectionLabel>About</SectionLabel>
-                  <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.7, margin: 0 }}>{club.description}</p>
+                  <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.7, margin: 0, whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>{club.description}</p>
                 </div>
               </div>
             )
@@ -814,7 +814,7 @@ function EventCard({ event, onAttend, attending, onViewAnn, index = 0 }: { event
         </div>
         {event.description && (
           <p style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.55, margin: '0 0 8px',
-            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>
             {event.description}
           </p>
         )}

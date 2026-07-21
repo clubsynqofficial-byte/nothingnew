@@ -205,6 +205,10 @@ export default function CommandCenter({ club, onDeleted, onClubUpdated, userPerm
   const [searchProfiles, setSearchProfiles] = useState<ProfileSearchRow[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [demoteError, setDemoteError] = useState('')
+  const [inviteCode, setInviteCode] = useState<string | null>(club.invite_code)
+  const [generatingInvite, setGeneratingInvite] = useState(false)
+  const [copiedInvite, setCopiedInvite] = useState(false)
 
   // Event form state
   const [evTitle, setEvTitle] = useState('')
@@ -948,8 +952,10 @@ export default function CommandCenter({ club, onDeleted, onClubUpdated, userPerm
 
   async function handleDemotePresident(membershipId: string) {
     setActionLoading(membershipId)
-    await supabase.rpc('demote_from_president', { p_club_id: club.id, p_membership_id: membershipId })
+    setDemoteError('')
+    const { error } = await supabase.rpc('demote_from_president', { p_club_id: club.id, p_membership_id: membershipId })
     setActionLoading(null)
+    if (error) { setDemoteError('Promote another member to president before removing this one.'); return }
     fetchAll()
   }
 
@@ -964,6 +970,20 @@ export default function CommandCenter({ club, onDeleted, onClubUpdated, userPerm
     setTransferSuccess(true)
     setTimeout(() => setTransferSuccess(false), 3000)
     fetchAll()
+  }
+
+  async function handleGenerateInvite() {
+    setGeneratingInvite(true)
+    const { data, error } = await supabase.rpc('regenerate_club_invite_code', { p_club_id: club.id })
+    setGeneratingInvite(false)
+    if (!error) setInviteCode(data as string)
+  }
+
+  function handleCopyInvite() {
+    if (!inviteCode) return
+    navigator.clipboard.writeText(`${window.location.origin}/join/${inviteCode}`)
+    setCopiedInvite(true)
+    setTimeout(() => setCopiedInvite(false), 2000)
   }
 
   async function handleDeleteClub() {
@@ -1636,10 +1656,38 @@ export default function CommandCenter({ club, onDeleted, onClubUpdated, userPerm
 
             {/* ── Search ── */}
             {isPresident && (
-              <div style={{ position:'relative', marginBottom:20 }}>
+              <div style={{ position:'relative', marginBottom:12 }}>
                 <svg style={{ position:'absolute', left:13, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', pointerEvents:'none' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 <input value={memberSearch} onChange={e => setMemberSearch(e.target.value)} placeholder="Search by name or email to add members…" style={{ ...fi, paddingLeft:36, fontSize:13 }}/>
                 {memberSearch && <button onClick={() => { setMemberSearch(''); setSearchProfiles([]) }} style={{ position:'absolute', right:11, top:'50%', transform:'translateY(-50%)', background:'transparent', border:'none', color:'var(--text-muted)', cursor:'pointer', fontSize:15, lineHeight:1, padding:'3px' }}>✕</button>}
+              </div>
+            )}
+
+            {/* ── Invite Link ── */}
+            {isPresident && (
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:20, padding:'10px 12px', borderRadius:11, background:'rgba(255,255,255,.03)', border:'1px solid rgba(255,255,255,.07)' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color:'var(--text-muted)', flexShrink:0 }}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                {inviteCode ? (
+                  <>
+                    <div style={{ flex:1, minWidth:0, fontSize:12.5, color:'var(--text-secondary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontFamily:'monospace' }}>
+                      {window.location.origin}/join/{inviteCode}
+                    </div>
+                    <button onClick={handleCopyInvite} style={{ padding:'6px 14px', borderRadius:8, background: copiedInvite ? 'rgba(74,222,128,.15)' : 'rgba(138,21,56,.15)', border:`1px solid ${copiedInvite?'rgba(74,222,128,.35)':'rgba(138,21,56,.3)'}`, color: copiedInvite ? '#4ade80' : 'var(--accent)', fontSize:12, fontWeight:700, cursor:'pointer', flexShrink:0, fontFamily:'inherit' }}>
+                      {copiedInvite ? '✓ Copied' : 'Copy Link'}
+                    </button>
+                    <button onClick={handleGenerateInvite} disabled={generatingInvite} title="Generate a new link (old one stops working)"
+                      style={{ padding:'6px 10px', borderRadius:8, background:'transparent', border:'1px solid rgba(255,255,255,.1)', color:'var(--text-muted)', fontSize:12, fontWeight:600, cursor: generatingInvite?'default':'pointer', flexShrink:0, fontFamily:'inherit', opacity: generatingInvite?.6:1 }}>
+                      {generatingInvite ? '…' : 'Reset'}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ flex:1, fontSize:12.5, color:'var(--text-muted)' }}>Share a link so anyone can join instantly</div>
+                    <button onClick={handleGenerateInvite} disabled={generatingInvite} style={{ padding:'6px 14px', borderRadius:8, background:'rgba(138,21,56,.15)', border:'1px solid rgba(138,21,56,.3)', color:'var(--accent)', fontSize:12, fontWeight:700, cursor: generatingInvite?'default':'pointer', flexShrink:0, fontFamily:'inherit' }}>
+                      {generatingInvite ? 'Generating…' : 'Create Invite Link'}
+                    </button>
+                  </>
+                )}
               </div>
             )}
 
@@ -1667,7 +1715,7 @@ export default function CommandCenter({ club, onDeleted, onClubUpdated, userPerm
                         <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:10, fontWeight:800, letterSpacing:'.08em', padding:'4px 12px', borderRadius:9999, background:'rgba(233,193,118,.12)', color:'#e9c176', border:'1px solid rgba(233,193,118,.25)' }}><IcoCrown size={11} style={{ animation:'crownGlow 2.5s ease-in-out infinite' }}/>President</span>
                       </div>
                     )
-                    if (existing) return <ExistingMemberRow key={p.id} profile={p} membership={existing} isLoading={isLoadingRow} canRemove={isPresident || canDo('remove_members')} canEditRole={isPresident} canMakePresident={isPresident} onRoleChange={handleRoleChange} onRemove={handleRemoveMember} onMakePresident={handleMakeCoPresident} onDemotePresident={handleDemotePresident} onPermissionsChange={handlePermissionsChange}/>
+                    if (existing) return <ExistingMemberRow key={p.id} profile={p} membership={existing} isLoading={isLoadingRow} canRemove={isPresident || canDo('remove_members')} canEditRole={isPresident} canMakePresident={isPresident} isOnlyPresident={presidents.length === 1} onRoleChange={handleRoleChange} onRemove={handleRemoveMember} onMakePresident={handleMakeCoPresident} onDemotePresident={handleDemotePresident} onPermissionsChange={handlePermissionsChange}/>
                     return <NewMemberRow key={p.id} profile={p} isLoading={isLoadingRow} onAdd={handleAddMember}/>
                   })}
                 </div>
@@ -1687,8 +1735,11 @@ export default function CommandCenter({ club, onDeleted, onClubUpdated, userPerm
                 {presidents.length > 0 && (
                   <div style={{ marginBottom:4 }}>
                     <div style={{ fontSize:9, fontWeight:800, color:'rgba(255,255,255,.25)', letterSpacing:'.14em', textTransform:'uppercase', marginBottom:8 }}>President</div>
+                    {demoteError && (
+                      <div style={{ fontSize:12, fontWeight:600, color:'#f87171', marginBottom:8, padding:'8px 12px', borderRadius:9, background:'rgba(248,113,113,.08)', border:'1px solid rgba(248,113,113,.25)' }}>{demoteError}</div>
+                    )}
                     {presidents.map((m, idx) => (
-                      <PresidentRow key={m.id} member={m} idx={idx} isLoading={actionLoading === m.id} canDemote={isPresident} onDemote={handleDemotePresident} />
+                      <PresidentRow key={m.id} member={m} idx={idx} isLoading={actionLoading === m.id} canDemote={isPresident} isOnlyPresident={presidents.length === 1} onDemote={handleDemotePresident} />
                     ))}
                   </div>
                 )}
@@ -3761,8 +3812,8 @@ function NewMemberRow({
 
 // ─── PresidentRow ───────────────────────────────────────────────────────────
 
-function PresidentRow({ member, idx, isLoading, canDemote, onDemote }: {
-  member: MembershipRow; idx: number; isLoading: boolean; canDemote: boolean; onDemote: (id: string) => void
+function PresidentRow({ member, idx, isLoading, canDemote, isOnlyPresident, onDemote }: {
+  member: MembershipRow; idx: number; isLoading: boolean; canDemote: boolean; isOnlyPresident: boolean; onDemote: (id: string) => void
 }) {
   const navigate = useNavigate()
   const [confirm, setConfirm] = useState(false)
@@ -3777,7 +3828,14 @@ function PresidentRow({ member, idx, isLoading, canDemote, onDemote }: {
       <span style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, fontWeight:800, padding:'5px 14px', borderRadius:9999, background:'rgba(233,193,118,.12)', color:'#e9c176', border:'1px solid rgba(233,193,118,.25)', flexShrink:0 }}>
         <IcoCrown size={12} style={{ animation:'crownGlow 2.5s ease-in-out infinite' }}/>President
       </span>
-      {canDemote && !confirm && (
+      {canDemote && isOnlyPresident && (
+        <button disabled title="Promote another member to president first"
+          style={{ height:28, padding:'0 10px', borderRadius:9, background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.1)', color:'rgba(255,255,255,.3)', cursor:'not-allowed', flexShrink:0, display:'flex', alignItems:'center', gap:5 }}
+        >
+          <IcoCrown size={11}/><span style={{ fontSize:11, fontWeight:800 }}>✕</span>
+        </button>
+      )}
+      {canDemote && !isOnlyPresident && !confirm && (
         <button onClick={() => setConfirm(true)} disabled={isLoading} title="Remove presidency"
           style={{ height:28, padding:'0 10px', borderRadius:9, background:'rgba(233,193,118,.08)', border:'1px solid rgba(233,193,118,.25)', color:'#e9c176', cursor: isLoading ? 'default':'pointer', flexShrink:0, display:'flex', alignItems:'center', gap:5, opacity: isLoading ? .5:1, transition:'all .15s' }}
           onMouseEnter={e => { e.currentTarget.style.background='rgba(248,113,113,.12)'; e.currentTarget.style.borderColor='rgba(248,113,113,.45)'; e.currentTarget.style.color='#f87171' }}
@@ -3786,7 +3844,7 @@ function PresidentRow({ member, idx, isLoading, canDemote, onDemote }: {
           <IcoCrown size={11}/><span style={{ fontSize:11, fontWeight:800 }}>✕</span>
         </button>
       )}
-      {canDemote && confirm && (
+      {canDemote && !isOnlyPresident && confirm && (
         <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0, animation:'confirmIn .18s cubic-bezier(.22,1,.36,1) both' }}>
           <span style={{ fontSize:11, fontWeight:700, color:'#f87171', whiteSpace:'nowrap' }}>Remove?</span>
           <button onClick={() => { onDemote(member.id); setConfirm(false) }} disabled={isLoading}
@@ -3808,7 +3866,7 @@ function PresidentRow({ member, idx, isLoading, canDemote, onDemote }: {
 // ─── ExistingMemberRow ──────────────────────────────────────────────────────
 
 function ExistingMemberRow({
-  profile, membership, isLoading, canRemove = true, canEditRole = true, canMakePresident = false, onRoleChange, onRemove, onMakePresident, onDemotePresident, onPermissionsChange, animDelay = 0,
+  profile, membership, isLoading, canRemove = true, canEditRole = true, canMakePresident = false, isOnlyPresident = false, onRoleChange, onRemove, onMakePresident, onDemotePresident, onPermissionsChange, animDelay = 0,
 }: {
   profile: ProfileSearchRow
   membership: MembershipRow
@@ -3816,6 +3874,7 @@ function ExistingMemberRow({
   canRemove?: boolean
   canEditRole?: boolean
   canMakePresident?: boolean
+  isOnlyPresident?: boolean
   animDelay?: number
   onRoleChange: (membershipId: string, role: 'officer' | 'member', customRole?: string) => void
   onRemove: (membershipId: string) => void
@@ -3913,7 +3972,15 @@ function ExistingMemberRow({
         )}
 
         {/* Remove Presidency (only for co-presidents) */}
-        {canMakePresident && membership.role === 'president' && !confirmTransfer && !confirmRemove && (
+        {canMakePresident && membership.role === 'president' && isOnlyPresident && (
+          <button disabled title="Promote another member to president first"
+            style={{ height:28, padding:'0 10px', borderRadius:9, background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.1)', color:'rgba(255,255,255,.3)', cursor:'not-allowed', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', gap:5 }}
+          >
+            <IcoCrown size={11}/>
+            <span style={{ fontSize:11, fontWeight:800, lineHeight:1 }}>✕</span>
+          </button>
+        )}
+        {canMakePresident && membership.role === 'president' && !isOnlyPresident && !confirmTransfer && !confirmRemove && (
           <button onClick={() => setConfirmTransfer(true)} disabled={isLoading} title="Remove presidency"
             style={{ height:28, padding:'0 10px', borderRadius:9, background:'rgba(233,193,118,.08)', border:'1px solid rgba(233,193,118,.25)', color:'#e9c176', cursor: isLoading ? 'default':'pointer', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', gap:5, opacity: isLoading ? .5:1, transition:'all .15s' }}
             onMouseEnter={e => { e.currentTarget.style.background='rgba(248,113,113,.12)'; e.currentTarget.style.borderColor='rgba(248,113,113,.45)'; e.currentTarget.style.color='#f87171' }}
@@ -3923,7 +3990,7 @@ function ExistingMemberRow({
             <span style={{ fontSize:11, fontWeight:800, lineHeight:1 }}>✕</span>
           </button>
         )}
-        {canMakePresident && membership.role === 'president' && confirmTransfer && (
+        {canMakePresident && membership.role === 'president' && !isOnlyPresident && confirmTransfer && (
           <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0, animation:'confirmIn .18s cubic-bezier(.22,1,.36,1) both' }}>
             <span style={{ fontSize:11, fontWeight:700, color:'#f87171', whiteSpace:'nowrap' }}>Remove presidency?</span>
             <button onClick={() => { onDemotePresident?.(membership.id); setConfirmTransfer(false) }} disabled={isLoading}

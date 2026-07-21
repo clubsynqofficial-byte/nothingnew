@@ -236,7 +236,7 @@ export default function ShopDetailPage() {
           {/* Description */}
           {shop.description && (
             <div style={{ marginTop:20, paddingTop:18, borderTop:'1px solid rgba(255,255,255,.06)' }}>
-              <p style={{ fontSize:14, color:'rgba(255,255,255,.5)', lineHeight:1.75, margin:0 }}>{shop.description}</p>
+              <p style={{ fontSize:14, color:'rgba(255,255,255,.5)', lineHeight:1.75, margin:0, whiteSpace:'pre-wrap', overflowWrap:'break-word' }}>{shop.description}</p>
             </div>
           )}
         </div>
@@ -564,7 +564,7 @@ function ShopListingCard({ listing: l, index, isOwn, onBuy, onToggle, onDelete }
       </div>
       <div style={{ padding:'12px 14px 14px', flex:1, display:'flex', flexDirection:'column', gap:8 }}>
         {l.description && (
-          <p style={{ fontSize:12.5, color:'rgba(255,255,255,.4)', margin:0, lineHeight:1.5, overflow:'hidden', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>{l.description}</p>
+          <p style={{ fontSize:12.5, color:'rgba(255,255,255,.4)', margin:0, lineHeight:1.5, overflow:'hidden', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', whiteSpace:'pre-wrap', overflowWrap:'break-word' }}>{l.description}</p>
         )}
         {!outOfStock && l.stock_quantity <= 5 && !isOwn && (
           <div style={{ fontSize:11.5, color:'#fb923c', fontWeight:700 }}>🔥 Only {l.stock_quantity} left</div>

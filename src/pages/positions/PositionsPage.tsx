@@ -38,7 +38,7 @@ function timeLeft(deadline: string | null) {
 }
 
 export default function PositionsPage() {
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
   const navigate = useNavigate()
 
   const [positions, setPositions] = useState<Position[]>([])
@@ -58,17 +58,18 @@ export default function PositionsPage() {
     setLoading(true)
     let q = supabase
       .from('club_positions')
-      .select('*, club:clubs(name, logo_url, category)')
+      .select('*, club:clubs!inner(name, logo_url, category, country)')
       .eq('is_open', true)
       .order('created_at', { ascending: false })
 
+    if (profile?.country) q = q.eq('club.country', profile.country)
     if (search) q = q.ilike('title', `%${search}%`)
     if (activeType !== 'All') q = q.eq('type', activeType)
 
     const { data } = await q
     setPositions((data as unknown as Position[]) ?? [])
     setLoading(false)
-  }, [search, activeType])
+  }, [search, activeType, profile?.country])
 
   useEffect(() => { fetchPositions() }, [fetchPositions])
 
@@ -265,7 +266,7 @@ export default function PositionsPage() {
                       {pos.title}
                     </div>
                     {pos.description && (
-                      <p style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.65, margin: 0, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                      <p style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.65, margin: 0, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>
                         {pos.description}
                       </p>
                     )}
@@ -275,7 +276,7 @@ export default function PositionsPage() {
                   {pos.requirements && (
                     <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, padding: '9px 12px' }}>
                       <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>Requirements</div>
-                      <p style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                      <p style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>
                         {pos.requirements}
                       </p>
                     </div>

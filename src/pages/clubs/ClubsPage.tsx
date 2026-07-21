@@ -316,7 +316,7 @@ function ClubCard({
             fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.55,
             display: '-webkit-box', WebkitLineClamp: 2,
             WebkitBoxOrient: 'vertical', overflow: 'hidden',
-            marginBottom: 12,
+            marginBottom: 12, whiteSpace: 'pre-wrap', overflowWrap: 'break-word',
           }}>
             {club.description}
           </div>

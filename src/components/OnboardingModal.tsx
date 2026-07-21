@@ -1,7 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+
+const BASE_COUNTRIES = ['India', 'Qatar']
+const COUNTRY_FLAG: Record<string, string> = { India: '🇮🇳', Qatar: '🇶🇦' }
+
+interface UniOption { id: string; name: string }
 
 const INTERESTS = [
   { key: 'tech',      label: 'Technology',       icon: '💻' },
@@ -47,11 +52,63 @@ export default function OnboardingModal({ onDone }: Props) {
   const { user, refreshProfile } = useAuth()
   const [selected, setSelected]       = useState<Set<string>>(new Set())
   const [saving, setSaving]           = useState(false)
-  const [step, setStep]               = useState<'interests' | 'clubs'>('interests')
+  const [step, setStep]               = useState<'location' | 'interests' | 'clubs'>('location')
   const [suggestedClubs, setSuggested] = useState<ClubRow[]>([])
   const [clubsLoading, setClubsLoading] = useState(false)
   const [joiningIds, setJoiningIds]   = useState<Set<string>>(new Set())
   const [joinedIds, setJoinedIds]     = useState<Set<string>>(new Set())
+
+  // Country + university state
+  const [countries, setCountries]     = useState<string[]>(BASE_COUNTRIES)
+  const [country, setCountry]         = useState('')
+  const [uniQuery, setUniQuery]       = useState('')
+  const [uniSuggestions, setUniSuggestions] = useState<UniOption[]>([])
+  const [selectedUni, setSelectedUni] = useState<UniOption | null>(null)
+  const [savingLocation, setSavingLocation] = useState(false)
+  const [locationError, setLocationError] = useState('')
+
+  useEffect(() => {
+    supabase.from('universities').select('country').then(({ data }) => {
+      const found = [...new Set((data ?? []).map(r => r.country))]
+      setCountries([...new Set([...BASE_COUNTRIES, ...found])])
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!country) { setUniSuggestions([]); return }
+    const handle = setTimeout(() => {
+      let q = supabase.from('universities').select('id,name').eq('country', country).order('name').limit(8)
+      if (uniQuery.trim()) q = q.ilike('name', `%${uniQuery.trim()}%`)
+      q.then(({ data }) => setUniSuggestions((data ?? []) as UniOption[]))
+    }, 200)
+    return () => clearTimeout(handle)
+  }, [country, uniQuery])
+
+  async function saveLocation() {
+    if (!user || !country) return
+    setSavingLocation(true)
+    setLocationError('')
+    let uniId = selectedUni?.id ?? null
+    const typedName = uniQuery.trim()
+    if (!uniId && typedName) {
+      const { data: existing } = await supabase
+        .from('universities').select('id').eq('country', country).ilike('name', typedName).maybeSingle()
+      if (existing) uniId = existing.id
+      else {
+        const { data: created, error: uniError } = await supabase
+          .from('universities').insert({ name: typedName, country }).select('id').single()
+        if (uniError) { setSavingLocation(false); setLocationError('Failed to add university — ' + uniError.message); return }
+        uniId = created?.id ?? null
+      }
+    }
+    await supabase.from('profiles').update({ country, university_id: uniId }).eq('id', user.id)
+    setSavingLocation(false)
+    setStep('interests')
+  }
+
+  async function handleSkipLocation() {
+    setStep('interests')
+  }
 
   function toggle(key: string) {
     setSelected(prev => {
@@ -85,21 +142,25 @@ export default function OnboardingModal({ onDone }: Props) {
 
     let clubs: ClubRow[] = []
     if (unique.length > 0) {
-      const { data } = await supabase
+      let q = supabase
         .from('clubs')
         .select('id,name,category,logo_url,member_count')
         .in('category', unique)
         .order('member_count', { ascending: false })
         .limit(3)
+      if (country) q = q.eq('country', country)
+      const { data } = await q
       clubs = (data ?? []) as ClubRow[]
     }
 
     if (clubs.length === 0) {
-      const { data } = await supabase
+      let q = supabase
         .from('clubs')
         .select('id,name,category,logo_url,member_count')
         .order('member_count', { ascending: false })
         .limit(3)
+      if (country) q = q.eq('country', country)
+      const { data } = await q
       clubs = (data ?? []) as ClubRow[]
     }
 
@@ -133,19 +194,114 @@ export default function OnboardingModal({ onDone }: Props) {
       `}</style>
 
       <div style={{
-        width: '100%', maxWidth: step === 'clubs' ? 540 : 520,
+        width: '100%', maxWidth: step === 'clubs' ? 540 : 520, maxHeight: '90vh',
         background: 'linear-gradient(170deg,#16090d,#0d050a)',
         border: '1px solid rgba(138,21,56,.3)', borderRadius: 24,
-        overflow: 'hidden', animation: 'obIn .3s cubic-bezier(.22,1,.36,1) both',
+        overflowX: 'hidden', overflowY: 'auto', animation: 'obIn .3s cubic-bezier(.22,1,.36,1) both',
         boxShadow: '0 40px 100px rgba(0,0,0,.85)',
         transition: 'max-width .25s ease',
       }}>
         {/* Progress strip */}
         <div style={{ height: 4, background: 'rgba(138,21,56,.18)', position: 'relative' }}>
-          <div style={{ position: 'absolute', inset: 0, right: step === 'interests' ? '50%' : '0%', background: 'linear-gradient(90deg,#8a1538,#c0185c,#e57c9a)', transition: 'right .4s cubic-bezier(.22,1,.36,1)' }} />
+          <div style={{ position: 'absolute', inset: 0, right: step === 'location' ? '66.6%' : step === 'interests' ? '33.3%' : '0%', background: 'linear-gradient(90deg,#8a1538,#c0185c,#e57c9a)', transition: 'right .4s cubic-bezier(.22,1,.36,1)' }} />
         </div>
 
-        {/* ── Step 1: Interests ── */}
+        {/* ── Step 1: Country + University ── */}
+        {step === 'location' && (
+          <div style={{ padding: '32px 28px 28px' }}>
+            <div style={{ textAlign: 'center', marginBottom: 28 }}>
+              <div style={{ fontSize: 40, marginBottom: 10 }}>🌍</div>
+              <h2 style={{ fontSize: 22, fontWeight: 900, color: '#fff', letterSpacing: '-.5px', marginBottom: 8 }}>Where are you studying?</h2>
+              <p style={{ fontSize: 14, color: 'rgba(255,255,255,.55)', lineHeight: 1.65 }}>
+                This helps us show you clubs and people from your own country.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 9, marginBottom: 22, justifyContent: 'center' }}>
+              {countries.map(c => {
+                const on = country === c
+                return (
+                  <button key={c} className="ob-chip" onClick={() => { setCountry(c); setUniQuery(''); setSelectedUni(null) }} style={{
+                    display: 'flex', alignItems: 'center', gap: 7,
+                    padding: '9px 16px', borderRadius: 9999,
+                    border: `1px solid ${on ? 'rgba(138,21,56,.55)' : 'rgba(255,255,255,.1)'}`,
+                    background: on ? 'rgba(138,21,56,.22)' : 'rgba(255,255,255,.04)',
+                    color: on ? '#fff' : 'rgba(255,255,255,.6)',
+                    fontSize: 13, fontWeight: on ? 700 : 500, fontFamily: 'inherit',
+                  }}>
+                    {COUNTRY_FLAG[c] && <span>{COUNTRY_FLAG[c]}</span>}
+                    <span>{c}</span>
+                    {on && <span style={{ fontSize: 11, color: 'var(--accent)' }}>✓</span>}
+                  </button>
+                )
+              })}
+            </div>
+
+            {country && (
+              <div style={{ marginBottom: 24, position: 'relative' }}>
+                <input
+                  value={uniQuery}
+                  onChange={e => { setUniQuery(e.target.value); setSelectedUni(null) }}
+                  placeholder={`Search or type your university in ${country}...`}
+                  style={{
+                    width: '100%', padding: '11px 14px', borderRadius: 12,
+                    background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.1)',
+                    color: '#fff', fontSize: 13.5, fontFamily: 'inherit', outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+                {selectedUni && (
+                  <div style={{ marginTop: 8, fontSize: 12, color: '#4ade80', fontWeight: 600 }}>✓ {selectedUni.name}</div>
+                )}
+                {!selectedUni && uniSuggestions.length > 0 && (
+                  <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto' }}>
+                    {uniSuggestions.map(u => (
+                      <button key={u.id} onClick={() => { setSelectedUni(u); setUniQuery(u.name) }} style={{
+                        textAlign: 'left', padding: '8px 12px', borderRadius: 9,
+                        background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.07)',
+                        color: 'rgba(255,255,255,.8)', fontSize: 13, fontFamily: 'inherit', cursor: 'pointer',
+                      }}>
+                        {u.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {!selectedUni && uniQuery.trim() && uniSuggestions.every(u => u.name.toLowerCase() !== uniQuery.trim().toLowerCase()) && (
+                  <div style={{ marginTop: 8, fontSize: 11.5, color: 'rgba(255,255,255,.35)' }}>
+                    No match yet — we'll add "{uniQuery.trim()}" as a new university.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Step indicator */}
+            <div style={{ textAlign: 'center', fontSize: 11, color: 'rgba(255,255,255,.2)', marginBottom: 16, fontWeight: 600, letterSpacing: '.06em' }}>
+              STEP 1 OF 3
+            </div>
+
+            {locationError && (
+              <div style={{ fontSize: 12, color: '#f87171', textAlign: 'center', marginBottom: 12, fontWeight: 600 }}>{locationError}</div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={handleSkipLocation} style={{ flex: 1, padding: '11px', borderRadius: 12, background: 'transparent', border: '1px solid rgba(255,255,255,.1)', color: 'rgba(255,255,255,.4)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Skip for now
+              </button>
+              <button onClick={saveLocation} disabled={savingLocation || !country || !uniQuery.trim()} style={{
+                flex: 2, padding: '11px', borderRadius: 12, border: 'none', color: '#fff',
+                fontSize: 13, fontWeight: 800, fontFamily: 'inherit',
+                background: country && uniQuery.trim() ? 'linear-gradient(135deg,#8a1538,#c0185c)' : 'rgba(87,65,68,.3)',
+                cursor: country && uniQuery.trim() && !savingLocation ? 'pointer' : 'default',
+                boxShadow: country && uniQuery.trim() ? '0 4px 20px rgba(138,21,56,.5)' : 'none',
+                opacity: savingLocation ? .7 : 1,
+              }}>
+                {savingLocation ? 'Saving…' : 'Continue'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Step 2: Interests ── */}
         {step === 'interests' && (
           <div style={{ padding: '32px 28px 28px' }}>
             <div style={{ textAlign: 'center', marginBottom: 28 }}>
@@ -178,7 +334,7 @@ export default function OnboardingModal({ onDone }: Props) {
 
             {/* Step indicator */}
             <div style={{ textAlign: 'center', fontSize: 11, color: 'rgba(255,255,255,.2)', marginBottom: 16, fontWeight: 600, letterSpacing: '.06em' }}>
-              STEP 1 OF 2
+              STEP 2 OF 3
             </div>
 
             <div style={{ display: 'flex', gap: 10 }}>
@@ -199,7 +355,7 @@ export default function OnboardingModal({ onDone }: Props) {
           </div>
         )}
 
-        {/* ── Step 2: Join clubs ── */}
+        {/* ── Step 3: Join clubs ── */}
         {step === 'clubs' && (
           <div style={{ padding: '32px 28px 28px', animation: 'obStep .22s ease both' }}>
             <div style={{ textAlign: 'center', marginBottom: 22 }}>
@@ -212,7 +368,7 @@ export default function OnboardingModal({ onDone }: Props) {
 
             {/* Step indicator */}
             <div style={{ textAlign: 'center', fontSize: 11, color: 'rgba(255,255,255,.2)', marginBottom: 18, fontWeight: 600, letterSpacing: '.06em' }}>
-              STEP 2 OF 2
+              STEP 3 OF 3
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 22 }}>

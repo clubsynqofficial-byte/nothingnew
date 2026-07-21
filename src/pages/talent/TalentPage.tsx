@@ -1184,7 +1184,7 @@ function ListingCard({ listing, action, dimmed, onViewUser, index = 0 }: { listi
         </div>
 
         {listing.description && (
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{listing.description}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>{listing.description}</div>
         )}
       </div>
 

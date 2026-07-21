@@ -76,7 +76,7 @@ function isThisWeek(iso: string | null) {
 }
 
 export default function EventsPage() {
-  const { user, session, refreshProfile } = useAuth()
+  const { user, session, profile, refreshProfile } = useAuth()
   const navigate = useNavigate()
   const [events, setEvents] = useState<EventRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -114,16 +114,18 @@ export default function EventsPage() {
 
   const fetchPastEvents = useCallback(async () => {
     setPastLoading(true)
-    const { data } = await supabase
+    let q = supabase
       .from('events')
-      .select('id, title, start_time, end_time, location, attendee_count, karak_points_reward, category, club:clubs(id, name, logo_url, category)')
+      .select('id, title, start_time, end_time, location, attendee_count, karak_points_reward, category, club:clubs!inner(id, name, logo_url, category, country)')
       .eq('is_live', false)
       .lt('start_time', new Date().toISOString())
       .order('start_time', { ascending: false })
       .limit(50)
+    if (profile?.country) q = q.eq('club.country', profile.country)
+    const { data } = await q
     setPastEvents((data as unknown as PastEvent[]) ?? [])
     setPastLoading(false)
-  }, [])
+  }, [profile?.country])
 
   const openGallery = async (ev: PastEvent) => {
     setGalleryEvent(ev)
@@ -142,15 +144,17 @@ export default function EventsPage() {
   const fetchEvents = useCallback(async () => {
     if (!user) return
     setLoading(true)
-    const { data } = await supabase
+    let q = supabase
       .from('events')
-      .select('*, club:clubs(id, name, logo_url, category)')
+      .select('*, club:clubs!inner(id, name, logo_url, category, country)')
       .or('is_live.eq.true,start_time.gt.' + new Date().toISOString())
       .order('is_live', { ascending: false })
       .order('start_time', { ascending: true })
+    if (profile?.country) q = q.eq('club.country', profile.country)
+    const { data } = await q
     setEvents(data ?? [])
     setLoading(false)
-  }, [user])
+  }, [user, profile?.country])
 
   useEffect(() => { fetchEvents(); fetchMemberships(); fetchPastEvents() }, [fetchEvents, fetchMemberships, fetchPastEvents])
 
@@ -863,7 +867,7 @@ function EventCard({
         </div>
 
         {event.description && (
-          <p style={{ fontSize:13, color:'var(--text-muted)', lineHeight:1.55, margin:'0 0 8px', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', wordBreak:'break-word' }}>
+          <p style={{ fontSize:13, color:'var(--text-muted)', lineHeight:1.55, margin:'0 0 8px', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', wordBreak:'break-word', whiteSpace:'pre-wrap' }}>
             {event.description}
           </p>
         )}

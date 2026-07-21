@@ -1421,7 +1421,7 @@ export default function TournamentDetailPage() {
               {tournament.description && (
                 <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: '18px 20px' }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>About</div>
-                  <p style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.7, margin: 0 }}>{tournament.description}</p>
+                  <p style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.7, margin: 0, whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>{tournament.description}</p>
                 </div>
               )}
 
@@ -1450,7 +1450,7 @@ export default function TournamentDetailPage() {
                       ))}
                     </div>
                   ) : (
-                    <p style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.65, margin: 0 }}>{tournament.prize_description}</p>
+                    <p style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.65, margin: 0, whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>{tournament.prize_description}</p>
                   )}
                 </div>
               )}

@@ -191,6 +191,11 @@ function ProfileTab({ addToast }: { addToast: (msg: string, type?: 'success' | '
   const [uStatus, setUStatus] = useState<'idle' | 'checking' | 'available' | 'taken' | 'invalid'>('idle')
   const [bio,          setBio]          = useState(profile?.bio ?? '')
   const [school,       setSchool]       = useState(profile?.school ?? '')
+  const [country,      setCountry]      = useState(profile?.country ?? '')
+  const [countries,    setCountries]    = useState<string[]>([])
+  const [uniQuery,     setUniQuery]     = useState(profile?.university?.name ?? '')
+  const [uniId,        setUniId]        = useState<string | null>(profile?.university_id ?? null)
+  const [uniSuggestions, setUniSuggestions] = useState<{ id: string; name: string }[]>([])
   const [skills,       setSkills]       = useState<string[]>(profile?.skills ?? [])
   const [skillInput,   setSkillInput]   = useState('')
   const [saving,       setSaving]       = useState(false)
@@ -205,7 +210,27 @@ function ProfileTab({ addToast }: { addToast: (msg: string, type?: 'success' | '
     setBio(profile.bio ?? '')
     setSchool(profile.school ?? '')
     setSkills(profile.skills ?? [])
+    setCountry(profile.country ?? '')
+    setUniQuery(profile.university?.name ?? '')
+    setUniId(profile.university_id ?? null)
   }, [profile?.id])
+
+  useEffect(() => {
+    supabase.from('universities').select('country').then(({ data }) => {
+      const found = [...new Set((data ?? []).map(r => r.country))]
+      setCountries([...new Set(['India', 'Qatar', ...found])])
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!country) { setUniSuggestions([]); return }
+    const handle = setTimeout(() => {
+      let q = supabase.from('universities').select('id,name').eq('country', country).order('name').limit(8)
+      if (uniQuery.trim()) q = q.ilike('name', `%${uniQuery.trim()}%`)
+      q.then(({ data }) => setUniSuggestions((data ?? []) as { id: string; name: string }[]))
+    }, 200)
+    return () => clearTimeout(handle)
+  }, [country, uniQuery])
 
   useEffect(() => {
     const uname = username.trim().toLowerCase()
@@ -240,13 +265,33 @@ function ProfileTab({ addToast }: { addToast: (msg: string, type?: 'success' | '
     if (uStatus === 'taken') { setUsernameErr('That username is already taken.'); return }
     if (uStatus === 'checking') { setUsernameErr('Still checking availability — please wait.'); return }
     setSaving(true)
+
+    let resolvedUniId = uniId
+    const typedUni = uniQuery.trim()
+    if (country && typedUni && !resolvedUniId) {
+      const { data: existing } = await supabase
+        .from('universities').select('id').eq('country', country).ilike('name', typedUni).maybeSingle()
+      if (existing) resolvedUniId = existing.id
+      else {
+        const { data: created, error: uniError } = await supabase
+          .from('universities').insert({ name: typedUni, country }).select('id').single()
+        if (uniError) { setSaving(false); addToast('Failed to add university — ' + uniError.message, 'error'); return }
+        resolvedUniId = created?.id ?? null
+      }
+    } else if (!typedUni) {
+      resolvedUniId = null
+    }
+
     const { error } = await supabase.from('profiles').update({
       full_name: name.trim() || null,
       username: uname || null,
       bio: bio.trim() || null,
       school: school.trim() || null,
       skills,
+      country: country || null,
+      university_id: resolvedUniId,
     }).eq('id', user.id)
+    setUniId(resolvedUniId)
     await refreshProfile()
     setSaving(false)
     if (error) addToast('Failed to save — ' + error.message, 'error')
@@ -343,6 +388,40 @@ function ProfileTab({ addToast }: { addToast: (msg: string, type?: 'success' | '
             </div>
           )}
         </Field>
+
+        <Field label="Country" hint="Which country are you studying in?">
+          <select className="st-input" style={{ ...inputStyle, cursor: 'pointer' }} value={country}
+            onChange={e => { setCountry(e.target.value); setUniQuery(''); setUniId(null) }}>
+            <option value="">Select country...</option>
+            {countries.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </Field>
+
+        {country && (
+          <Field label="University" hint="Search for your university, or type a new one to add it.">
+            <input className="st-input" style={inputStyle} value={uniQuery}
+              onChange={e => { setUniQuery(e.target.value); setUniId(null) }}
+              placeholder={`Search or type your university in ${country}...`} maxLength={120} />
+            {!uniId && uniSuggestions.length > 0 && (
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto' }}>
+                {uniSuggestions.map(u => (
+                  <button type="button" key={u.id} onClick={() => { setUniId(u.id); setUniQuery(u.name) }} style={{
+                    textAlign: 'left', padding: '8px 12px', borderRadius: 9,
+                    background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.07)',
+                    color: 'rgba(255,255,255,.8)', fontSize: 13, fontFamily: 'inherit', cursor: 'pointer',
+                  }}>
+                    {u.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            {!uniId && uniQuery.trim() && uniSuggestions.every(u => u.name.toLowerCase() !== uniQuery.trim().toLowerCase()) && (
+              <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,.35)', marginTop: 6 }}>
+                No match yet — saving will add "{uniQuery.trim()}" as a new university.
+              </div>
+            )}
+          </Field>
+        )}
 
         <Field label="School / Faculty" hint="Your department or faculty within your university.">
           <input className="st-input" style={inputStyle} value={school} onChange={e => setSchool(e.target.value)} placeholder="e.g. Faculty of Engineering" maxLength={120} />

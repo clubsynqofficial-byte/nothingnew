@@ -143,7 +143,7 @@ export default function HomePage() {
   const greeting = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
   const firstName = profile?.full_name?.split(' ')[0] ?? 'there'
 
-  useEffect(() => { fetchFeed() }, [user])
+  useEffect(() => { fetchFeed() }, [user, profile?.country])
   useEffect(() => {
     const channel = supabase
       .channel('home-feed')
@@ -169,9 +169,11 @@ export default function HomePage() {
 
   async function fetchFeed() {
     setLoading(true)
-    const { data: raw } = await supabase
-      .from('posts').select('id,user_id,content,image_url,image_urls,repost_of,created_at,is_anonymous,profile:profiles!user_id(full_name,avatar_url)')
+    let postsQuery = supabase
+      .from('posts').select('id,user_id,content,image_url,image_urls,repost_of,created_at,is_anonymous,profile:profiles!user_id!inner(full_name,avatar_url,country)')
       .order('created_at', { ascending: false }).limit(60)
+    if (profile?.country) postsQuery = postsQuery.or(`country.is.null,country.eq.${profile.country}`, { foreignTable: 'profile' })
+    const { data: raw } = await postsQuery
     if (!raw) { setLoading(false); return }
 
     // Exclude pure repost rows (no content, no images) from the display feed
@@ -218,26 +220,31 @@ export default function HomePage() {
         .from('club_memberships').select('club_id').eq('user_id', user.id)
       const clubIds = (memberships ?? []).map((m: { club_id: string }) => m.club_id)
       setUserClubIds(clubIds)
-      const { data: annData } = await supabase
+      let annQuery = supabase
         .from('club_announcements')
-        .select('id,content,image_url,image_urls,video_url,created_at,club_id,club:clubs(id,name,logo_url),profile:profiles!user_id(full_name,avatar_url)')
+        .select('id,content,image_url,image_urls,video_url,created_at,club_id,club:clubs!inner(id,name,logo_url,country),profile:profiles!user_id(full_name,avatar_url)')
         .order('created_at', { ascending: false })
         .limit(150)
+      if (profile?.country) annQuery = annQuery.eq('club.country', profile.country)
+      const { data: annData } = await annQuery
       setAnnouncements((annData ?? []) as unknown as AnnouncementRow[])
 
       // Sidebar: upcoming events + suggested clubs
-      const [{ data: evData }, { data: clubData }] = await Promise.all([
-        supabase.from('events')
-          .select('id,title,start_time,location,category,club_id,attendee_count,max_attendees,registration_closed,karak_points_reward,club:clubs!club_id(name,logo_url)')
-          .gte('start_time', new Date().toISOString())
-          .order('start_time', { ascending: true })
-          .limit(3),
-        supabase.from('clubs')
-          .select('id,name,category,logo_url,member_count,is_verified')
-          .not('id', 'in', clubIds.length ? `(${clubIds.join(',')})` : '(00000000-0000-0000-0000-000000000000)')
-          .order('member_count', { ascending: false })
-          .limit(4),
-      ])
+      let evQuery = supabase.from('events')
+        .select('id,title,start_time,location,category,club_id,attendee_count,max_attendees,registration_closed,karak_points_reward,club:clubs!inner(name,logo_url,country)')
+        .gte('start_time', new Date().toISOString())
+        .order('start_time', { ascending: true })
+        .limit(3)
+      if (profile?.country) evQuery = evQuery.eq('club.country', profile.country)
+
+      let clubQuery = supabase.from('clubs')
+        .select('id,name,category,logo_url,member_count,is_verified')
+        .not('id', 'in', clubIds.length ? `(${clubIds.join(',')})` : '(00000000-0000-0000-0000-000000000000)')
+        .order('member_count', { ascending: false })
+        .limit(4)
+      if (profile?.country) clubQuery = clubQuery.eq('country', profile.country)
+
+      const [{ data: evData }, { data: clubData }] = await Promise.all([evQuery, clubQuery])
       setSidebarEvents((evData ?? []) as any)
       setSuggestedClubs((clubData ?? []) as any)
 

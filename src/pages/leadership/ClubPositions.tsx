@@ -287,7 +287,7 @@ export default function ClubPositions({ club }: { club: Club }) {
                         <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 9px', borderRadius: 9999, background: tc.bg, border: `1px solid ${tc.border}`, color: tc.color }}>{pos.type}</span>
                         {!pos.is_open && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 9px', borderRadius: 9999, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.1)' }}>CLOSED</span>}
                       </div>
-                      {pos.description && <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 6, lineHeight: 1.6 }}>{pos.description}</p>}
+                      {pos.description && <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 6, lineHeight: 1.6, whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>{pos.description}</p>}
                       <div style={{ display: 'flex', gap: 12, fontSize: 12, color: 'var(--text-muted)', flexWrap: 'wrap' }}>
                         {pos.deadline && <span>📅 {new Date(pos.deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
                         <button
@@ -389,7 +389,7 @@ export default function ClubPositions({ club }: { club: Club }) {
                     {app.cover_letter && (
                       <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 9, padding: '10px 12px' }}>
                         <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>Cover Letter</div>
-                        <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.65, margin: 0 }}>{app.cover_letter}</p>
+                        <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.65, margin: 0, whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>{app.cover_letter}</p>
                       </div>
                     )}
                   </div>

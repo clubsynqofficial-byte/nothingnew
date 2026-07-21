@@ -195,7 +195,7 @@ function ClubSelector({
                   </svg>
                 </div>
                 {club.description && (
-                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>
                     {club.description}
                   </div>
                 )}

@@ -4,6 +4,7 @@ export interface University {
   short_name: string | null
   location: string | null
   logo_url: string | null
+  country: string
   created_at: string
 }
 
@@ -15,6 +16,7 @@ export interface Profile {
   banner_position: number | null
   banner_zoom: number | null
   university_id: string | null
+  country: string | null
   role: 'student' | 'club_leader' | 'admin'
   bio: string | null
   skills: string[]
@@ -37,10 +39,12 @@ export interface Club {
   description: string | null
   category: string | null
   university_id: string | null
+  country: string
   logo_url: string | null
   banner_url: string | null
   is_verified: boolean
   president_id: string | null
+  invite_code: string | null
   member_count: number
   created_at: string
   club_theme?: { accent: string; bg: string; glow: boolean } | null

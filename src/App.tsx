@@ -17,6 +17,7 @@ import TalentPage from './pages/talent/TalentPage'
 import ClubsPage from './pages/clubs/ClubsPage'
 import ClubProfilePage from './pages/clubs/ClubProfilePage'
 import AttendPage from './pages/attend/AttendPage'
+import JoinClubPage from './pages/clubs/JoinClubPage'
 import ProfilePage from './pages/profile/ProfilePage'
 import PositionsPage from './pages/positions/PositionsPage'
 import MessagesPage from './pages/messages/MessagesPage'
@@ -183,6 +184,7 @@ function AppRoutes() {
       <Route path="/clubs" element={<ProtectedRoute><ClubsPage /></ProtectedRoute>} />
       <Route path="/clubs/:clubId" element={<ProtectedRoute><ClubProfilePage /></ProtectedRoute>} />
       <Route path="/attend/:eventId" element={<ProtectedRouteRaw><AttendPage /></ProtectedRouteRaw>} />
+      <Route path="/join/:code" element={<ProtectedRouteRaw><JoinClubPage /></ProtectedRouteRaw>} />
       <Route path="/positions" element={<ProtectedRoute><PositionsPage /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><ProfilePage key="own" /></ProtectedRoute>} />
       <Route path="/profile/:userId" element={<ProtectedRoute><ProfilePageWithKey /></ProtectedRoute>} />
