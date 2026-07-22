@@ -64,6 +64,27 @@ function useScrollReveal(threshold = 0.12) {
   return { ref, visible }
 }
 
+// Launch target: 23rd July 2026, 3:21 PM IST → stored as the equivalent UTC instant
+const LAUNCH_TARGET = new Date('2026-07-23T09:51:00Z').getTime()
+
+function useCountdown(target: number) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
+  const diff = Math.max(0, target - now)
+  return {
+    days: Math.floor(diff / 86400000),
+    hours: Math.floor((diff % 86400000) / 3600000),
+    minutes: Math.floor((diff % 3600000) / 60000),
+    seconds: Math.floor((diff % 60000) / 1000),
+    launched: diff <= 0,
+  }
+}
+
+function pad2(n: number) { return String(n).padStart(2, '0') }
+
 // ── Root ──────────────────────────────────────────────────────────────────────
 
 export default function LandingPage() {
@@ -208,10 +229,6 @@ function LandingStyles() {
         .lnd-feat-grid         { grid-template-columns:1fr !important; }
         .lnd-prob-grid         { grid-template-columns:1fr 1fr !important; }
         .lnd-cta-inner         { padding:36px 20px !important; }
-        .lnd-hero-btns         { flex-direction:column !important; align-items:stretch !important; }
-        .lnd-hero-btns button  { width:100% !important; }
-        .lnd-nav-signin        { display:none !important; }
-        .lnd-nav-getstarted    { padding:7px 14px !important; font-size:12px !important; }
         .lnd-nav               { padding:0 20px !important; }
         .lnd-mock-lsidebar     { width:48px !important; }
         .lnd-mock-nav-label    { display:none !important; }
@@ -236,10 +253,89 @@ function SectionEyebrow({ text, mb = 12 }: { text: string; mb?: number }) {
   )
 }
 
+// ── Launch Countdown ─────────────────────────────────────────────────────────
+
+function NavCountdown() {
+  const { days, hours, minutes, seconds, launched } = useCountdown(LAUNCH_TARGET)
+  if (launched) {
+    return (
+      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 18px', background:'rgba(34,197,94,.1)', border:'1px solid rgba(34,197,94,.35)', borderRadius:9999 }}>
+        <span style={{ width:6, height:6, borderRadius:'50%', background:'#22c55e', boxShadow:'0 0 10px #22c55e' }} />
+        <span style={{ fontSize:12.5, fontWeight:700, color:'#4ade80' }}>We're live</span>
+      </div>
+    )
+  }
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:9, padding:'8px 18px', background:'rgba(192,37,90,.08)', border:'1px solid rgba(192,37,90,.3)', borderRadius:9999, whiteSpace:'nowrap' }}>
+      <span style={{ width:6, height:6, borderRadius:'50%', background:'#c0255a', boxShadow:'0 0 10px rgba(192,37,90,.9)', animation:'lPulse 2s ease-in-out infinite' }} />
+      <span style={{ fontSize:12, fontWeight:700, color:'rgba(243,221,223,.55)' }}>Launching in</span>
+      <span style={{ fontSize:12.5, fontWeight:800, color:'#f3dddf', fontVariantNumeric:'tabular-nums' }}>
+        {days > 0 ? `${days}d ` : ''}{pad2(hours)}:{pad2(minutes)}:{pad2(seconds)}
+      </span>
+    </div>
+  )
+}
+
+function HeroCountdown() {
+  const { days, hours, minutes, seconds, launched } = useCountdown(LAUNCH_TARGET)
+
+  if (launched) {
+    return (
+      <div style={{ display:'inline-flex', alignItems:'center', gap:10, padding:'16px 34px', background:'rgba(34,197,94,.1)', border:'1px solid rgba(34,197,94,.35)', borderRadius:14, animation:'lFadeUp .7s .65s ease both' }}>
+        <span style={{ width:8, height:8, borderRadius:'50%', background:'#22c55e', boxShadow:'0 0 14px #22c55e' }} />
+        <span style={{ fontSize:16, fontWeight:800, color:'#4ade80' }}>We're live in India — welcome to ClubSynq</span>
+      </div>
+    )
+  }
+
+  const units = [
+    { label: 'Days', value: days },
+    { label: 'Hours', value: hours },
+    { label: 'Minutes', value: minutes },
+    { label: 'Seconds', value: seconds },
+  ]
+
+  return (
+    <div style={{ animation:'lFadeUp .7s .65s ease both' }}>
+      <p style={{ fontSize:14, fontWeight:700, color:'rgba(224,170,180,.85)', letterSpacing:'.04em', marginBottom:20 }}>
+        🇮🇳 Launching in India · 3:21 PM IST · 23rd July
+      </p>
+      <div style={{ display:'inline-flex', gap:14 }}>
+        {units.map(u => (
+          <div key={u.label} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:6, minWidth:76, padding:'16px 8px', background:'rgba(255,255,255,.04)', border:'1px solid rgba(192,37,90,.25)', borderRadius:14, backdropFilter:'blur(8px)' }}>
+            <span style={{ fontSize:'clamp(26px,4vw,38px)', fontWeight:900, color:'#f3dddf', fontVariantNumeric:'tabular-nums', lineHeight:1 }}>{pad2(u.value)}</span>
+            <span style={{ fontSize:10, fontWeight:700, letterSpacing:'.1em', color:'rgba(243,221,223,.4)', textTransform:'uppercase' }}>{u.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function CTACountdown() {
+  const { days, hours, minutes, seconds, launched } = useCountdown(LAUNCH_TARGET)
+  if (launched) {
+    return (
+      <div style={{ display:'inline-flex', alignItems:'center', gap:10, padding:'14px 30px', background:'rgba(34,197,94,.1)', border:'1px solid rgba(34,197,94,.35)', borderRadius:14 }}>
+        <span style={{ width:7, height:7, borderRadius:'50%', background:'#22c55e', boxShadow:'0 0 12px #22c55e' }} />
+        <span style={{ fontSize:15, fontWeight:800, color:'#4ade80' }}>We're live in India</span>
+      </div>
+    )
+  }
+  return (
+    <div style={{ display:'inline-flex', alignItems:'center', gap:12, padding:'14px 30px', background:'rgba(255,255,255,.04)', border:'1px solid rgba(192,37,90,.3)', borderRadius:14 }}>
+      <span style={{ fontSize:13, fontWeight:700, color:'rgba(224,170,180,.85)' }}>🇮🇳 Launching 3:21 PM IST, 23rd July</span>
+      <span style={{ width:1, height:16, background:'rgba(255,255,255,.15)' }} />
+      <span style={{ fontSize:15, fontWeight:800, color:'#f3dddf', fontVariantNumeric:'tabular-nums' }}>
+        {days > 0 ? `${days}d ` : ''}{pad2(hours)}:{pad2(minutes)}:{pad2(seconds)}
+      </span>
+    </div>
+  )
+}
+
 // ── Nav ───────────────────────────────────────────────────────────────────────
 
 function LandingNav({ scrolled }: { scrolled:boolean }) {
-  const navigate = useNavigate()
   return (
     <nav className="lnd-nav" style={{ position:'fixed', top:0, left:0, right:0, zIndex:200, padding:'0 36px', height:64, display:'flex', alignItems:'center', justifyContent:'space-between', background:scrolled?'rgba(5,2,10,0.86)':'transparent', backdropFilter:scrolled?'blur(32px) saturate(200%)':'none', borderBottom:scrolled?'1px solid rgba(192,37,90,.14)':'1px solid transparent', boxShadow:scrolled?'0 1px 0 rgba(192,37,90,.06),0 8px 32px rgba(0,0,0,.24)':'none', transition:'all .4s' }}>
       <div style={{ display:'flex', alignItems:'center', gap:10, cursor:'pointer' }} onClick={() => window.scrollTo({ top:0, behavior:'smooth' })}>
@@ -251,16 +347,7 @@ function LandingNav({ scrolled }: { scrolled:boolean }) {
         ))}
       </div>
       <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-        <button className="lnd-nav-signin" onClick={() => navigate('/signin')} style={{ padding:'8px 16px', background:'transparent', border:'1px solid rgba(192,37,90,.35)', borderRadius:9999, color:'rgba(243,221,223,.7)', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', transition:'all .2s', whiteSpace:'nowrap' }}
-          onMouseEnter={e => { e.currentTarget.style.background='rgba(192,37,90,.12)'; e.currentTarget.style.color='#f3dddf' }}
-          onMouseLeave={e => { e.currentTarget.style.background='transparent'; e.currentTarget.style.color='rgba(243,221,223,.7)' }}>
-          Sign In
-        </button>
-        <button className="lnd-nav-getstarted" onClick={() => navigate('/signup')} style={{ padding:'8px 18px', background:'linear-gradient(135deg,#8a1538,#c0185c)', border:'none', borderRadius:9999, color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer', fontFamily:'inherit', boxShadow:'0 0 16px rgba(192,37,90,.35)', transition:'all .2s', whiteSpace:'nowrap' }}
-          onMouseEnter={e => { e.currentTarget.style.boxShadow='0 0 24px rgba(192,37,90,.6)'; e.currentTarget.style.filter='brightness(1.1)' }}
-          onMouseLeave={e => { e.currentTarget.style.boxShadow='0 0 16px rgba(192,37,90,.35)'; e.currentTarget.style.filter='brightness(1)' }}>
-          Get Started
-        </button>
+        <NavCountdown />
       </div>
     </nav>
   )
@@ -269,7 +356,6 @@ function LandingNav({ scrolled }: { scrolled:boolean }) {
 // ── Hero ──────────────────────────────────────────────────────────────────────
 
 function HeroSection() {
-  const navigate = useNavigate()
   const mouse = useMouseParallax()
   return (
     <section style={{ minHeight:'100vh', position:'relative', display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', textAlign:'center', padding:'120px clamp(20px,5vw,64px) 80px', overflow:'hidden' }}>
@@ -294,7 +380,7 @@ function HeroSection() {
           <div style={{ display:'inline-block', padding:1, borderRadius:9999, background:'linear-gradient(135deg,rgba(192,37,90,.7) 0%,rgba(138,21,56,.25) 50%,rgba(192,37,90,.5) 100%)' }}>
             <div style={{ display:'inline-flex', alignItems:'center', gap:9, padding:'8px 22px', background:'rgba(5,2,10,.93)', borderRadius:9999, backdropFilter:'blur(16px)' }}>
               <span style={{ width:7, height:7, borderRadius:'50%', background:'#c0255a', display:'inline-block', boxShadow:'0 0 14px rgba(192,37,90,1)', animation:'lPulse 2s ease-in-out infinite' }} />
-              <span style={{ fontSize:12, fontWeight:800, letterSpacing:'.14em', color:'#e0aab4', textTransform:'uppercase' }}>Early Access Now Open</span>
+              <span style={{ fontSize:12, fontWeight:800, letterSpacing:'.14em', color:'#e0aab4', textTransform:'uppercase' }}>Coming Soon to India</span>
             </div>
           </div>
         </div>
@@ -317,19 +403,8 @@ function HeroSection() {
           ClubSynq is the first platform built for the full student experience — social network, skill trading, club management, co-founder matching, and gamified reputation. All in one place.
         </p>
 
-        {/* CTA buttons */}
-        <div className="lnd-hero-btns" style={{ display:'inline-flex', alignItems:'center', gap:12, animation:'lFadeUp .7s .65s ease both' }}>
-          <button onClick={() => navigate('/signup')} style={{ padding:'16px 40px', background:'linear-gradient(135deg,#8a1538,#c0185c)', border:'none', borderRadius:14, color:'#fff', fontSize:16, fontWeight:800, cursor:'pointer', fontFamily:'inherit', boxShadow:'0 0 32px rgba(192,37,90,.45),0 8px 24px rgba(0,0,0,.4)', letterSpacing:'.02em', transition:'all .2s' }}
-            onMouseEnter={e => { e.currentTarget.style.filter='brightness(1.1)'; e.currentTarget.style.transform='translateY(-2px)' }}
-            onMouseLeave={e => { e.currentTarget.style.filter='brightness(1)'; e.currentTarget.style.transform='translateY(0)' }}>
-            Get Started — It's Free
-          </button>
-          <button onClick={() => navigate('/signin')} style={{ padding:'16px 32px', background:'rgba(255,255,255,.04)', border:'1px solid rgba(192,37,90,.3)', borderRadius:14, color:'rgba(243,221,223,.7)', fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:'inherit', backdropFilter:'blur(8px)', transition:'all .2s' }}
-            onMouseEnter={e => { e.currentTarget.style.background='rgba(192,37,90,.1)'; e.currentTarget.style.color='#f3dddf' }}
-            onMouseLeave={e => { e.currentTarget.style.background='rgba(255,255,255,.04)'; e.currentTarget.style.color='rgba(243,221,223,.7)' }}>
-            Sign In
-          </button>
-        </div>
+        {/* Countdown */}
+        <HeroCountdown />
       </div>
     </section>
   )
@@ -982,7 +1057,6 @@ function ContactSection() {
 // ── CTA ───────────────────────────────────────────────────────────────────────
 
 function CTASection() {
-  const navigate = useNavigate()
   const { ref, visible } = useScrollReveal(.18)
   return (
     <section style={{ padding:'clamp(72px,9vw,110px) 32px', position:'relative', overflow:'hidden' }}>
@@ -1003,20 +1077,9 @@ function CTASection() {
             <span className="lnd-gradient-text">something that lasts?</span>
           </h2>
           <p style={{ fontSize:16, color:'rgba(243,221,223,.38)', lineHeight:1.78, maxWidth:420, margin:'0 auto 48px' }}>
-            ClubSynq is live. Join your campus network, trade skills, and build something that matters — starting today.
+            ClubSynq is coming to India. Join your campus network, trade skills, and build something that matters.
           </p>
-          <div className="lnd-hero-btns" style={{ display:'inline-flex', alignItems:'center', gap:12 }}>
-            <button onClick={() => navigate('/signup')} style={{ padding:'16px 40px', background:'linear-gradient(135deg,#8a1538,#c0185c)', border:'none', borderRadius:14, color:'#fff', fontSize:16, fontWeight:800, cursor:'pointer', fontFamily:'inherit', boxShadow:'0 0 32px rgba(192,37,90,.45),0 8px 24px rgba(0,0,0,.4)', letterSpacing:'.02em', transition:'all .2s' }}
-              onMouseEnter={e => { e.currentTarget.style.filter='brightness(1.1)'; e.currentTarget.style.transform='translateY(-2px)' }}
-              onMouseLeave={e => { e.currentTarget.style.filter='brightness(1)'; e.currentTarget.style.transform='translateY(0)' }}>
-              Create Your Account
-            </button>
-            <button onClick={() => navigate('/signin')} style={{ padding:'16px 32px', background:'rgba(255,255,255,.04)', border:'1px solid rgba(192,37,90,.3)', borderRadius:14, color:'rgba(243,221,223,.7)', fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:'inherit', backdropFilter:'blur(8px)', transition:'all .2s' }}
-              onMouseEnter={e => { e.currentTarget.style.background='rgba(192,37,90,.1)'; e.currentTarget.style.color='#f3dddf' }}
-              onMouseLeave={e => { e.currentTarget.style.background='rgba(255,255,255,.04)'; e.currentTarget.style.color='rgba(243,221,223,.7)' }}>
-              Sign In
-            </button>
-          </div>
+          <CTACountdown />
         </div>
       </div>
     </section>
