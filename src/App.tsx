@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { PresenceProvider } from './contexts/PresenceContext'
+import { FeedScopeProvider } from './contexts/FeedScopeContext'
 import AppLayout from './components/layout/AppLayout'
 import OnboardingModal from './components/OnboardingModal'
 import LandingPage from './pages/landing/LandingPage'
@@ -214,9 +215,11 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <PresenceProvider>
-          <AppRoutes />
-        </PresenceProvider>
+        <FeedScopeProvider>
+          <PresenceProvider>
+            <AppRoutes />
+          </PresenceProvider>
+        </FeedScopeProvider>
       </AuthProvider>
     </BrowserRouter>
   )

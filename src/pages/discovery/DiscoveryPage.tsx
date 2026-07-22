@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { useFeedScope } from '../../contexts/FeedScopeContext'
 import type { Club } from '../../types'
 import ClubApplicationModal from '../../components/ClubApplicationModal'
 import TalentPage from '../talent/TalentPage'
@@ -164,6 +165,7 @@ interface ClubWithMeta extends Club {
 
 export default function DiscoveryPage() {
   const { user, profile, refreshProfile } = useAuth()
+  const { feedScope } = useFeedScope()
   const navigate = useNavigate()
   const [clubs, setClubs] = useState<ClubWithMeta[]>([])
   const [loading, setLoading] = useState(true)
@@ -181,7 +183,7 @@ export default function DiscoveryPage() {
       .select('*, university:universities(name, short_name)')
       .order('member_count', { ascending: false })
 
-    if (profile?.country) query = query.eq('country', profile.country)
+    if (feedScope === 'local' && profile?.country) query = query.eq('country', profile.country)
     if (search) query = query.ilike('name', `%${search}%`)
     if (activeCategory !== 'All') query = query.eq('category', activeCategory)
 
@@ -208,7 +210,7 @@ export default function DiscoveryPage() {
       setClubs(clubsData.map(c => ({ ...c, has_form: formClubIds.has(c.id) })))
     }
     setLoading(false)
-  }, [search, activeCategory, user, profile?.country])
+  }, [search, activeCategory, user, profile?.country, feedScope])
 
   useEffect(() => { fetchClubs() }, [fetchClubs])
 
@@ -540,7 +542,7 @@ export default function DiscoveryPage() {
               fontSize: 16, color: 'var(--text-secondary)', lineHeight: 1.65, maxWidth: 460,
               animation: 'fadeUp 0.55s 0.18s ease both',
             }}>
-              Explore student clubs and organizations{profile?.country ? ` across ${profile.country}` : ''}. Join, connect, and make an impact.
+              Explore student clubs and organizations{feedScope === 'local' && profile?.country ? ` across ${profile.country}` : ' worldwide'}. Join, connect, and make an impact.
             </p>
           </div>
         </div>

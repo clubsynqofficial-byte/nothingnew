@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { useFeedScope } from '../../contexts/FeedScopeContext'
 
 interface Position {
   id: string
@@ -39,6 +40,7 @@ function timeLeft(deadline: string | null) {
 
 export default function PositionsPage() {
   const { user, profile } = useAuth()
+  const { feedScope } = useFeedScope()
   const navigate = useNavigate()
 
   const [positions, setPositions] = useState<Position[]>([])
@@ -62,14 +64,14 @@ export default function PositionsPage() {
       .eq('is_open', true)
       .order('created_at', { ascending: false })
 
-    if (profile?.country) q = q.eq('club.country', profile.country)
+    if (feedScope === 'local' && profile?.country) q = q.eq('club.country', profile.country)
     if (search) q = q.ilike('title', `%${search}%`)
     if (activeType !== 'All') q = q.eq('type', activeType)
 
     const { data } = await q
     setPositions((data as unknown as Position[]) ?? [])
     setLoading(false)
-  }, [search, activeType, profile?.country])
+  }, [search, activeType, profile?.country, feedScope])
 
   useEffect(() => { fetchPositions() }, [fetchPositions])
 

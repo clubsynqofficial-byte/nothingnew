@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { useFeedScope } from '../../contexts/FeedScopeContext'
 import ClubApplicationModal from '../../components/ClubApplicationModal'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string
@@ -77,6 +78,7 @@ function isThisWeek(iso: string | null) {
 
 export default function EventsPage() {
   const { user, session, profile, refreshProfile } = useAuth()
+  const { feedScope } = useFeedScope()
   const navigate = useNavigate()
   const [events, setEvents] = useState<EventRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -121,11 +123,11 @@ export default function EventsPage() {
       .lt('start_time', new Date().toISOString())
       .order('start_time', { ascending: false })
       .limit(50)
-    if (profile?.country) q = q.eq('club.country', profile.country)
+    if (feedScope === 'local' && profile?.country) q = q.eq('club.country', profile.country)
     const { data } = await q
     setPastEvents((data as unknown as PastEvent[]) ?? [])
     setPastLoading(false)
-  }, [profile?.country])
+  }, [profile?.country, feedScope])
 
   const openGallery = async (ev: PastEvent) => {
     setGalleryEvent(ev)
@@ -150,11 +152,11 @@ export default function EventsPage() {
       .or('is_live.eq.true,start_time.gt.' + new Date().toISOString())
       .order('is_live', { ascending: false })
       .order('start_time', { ascending: true })
-    if (profile?.country) q = q.eq('club.country', profile.country)
+    if (feedScope === 'local' && profile?.country) q = q.eq('club.country', profile.country)
     const { data } = await q
     setEvents(data ?? [])
     setLoading(false)
-  }, [user, profile?.country])
+  }, [user, profile?.country, feedScope])
 
   useEffect(() => { fetchEvents(); fetchMemberships(); fetchPastEvents() }, [fetchEvents, fetchMemberships, fetchPastEvents])
 

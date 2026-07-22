@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { parseTS } from '../../lib/time'
 import { useAuth } from '../../contexts/AuthContext'
+import { useFeedScope } from '../../contexts/FeedScopeContext'
 import AnnouncementMedia from '../../components/AnnouncementMedia'
 import Lightbox, { type LightboxMedia } from '../../components/Lightbox'
 import TruncatedCaption from '../../components/TruncatedCaption'
@@ -84,6 +85,7 @@ const Dots = () => (
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function HomePage() {
   const { user, profile } = useAuth()
+  const { feedScope, setFeedScope } = useFeedScope()
   const nav = useNavigate()
 
   const [posts, setPosts]           = useState<FeedPost[]>([])
@@ -115,6 +117,12 @@ export default function HomePage() {
 
   const [anon, setAnon]             = useState(false)
   const [feedTab, setFeedTab]       = useState<'for-you' | 'clubs'>('for-you')
+  const [scopeMenuOpen, setScopeMenuOpen] = useState(false)
+
+  function changeFeedScope(scope: 'local' | 'global') {
+    setFeedScope(scope)
+    setScopeMenuOpen(false)
+  }
 
   // Poll compose state
   const [showPoll, setShowPoll]     = useState(false)
@@ -143,7 +151,7 @@ export default function HomePage() {
   const greeting = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
   const firstName = profile?.full_name?.split(' ')[0] ?? 'there'
 
-  useEffect(() => { fetchFeed() }, [user, profile?.country])
+  useEffect(() => { fetchFeed() }, [user, profile?.country, feedScope])
   useEffect(() => {
     const channel = supabase
       .channel('home-feed')
@@ -169,10 +177,11 @@ export default function HomePage() {
 
   async function fetchFeed() {
     setLoading(true)
+    const local = feedScope === 'local'
     let postsQuery = supabase
       .from('posts').select('id,user_id,content,image_url,image_urls,repost_of,created_at,is_anonymous,profile:profiles!user_id!inner(full_name,avatar_url,country)')
       .order('created_at', { ascending: false }).limit(60)
-    if (profile?.country) postsQuery = postsQuery.or(`country.is.null,country.eq.${profile.country}`, { foreignTable: 'profile' })
+    if (local && profile?.country) postsQuery = postsQuery.or(`country.is.null,country.eq.${profile.country}`, { foreignTable: 'profile' })
     const { data: raw } = await postsQuery
     if (!raw) { setLoading(false); return }
 
@@ -225,7 +234,7 @@ export default function HomePage() {
         .select('id,content,image_url,image_urls,video_url,created_at,club_id,club:clubs!inner(id,name,logo_url,country),profile:profiles!user_id(full_name,avatar_url)')
         .order('created_at', { ascending: false })
         .limit(150)
-      if (profile?.country) annQuery = annQuery.eq('club.country', profile.country)
+      if (local && profile?.country) annQuery = annQuery.eq('club.country', profile.country)
       const { data: annData } = await annQuery
       setAnnouncements((annData ?? []) as unknown as AnnouncementRow[])
 
@@ -235,14 +244,14 @@ export default function HomePage() {
         .gte('start_time', new Date().toISOString())
         .order('start_time', { ascending: true })
         .limit(3)
-      if (profile?.country) evQuery = evQuery.eq('club.country', profile.country)
+      if (local && profile?.country) evQuery = evQuery.eq('club.country', profile.country)
 
       let clubQuery = supabase.from('clubs')
         .select('id,name,category,logo_url,member_count,is_verified')
         .not('id', 'in', clubIds.length ? `(${clubIds.join(',')})` : '(00000000-0000-0000-0000-000000000000)')
         .order('member_count', { ascending: false })
         .limit(4)
-      if (profile?.country) clubQuery = clubQuery.eq('country', profile.country)
+      if (local && profile?.country) clubQuery = clubQuery.eq('country', profile.country)
 
       const [{ data: evData }, { data: clubData }] = await Promise.all([evQuery, clubQuery])
       setSidebarEvents((evData ?? []) as any)
@@ -840,22 +849,51 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Feed tabs */}
-          <div style={{ display:'flex', gap:2, marginBottom:14, background:'rgba(255,255,255,.04)', borderRadius:12, padding:4, border:'1px solid rgba(255,255,255,.07)', animation: mounted ? 'tabsIn 0.4s cubic-bezier(.22,1,.36,1) .3s both' : 'none' }}>
-            {(['for-you', 'clubs'] as const).map(tab => {
-              const labels: Record<string, string> = { 'for-you': 'For You', 'clubs': 'My Clubs' }
-              const active = feedTab === tab
-              return (
-                <button key={tab} onClick={() => setFeedTab(tab)} style={{
-                  flex:1, padding:'8px 0', borderRadius:9, border:'none',
-                  background: active ? 'linear-gradient(135deg,rgba(138,21,56,.4),rgba(138,21,56,.22))' : 'transparent',
-                  color: active ? '#fff' : 'rgba(255,255,255,.4)',
-                  fontSize:13, fontWeight: active ? 700 : 500, cursor:'pointer',
-                  fontFamily:'inherit', transition:'all .15s',
-                  boxShadow: active ? '0 1px 8px rgba(0,0,0,.4)' : 'none',
-                }}>{labels[tab]}</button>
-              )
-            })}
+          {/* Feed tabs + scope selector */}
+          <div style={{ display:'flex', gap:8, marginBottom:14 }}>
+            <div style={{ flex:1, display:'flex', gap:2, background:'rgba(255,255,255,.04)', borderRadius:12, padding:4, border:'1px solid rgba(255,255,255,.07)', animation: mounted ? 'tabsIn 0.4s cubic-bezier(.22,1,.36,1) .3s both' : 'none' }}>
+              {(['for-you', 'clubs'] as const).map(tab => {
+                const labels: Record<string, string> = { 'for-you': 'For You', 'clubs': 'My Clubs' }
+                const active = feedTab === tab
+                return (
+                  <button key={tab} onClick={() => setFeedTab(tab)} style={{
+                    flex:1, padding:'8px 0', borderRadius:9, border:'none',
+                    background: active ? 'linear-gradient(135deg,rgba(138,21,56,.4),rgba(138,21,56,.22))' : 'transparent',
+                    color: active ? '#fff' : 'rgba(255,255,255,.4)',
+                    fontSize:13, fontWeight: active ? 700 : 500, cursor:'pointer',
+                    fontFamily:'inherit', transition:'all .15s',
+                    boxShadow: active ? '0 1px 8px rgba(0,0,0,.4)' : 'none',
+                  }}>{labels[tab]}</button>
+                )
+              })}
+            </div>
+
+            {/* Local / Global scope dropdown */}
+            <div style={{ position:'relative', flexShrink:0 }}>
+              <button onClick={() => setScopeMenuOpen(v => !v)} style={{
+                display:'flex', alignItems:'center', gap:6, height:'100%', padding:'0 14px',
+                borderRadius:12, background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.07)',
+                color:'var(--text-primary)', fontSize:13, fontWeight:700, cursor:'pointer', fontFamily:'inherit',
+              }}>
+                <span>{feedScope === 'local' ? '📍 Local' : '🌐 Global'}</span>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" style={{ transform: scopeMenuOpen ? 'rotate(180deg)' : 'none', transition:'transform .15s', opacity:.6 }}><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              {scopeMenuOpen && (
+                <>
+                  <div onClick={() => setScopeMenuOpen(false)} style={{ position:'fixed', inset:0, zIndex:40 }} />
+                  <div style={{ position:'absolute', top:'calc(100% + 6px)', right:0, zIndex:50, minWidth:180, background:'#1a1015', border:'1px solid rgba(255,255,255,.1)', borderRadius:12, padding:6, boxShadow:'0 12px 32px rgba(0,0,0,.5)' }}>
+                    <button onClick={() => changeFeedScope('local')} style={{ width:'100%', display:'flex', flexDirection:'column', alignItems:'flex-start', gap:1, padding:'8px 10px', borderRadius:8, border:'none', background: feedScope==='local' ? 'rgba(138,21,56,.25)' : 'transparent', color:'var(--text-primary)', cursor:'pointer', fontFamily:'inherit', textAlign:'left' }}>
+                      <span style={{ fontSize:13, fontWeight:700 }}>📍 Local{profile?.country ? ` — ${profile.country}` : ''}</span>
+                      <span style={{ fontSize:11, color:'var(--text-muted)' }}>Posts & clubs from your country</span>
+                    </button>
+                    <button onClick={() => changeFeedScope('global')} style={{ width:'100%', display:'flex', flexDirection:'column', alignItems:'flex-start', gap:1, padding:'8px 10px', borderRadius:8, border:'none', background: feedScope==='global' ? 'rgba(138,21,56,.25)' : 'transparent', color:'var(--text-primary)', cursor:'pointer', fontFamily:'inherit', textAlign:'left', marginTop:2 }}>
+                      <span style={{ fontSize:13, fontWeight:700 }}>🌐 Global</span>
+                      <span style={{ fontSize:11, color:'var(--text-muted)' }}>Everyone on ClubSynq, no filtering</span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
 
           {/* Posts + Announcements merged feed */}
