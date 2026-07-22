@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, usePa
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { PresenceProvider } from './contexts/PresenceContext'
 import { FeedScopeProvider } from './contexts/FeedScopeContext'
+import { useIsLaunched } from './lib/launch'
 import AppLayout from './components/layout/AppLayout'
 import OnboardingModal from './components/OnboardingModal'
 import LandingPage from './pages/landing/LandingPage'
@@ -170,6 +171,9 @@ function ProfilePageWithKey() {
 }
 
 function AppRoutes() {
+  const launched = useIsLaunched()
+  if (!launched) return <LandingPage locked />
+
   return (
     <Routes>
       <Route path="/" element={<RootRoute />} />

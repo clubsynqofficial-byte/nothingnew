@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
+import { LAUNCH_TARGET } from '../../lib/launch'
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 
@@ -64,9 +65,6 @@ function useScrollReveal(threshold = 0.12) {
   return { ref, visible }
 }
 
-// Launch target: 23rd July 2026, 3:21 PM IST → stored as the equivalent UTC instant
-const LAUNCH_TARGET = new Date('2026-07-23T09:51:00Z').getTime()
-
 function useCountdown(target: number) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -87,18 +85,18 @@ function pad2(n: number) { return String(n).padStart(2, '0') }
 
 // ── Root ──────────────────────────────────────────────────────────────────────
 
-export default function LandingPage() {
+export default function LandingPage({ locked = false }: { locked?: boolean }) {
   const { session, loading } = useAuth()
   const navigate = useNavigate()
   const [scrolled, setScrolled] = useState(false)
 
-  useEffect(() => { if (!loading && session) navigate('/discovery', { replace: true }) }, [session, loading, navigate])
+  useEffect(() => { if (!locked && !loading && session) navigate('/discovery', { replace: true }) }, [locked, session, loading, navigate])
   useEffect(() => {
     const h = () => setScrolled(window.scrollY > 48)
     window.addEventListener('scroll', h, { passive: true }); return () => window.removeEventListener('scroll', h)
   }, [])
 
-  if (loading || session) return null
+  if (!locked && (loading || session)) return null
 
   return (
     <div className="lnd-root" style={{ minHeight:'100vh', background:'#05020a', color:'#f3dddf', fontFamily:"'Be Vietnam Pro', sans-serif", overflowX:'hidden' }}>
