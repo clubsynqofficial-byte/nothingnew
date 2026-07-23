@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
-import { LAUNCH_TARGET } from '../../lib/launch'
+import { LAUNCH_TARGET, useIsLaunched } from '../../lib/launch'
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 
@@ -227,6 +227,10 @@ function LandingStyles() {
         .lnd-feat-grid         { grid-template-columns:1fr !important; }
         .lnd-prob-grid         { grid-template-columns:1fr 1fr !important; }
         .lnd-cta-inner         { padding:36px 20px !important; }
+        .lnd-hero-btns         { flex-direction:column !important; align-items:stretch !important; }
+        .lnd-hero-btns button  { width:100% !important; }
+        .lnd-nav-signin        { display:none !important; }
+        .lnd-nav-getstarted    { padding:7px 14px !important; font-size:12px !important; }
         .lnd-nav               { padding:0 20px !important; }
         .lnd-mock-lsidebar     { width:48px !important; }
         .lnd-mock-nav-label    { display:none !important; }
@@ -254,13 +258,22 @@ function SectionEyebrow({ text, mb = 12 }: { text: string; mb?: number }) {
 // ── Launch Countdown ─────────────────────────────────────────────────────────
 
 function NavCountdown() {
+  const navigate = useNavigate()
   const { days, hours, minutes, seconds, launched } = useCountdown(LAUNCH_TARGET)
   if (launched) {
     return (
-      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 18px', background:'rgba(34,197,94,.1)', border:'1px solid rgba(34,197,94,.35)', borderRadius:9999 }}>
-        <span style={{ width:6, height:6, borderRadius:'50%', background:'#22c55e', boxShadow:'0 0 10px #22c55e' }} />
-        <span style={{ fontSize:12.5, fontWeight:700, color:'#4ade80' }}>We're live</span>
-      </div>
+      <>
+        <button className="lnd-nav-signin" onClick={() => navigate('/signin')} style={{ padding:'8px 16px', background:'transparent', border:'1px solid rgba(192,37,90,.35)', borderRadius:9999, color:'rgba(243,221,223,.7)', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', transition:'all .2s', whiteSpace:'nowrap' }}
+          onMouseEnter={e => { e.currentTarget.style.background='rgba(192,37,90,.12)'; e.currentTarget.style.color='#f3dddf' }}
+          onMouseLeave={e => { e.currentTarget.style.background='transparent'; e.currentTarget.style.color='rgba(243,221,223,.7)' }}>
+          Sign In
+        </button>
+        <button className="lnd-nav-getstarted" onClick={() => navigate('/signup')} style={{ padding:'8px 18px', background:'linear-gradient(135deg,#8a1538,#c0185c)', border:'none', borderRadius:9999, color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer', fontFamily:'inherit', boxShadow:'0 0 16px rgba(192,37,90,.35)', transition:'all .2s', whiteSpace:'nowrap' }}
+          onMouseEnter={e => { e.currentTarget.style.boxShadow='0 0 24px rgba(192,37,90,.6)'; e.currentTarget.style.filter='brightness(1.1)' }}
+          onMouseLeave={e => { e.currentTarget.style.boxShadow='0 0 16px rgba(192,37,90,.35)'; e.currentTarget.style.filter='brightness(1)' }}>
+          Register
+        </button>
+      </>
     )
   }
   return (
@@ -275,13 +288,28 @@ function NavCountdown() {
 }
 
 function HeroCountdown() {
+  const navigate = useNavigate()
   const { days, hours, minutes, seconds, launched } = useCountdown(LAUNCH_TARGET)
 
   if (launched) {
     return (
-      <div style={{ display:'inline-flex', alignItems:'center', gap:10, padding:'16px 34px', background:'rgba(34,197,94,.1)', border:'1px solid rgba(34,197,94,.35)', borderRadius:14, animation:'lFadeUp .7s .65s ease both' }}>
-        <span style={{ width:8, height:8, borderRadius:'50%', background:'#22c55e', boxShadow:'0 0 14px #22c55e' }} />
-        <span style={{ fontSize:16, fontWeight:800, color:'#4ade80' }}>We're live in India — welcome to ClubSynq</span>
+      <div style={{ animation:'lFadeUp .7s .65s ease both' }}>
+        <div style={{ marginBottom:20, display:'inline-flex', alignItems:'center', gap:9, padding:'7px 20px', background:'rgba(34,197,94,.1)', border:'1px solid rgba(34,197,94,.35)', borderRadius:9999 }}>
+          <span style={{ width:7, height:7, borderRadius:'50%', background:'#22c55e', boxShadow:'0 0 12px #22c55e' }} />
+          <span style={{ fontSize:12.5, fontWeight:800, letterSpacing:'.06em', color:'#4ade80' }}>We're live in India</span>
+        </div>
+        <div className="lnd-hero-btns" style={{ display:'inline-flex', alignItems:'center', gap:12 }}>
+          <button onClick={() => navigate('/signup')} style={{ padding:'16px 40px', background:'linear-gradient(135deg,#8a1538,#c0185c)', border:'none', borderRadius:14, color:'#fff', fontSize:16, fontWeight:800, cursor:'pointer', fontFamily:'inherit', boxShadow:'0 0 32px rgba(192,37,90,.45),0 8px 24px rgba(0,0,0,.4)', letterSpacing:'.02em', transition:'all .2s' }}
+            onMouseEnter={e => { e.currentTarget.style.filter='brightness(1.1)'; e.currentTarget.style.transform='translateY(-2px)' }}
+            onMouseLeave={e => { e.currentTarget.style.filter='brightness(1)'; e.currentTarget.style.transform='translateY(0)' }}>
+            Register — It's Free
+          </button>
+          <button onClick={() => navigate('/signin')} style={{ padding:'16px 32px', background:'rgba(255,255,255,.04)', border:'1px solid rgba(192,37,90,.3)', borderRadius:14, color:'rgba(243,221,223,.7)', fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:'inherit', backdropFilter:'blur(8px)', transition:'all .2s' }}
+            onMouseEnter={e => { e.currentTarget.style.background='rgba(192,37,90,.1)'; e.currentTarget.style.color='#f3dddf' }}
+            onMouseLeave={e => { e.currentTarget.style.background='rgba(255,255,255,.04)'; e.currentTarget.style.color='rgba(243,221,223,.7)' }}>
+            Sign In
+          </button>
+        </div>
       </div>
     )
   }
@@ -311,12 +339,21 @@ function HeroCountdown() {
 }
 
 function CTACountdown() {
+  const navigate = useNavigate()
   const { days, hours, minutes, seconds, launched } = useCountdown(LAUNCH_TARGET)
   if (launched) {
     return (
-      <div style={{ display:'inline-flex', alignItems:'center', gap:10, padding:'14px 30px', background:'rgba(34,197,94,.1)', border:'1px solid rgba(34,197,94,.35)', borderRadius:14 }}>
-        <span style={{ width:7, height:7, borderRadius:'50%', background:'#22c55e', boxShadow:'0 0 12px #22c55e' }} />
-        <span style={{ fontSize:15, fontWeight:800, color:'#4ade80' }}>We're live in India</span>
+      <div className="lnd-hero-btns" style={{ display:'inline-flex', alignItems:'center', gap:12 }}>
+        <button onClick={() => navigate('/signup')} style={{ padding:'16px 40px', background:'linear-gradient(135deg,#8a1538,#c0185c)', border:'none', borderRadius:14, color:'#fff', fontSize:16, fontWeight:800, cursor:'pointer', fontFamily:'inherit', boxShadow:'0 0 32px rgba(192,37,90,.45),0 8px 24px rgba(0,0,0,.4)', letterSpacing:'.02em', transition:'all .2s' }}
+          onMouseEnter={e => { e.currentTarget.style.filter='brightness(1.1)'; e.currentTarget.style.transform='translateY(-2px)' }}
+          onMouseLeave={e => { e.currentTarget.style.filter='brightness(1)'; e.currentTarget.style.transform='translateY(0)' }}>
+          Create Your Account
+        </button>
+        <button onClick={() => navigate('/signin')} style={{ padding:'16px 32px', background:'rgba(255,255,255,.04)', border:'1px solid rgba(192,37,90,.3)', borderRadius:14, color:'rgba(243,221,223,.7)', fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:'inherit', backdropFilter:'blur(8px)', transition:'all .2s' }}
+          onMouseEnter={e => { e.currentTarget.style.background='rgba(192,37,90,.1)'; e.currentTarget.style.color='#f3dddf' }}
+          onMouseLeave={e => { e.currentTarget.style.background='rgba(255,255,255,.04)'; e.currentTarget.style.color='rgba(243,221,223,.7)' }}>
+          Sign In
+        </button>
       </div>
     )
   }
@@ -355,6 +392,7 @@ function LandingNav({ scrolled }: { scrolled:boolean }) {
 
 function HeroSection() {
   const mouse = useMouseParallax()
+  const launched = useIsLaunched()
   return (
     <section style={{ minHeight:'100vh', position:'relative', display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', textAlign:'center', padding:'120px clamp(20px,5vw,64px) 80px', overflow:'hidden' }}>
       {/* Dot grid - subtle parallax */}
@@ -378,7 +416,7 @@ function HeroSection() {
           <div style={{ display:'inline-block', padding:1, borderRadius:9999, background:'linear-gradient(135deg,rgba(192,37,90,.7) 0%,rgba(138,21,56,.25) 50%,rgba(192,37,90,.5) 100%)' }}>
             <div style={{ display:'inline-flex', alignItems:'center', gap:9, padding:'8px 22px', background:'rgba(5,2,10,.93)', borderRadius:9999, backdropFilter:'blur(16px)' }}>
               <span style={{ width:7, height:7, borderRadius:'50%', background:'#c0255a', display:'inline-block', boxShadow:'0 0 14px rgba(192,37,90,1)', animation:'lPulse 2s ease-in-out infinite' }} />
-              <span style={{ fontSize:12, fontWeight:800, letterSpacing:'.14em', color:'#e0aab4', textTransform:'uppercase' }}>Coming Soon to India</span>
+              <span style={{ fontSize:12, fontWeight:800, letterSpacing:'.14em', color:'#e0aab4', textTransform:'uppercase' }}>{launched ? 'Now Live in India' : 'Coming Soon to India'}</span>
             </div>
           </div>
         </div>
@@ -1056,6 +1094,7 @@ function ContactSection() {
 
 function CTASection() {
   const { ref, visible } = useScrollReveal(.18)
+  const launched = useIsLaunched()
   return (
     <section style={{ padding:'clamp(72px,9vw,110px) 32px', position:'relative', overflow:'hidden' }}>
       <div style={{ position:'absolute', inset:0, backgroundImage:'radial-gradient(rgba(138,21,56,.12) 1px,transparent 1px)', backgroundSize:'28px 28px', maskImage:'radial-gradient(ellipse 80% 80% at 50% 50%,black 20%,transparent 100%)', WebkitMaskImage:'radial-gradient(ellipse 80% 80% at 50% 50%,black 20%,transparent 100%)' }} />
@@ -1075,7 +1114,9 @@ function CTASection() {
             <span className="lnd-gradient-text">something that lasts?</span>
           </h2>
           <p style={{ fontSize:16, color:'rgba(243,221,223,.38)', lineHeight:1.78, maxWidth:420, margin:'0 auto 48px' }}>
-            ClubSynq is coming to India. Join your campus network, trade skills, and build something that matters.
+            {launched
+              ? 'ClubSynq is live in India. Join your campus network, trade skills, and build something that matters — starting today.'
+              : 'ClubSynq is coming to India. Join your campus network, trade skills, and build something that matters.'}
           </p>
           <CTACountdown />
         </div>
